@@ -1,0 +1,449 @@
+{% extends "base.html" %}
+
+{% block title %}Account Dashboard - Crypto Multi-Trader{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <a href="/accounts" class="back-link">&larr; All Accounts</a>
+  <div class="account-header" id="account-header">
+    <h1 class="page-title" id="account-label">Loading...</h1>
+    <span class="status-badge" id="account-status-badge"></span>
+  </div>
+</div>
+
+<!-- Section 1: Price Chart -->
+<section class="dashboard-section">
+  <div class="section-header">
+    <h2 class="section-title">Price Chart</h2>
+    <span class="section-subtitle" id="chart-symbol"></span>
+  </div>
+  <div id="price-chart" class="chart-container"></div>
+</section>
+
+<!-- Section 2: Asset Status -->
+<section class="dashboard-section">
+  <div class="section-header">
+    <h2 class="section-title">Asset Status</h2>
+  </div>
+  <div id="asset-status" class="asset-grid">
+    <div class="loading-spinner">Loading...</div>
+  </div>
+</section>
+
+<!-- Section 3: LOT Table -->
+<section class="dashboard-section">
+  <div class="section-header">
+    <h2 class="section-title">Open Lots</h2>
+    <div class="filter-tabs" id="lot-filter-tabs">
+      <button class="filter-tab active" data-filter="all" onclick="filterLots('all')">All</button>
+      <button class="filter-tab" data-filter="lot_stacking" onclick="filterLots('lot_stacking')">LOT Stacking</button>
+      <button class="filter-tab" data-filter="trend_buy" onclick="filterLots('trend_buy')">TREND Buy</button>
+    </div>
+  </div>
+  <div class="table-wrapper">
+    <table class="data-table" id="lots-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Strategy</th>
+          <th>Buy Price</th>
+          <th>Qty</th>
+          <th>Cost</th>
+          <th>Current Price</th>
+          <th>P&amp;L%</th>
+          <th>Sell Order Status</th>
+        </tr>
+      </thead>
+      <tbody id="lots-tbody">
+        <tr><td colspan="8" class="table-empty">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- Section 4: Tune Controls -->
+<section class="dashboard-section">
+  <div class="section-header">
+    <h2 class="section-title">Tune Controls</h2>
+  </div>
+  <div class="tune-panels">
+    <!-- LOT Stacking Params -->
+    <div class="tune-panel">
+      <h3 class="tune-panel-title">LOT Stacking</h3>
+      <form id="tune-lot-form" class="tune-form" onsubmit="return false;">
+        <div class="tune-grid">
+          <div class="form-group">
+            <label class="form-label">Drop % <span class="form-hint">(entry trigger)</span></label>
+            <input type="number" step="0.01" id="ls-drop-pct" class="form-input" placeholder="0.5">
+          </div>
+          <div class="form-group">
+            <label class="form-label">TP % <span class="form-hint">(take profit)</span></label>
+            <input type="number" step="0.01" id="ls-tp-pct" class="form-input" placeholder="1.0">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Buy USDT</label>
+            <input type="number" step="1" id="ls-buy-usdt" class="form-input" placeholder="100">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Pre-buy %</label>
+            <input type="number" step="0.01" id="ls-prebuy-pct" class="form-input" placeholder="0.3">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Cancel Rebound %</label>
+            <input type="number" step="0.01" id="ls-cancel-rebound-pct" class="form-input" placeholder="0.2">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Recenter %</label>
+            <input type="number" step="0.01" id="ls-recenter-pct" class="form-input" placeholder="1.0">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Recenter EMA N</label>
+            <input type="number" step="1" id="ls-recenter-ema-n" class="form-input" placeholder="20">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Recenter Enabled</label>
+            <select id="ls-recenter-enabled" class="form-input">
+              <option value="true">Yes</option>
+              <option value="false">No</option>
+            </select>
+          </div>
+        </div>
+        <button type="button" class="btn btn-primary" onclick="saveTuneValues('{{ account_id }}', 'lot_stacking')">Save LOT Stacking</button>
+      </form>
+    </div>
+
+    <!-- Trend Buy Params -->
+    <div class="tune-panel">
+      <h3 class="tune-panel-title">TREND Buy</h3>
+      <form id="tune-trend-form" class="tune-form" onsubmit="return false;">
+        <div class="tune-grid">
+          <div class="form-group">
+            <label class="form-label">Drop %</label>
+            <input type="number" step="0.01" id="tb-drop-pct" class="form-input" placeholder="1.0">
+          </div>
+          <div class="form-group">
+            <label class="form-label">TP %</label>
+            <input type="number" step="0.01" id="tb-tp-pct" class="form-input" placeholder="2.0">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Buy USDT</label>
+            <input type="number" step="1" id="tb-buy-usdt" class="form-input" placeholder="200">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Step %</label>
+            <input type="number" step="0.01" id="tb-step-pct" class="form-input" placeholder="0.5">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Step Count</label>
+            <input type="number" step="1" id="tb-step-count" class="form-input" placeholder="3">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Above Base %</label>
+            <input type="number" step="0.01" id="tb-above-base-pct" class="form-input" placeholder="0.5">
+          </div>
+        </div>
+        <button type="button" class="btn btn-primary" onclick="saveTuneValues('{{ account_id }}', 'trend_buy')">Save TREND Buy</button>
+      </form>
+    </div>
+  </div>
+</section>
+
+<!-- Section 5: Circuit Breaker -->
+<section class="dashboard-section">
+  <div class="section-header">
+    <h2 class="section-title">Circuit Breaker</h2>
+  </div>
+  <div id="circuit-breaker-panel" class="cb-panel">
+    <div class="loading-spinner">Loading...</div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+<script>
+const ACCOUNT_ID = '{{ account_id }}';
+let allLots = [];
+let currentFilter = 'all';
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadDashboard(ACCOUNT_ID);
+});
+
+async function loadDashboard(accountId) {
+  // Load account info to set header
+  try {
+    const resp = await apiFetch('/api/accounts/' + accountId);
+    if (resp.ok) {
+      const acct = await resp.json();
+      document.getElementById('account-label').textContent = acct.label || accountId;
+      const badge = document.getElementById('account-status-badge');
+      if (acct.is_active) {
+        badge.textContent = 'Active';
+        badge.className = 'status-badge badge-success';
+      } else {
+        badge.textContent = 'Inactive';
+        badge.className = 'status-badge badge-danger';
+      }
+      document.getElementById('chart-symbol').textContent = acct.symbol || '';
+    }
+  } catch (e) {
+    console.error('Failed to load account info', e);
+  }
+
+  // Load all sections in parallel
+  await Promise.allSettled([
+    loadPriceChart(accountId, 'price-chart'),
+    loadAssetStatus(accountId),
+    loadLots(accountId),
+    loadTuneValues(accountId),
+    loadCircuitBreaker(accountId),
+  ]);
+}
+
+async function loadPriceChart(accountId, containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  const chart = LightweightCharts.createChart(container, {
+    layout: { background: { color: '#1e293b' }, textColor: '#e2e8f0' },
+    grid: { vertLines: { color: '#334155' }, horzLines: { color: '#334155' } },
+    width: container.clientWidth,
+    height: 400,
+  });
+
+  const candleSeries = chart.addCandlestickSeries({
+    upColor: '#16a34a',
+    downColor: '#dc2626',
+    borderUpColor: '#16a34a',
+    borderDownColor: '#dc2626',
+    wickUpColor: '#16a34a',
+    wickDownColor: '#dc2626',
+  });
+
+  try {
+    const resp = await apiFetch('/api/dashboard/' + accountId + '/price_candles');
+    if (resp.ok) {
+      const candles = await resp.json();
+      candleSeries.setData(candles);
+    }
+  } catch (e) {
+    console.error('Failed to load candles', e);
+  }
+
+  // Load trade event markers
+  try {
+    const resp = await apiFetch('/api/dashboard/' + accountId + '/trade_events');
+    if (resp.ok) {
+      const events = await resp.json();
+      const markers = events.map(e => ({
+        time: e.time,
+        position: e.side === 'buy' ? 'belowBar' : 'aboveBar',
+        color: e.side === 'buy' ? '#16a34a' : '#dc2626',
+        shape: e.side === 'buy' ? 'arrowUp' : 'arrowDown',
+        text: e.side === 'buy' ? 'B' : 'S',
+      }));
+      candleSeries.setMarkers(markers);
+    }
+  } catch (e) {
+    console.error('Failed to load trade events', e);
+  }
+
+  // Resize on window resize
+  window.addEventListener('resize', () => {
+    chart.applyOptions({ width: container.clientWidth });
+  });
+}
+
+async function loadAssetStatus(accountId) {
+  const el = document.getElementById('asset-status');
+  if (!el) return;
+  try {
+    const resp = await apiFetch('/api/dashboard/' + accountId + '/asset_status');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    el.innerHTML = `
+      <div class="asset-card">
+        <div class="asset-label">BTC Balance</div>
+        <div class="asset-value">${formatNum(data.btc_balance, 6)}</div>
+      </div>
+      <div class="asset-card">
+        <div class="asset-label">USDT Balance</div>
+        <div class="asset-value">${formatNum(data.usdt_balance, 2)}</div>
+      </div>
+      <div class="asset-card">
+        <div class="asset-label">Reserve Pool</div>
+        <div class="asset-value">${formatNum(data.reserve_pool_usdt, 2)} USDT</div>
+        <div class="asset-sub">${data.reserve_pool_pct != null ? data.reserve_pool_pct + '%' : ''}</div>
+      </div>
+      <div class="asset-card">
+        <div class="asset-label">Total Invested</div>
+        <div class="asset-value">${formatNum(data.total_invested_usdt, 2)} USDT</div>
+      </div>
+    `;
+  } catch (e) {
+    el.innerHTML = '<p class="error-text">Failed to load asset status</p>';
+  }
+}
+
+async function loadLots(accountId) {
+  try {
+    const resp = await apiFetch('/api/dashboard/' + accountId + '/lots');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    allLots = await resp.json();
+    renderLots(currentFilter);
+  } catch (e) {
+    document.getElementById('lots-tbody').innerHTML = '<tr><td colspan="8" class="table-empty error-text">Failed to load lots</td></tr>';
+  }
+}
+
+function renderLots(filter) {
+  currentFilter = filter;
+  // Update active tab
+  document.querySelectorAll('.filter-tab').forEach(tab => {
+    tab.classList.toggle('active', tab.dataset.filter === filter);
+  });
+
+  const filtered = filter === 'all' ? allLots : allLots.filter(l => l.strategy === filter);
+  const tbody = document.getElementById('lots-tbody');
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="table-empty">No lots found</td></tr>';
+    return;
+  }
+  tbody.innerHTML = filtered.map((lot, i) => {
+    const pnlClass = (lot.pnl_pct || 0) >= 0 ? 'pnl-positive' : 'pnl-negative';
+    return `<tr>
+      <td>${i + 1}</td>
+      <td><span class="strategy-badge">${lot.strategy || '-'}</span></td>
+      <td>${formatNum(lot.buy_price, 2)}</td>
+      <td>${formatNum(lot.qty, 6)}</td>
+      <td>${formatNum(lot.cost_usdt, 2)}</td>
+      <td>${formatNum(lot.current_price, 2)}</td>
+      <td class="${pnlClass}">${lot.pnl_pct != null ? lot.pnl_pct.toFixed(2) + '%' : '-'}</td>
+      <td><span class="order-status">${lot.sell_order_status || '-'}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+function filterLots(filter) {
+  renderLots(filter);
+}
+
+async function loadTuneValues(accountId) {
+  try {
+    const resp = await apiFetch('/api/dashboard/' + accountId + '/tune');
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const ls = data.lot_stacking || {};
+    const tb = data.trend_buy || {};
+
+    setVal('ls-drop-pct', ls.drop_pct);
+    setVal('ls-tp-pct', ls.tp_pct);
+    setVal('ls-buy-usdt', ls.buy_usdt);
+    setVal('ls-prebuy-pct', ls.prebuy_pct);
+    setVal('ls-cancel-rebound-pct', ls.cancel_rebound_pct);
+    setVal('ls-recenter-pct', ls.recenter_pct);
+    setVal('ls-recenter-ema-n', ls.recenter_ema_n);
+    if (ls.recenter_enabled != null) {
+      document.getElementById('ls-recenter-enabled').value = ls.recenter_enabled ? 'true' : 'false';
+    }
+
+    setVal('tb-drop-pct', tb.drop_pct);
+    setVal('tb-tp-pct', tb.tp_pct);
+    setVal('tb-buy-usdt', tb.buy_usdt);
+    setVal('tb-step-pct', tb.step_pct);
+    setVal('tb-step-count', tb.step_count);
+    setVal('tb-above-base-pct', tb.above_base_pct);
+  } catch (e) {
+    console.error('Failed to load tune values', e);
+  }
+}
+
+async function saveTuneValues(accountId, strategy) {
+  let payload;
+  if (strategy === 'lot_stacking') {
+    payload = {
+      strategy: 'lot_stacking',
+      drop_pct: parseFloatOrNull('ls-drop-pct'),
+      tp_pct: parseFloatOrNull('ls-tp-pct'),
+      buy_usdt: parseFloatOrNull('ls-buy-usdt'),
+      prebuy_pct: parseFloatOrNull('ls-prebuy-pct'),
+      cancel_rebound_pct: parseFloatOrNull('ls-cancel-rebound-pct'),
+      recenter_pct: parseFloatOrNull('ls-recenter-pct'),
+      recenter_ema_n: parseIntOrNull('ls-recenter-ema-n'),
+      recenter_enabled: document.getElementById('ls-recenter-enabled').value === 'true',
+    };
+  } else {
+    payload = {
+      strategy: 'trend_buy',
+      drop_pct: parseFloatOrNull('tb-drop-pct'),
+      tp_pct: parseFloatOrNull('tb-tp-pct'),
+      buy_usdt: parseFloatOrNull('tb-buy-usdt'),
+      step_pct: parseFloatOrNull('tb-step-pct'),
+      step_count: parseIntOrNull('tb-step-count'),
+      above_base_pct: parseFloatOrNull('tb-above-base-pct'),
+    };
+  }
+
+  try {
+    const resp = await apiFetch('/api/dashboard/' + accountId + '/tune', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+      body: JSON.stringify(payload),
+    });
+    if (resp.ok) {
+      showToast('Settings saved successfully', 'success');
+    } else {
+      const err = await resp.json();
+      showToast('Error: ' + (err.detail || 'Save failed'), 'error');
+    }
+  } catch (e) {
+    showToast('Network error: ' + e.message, 'error');
+  }
+}
+
+async function loadCircuitBreaker(accountId) {
+  const el = document.getElementById('circuit-breaker-panel');
+  if (!el) return;
+  try {
+    const resp = await apiFetch('/api/accounts/' + accountId);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    const tripped = data.circuit_breaker_tripped || false;
+    el.innerHTML = `
+      <div class="cb-status ${tripped ? 'cb-tripped' : 'cb-ok'}">
+        <span class="cb-indicator"></span>
+        <span class="cb-label">${tripped ? 'TRIPPED - Trading Halted' : 'Normal - Trading Active'}</span>
+      </div>
+      ${tripped ? `<button class="btn btn-danger" onclick="resetCircuitBreaker('${accountId}')">Reset Circuit Breaker</button>` : ''}
+    `;
+  } catch (e) {
+    el.innerHTML = '<p class="error-text">Failed to load circuit breaker status</p>';
+  }
+}
+
+// Utility helpers
+function setVal(id, val) {
+  if (val != null) document.getElementById(id).value = val;
+}
+function parseFloatOrNull(id) {
+  const v = document.getElementById(id).value;
+  return v !== '' ? parseFloat(v) : null;
+}
+function parseIntOrNull(id) {
+  const v = document.getElementById(id).value;
+  return v !== '' ? parseInt(v, 10) : null;
+}
+function formatNum(val, decimals) {
+  if (val == null) return '-';
+  return Number(val).toFixed(decimals);
+}
+function showToast(msg, type) {
+  const toast = document.createElement('div');
+  toast.className = 'toast toast-' + type;
+  toast.textContent = msg;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 3000);
+}
+</script>
+{% endblock %}

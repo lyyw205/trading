@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+
+{% block title %}My Accounts - Crypto Multi-Trader{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">My Accounts</h1>
+  <button class="btn btn-primary" onclick="openAddAccountModal()">+ Add Account</button>
+</div>
+
+<div id="accounts-grid" class="accounts-grid">
+  <div class="loading-spinner">Loading accounts...</div>
+</div>
+
+<!-- Add Account Modal -->
+<div id="add-account-modal" class="modal" style="display:none;">
+  <div class="modal-backdrop" onclick="closeAddAccountModal()"></div>
+  <div class="modal-dialog">
+    <div class="modal-header">
+      <h2 class="modal-title">Add Trading Account</h2>
+      <button class="modal-close" onclick="closeAddAccountModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <form id="add-account-form">
+        <div class="form-group">
+          <label class="form-label">Label</label>
+          <input type="text" id="acc-label" class="form-input" placeholder="e.g. Main BTC Account" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Symbol</label>
+          <input type="text" id="acc-symbol" class="form-input" value="BTCUSDT" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Binance API Key</label>
+          <input type="text" id="acc-api-key" class="form-input" placeholder="API Key" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Binance API Secret</label>
+          <input type="password" id="acc-api-secret" class="form-input" placeholder="API Secret" required>
+        </div>
+      </form>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeAddAccountModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitAddAccount()">Add Account</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  loadAccounts();
+});
+
+function openAddAccountModal() {
+  document.getElementById('add-account-modal').style.display = 'flex';
+}
+
+function closeAddAccountModal() {
+  document.getElementById('add-account-modal').style.display = 'none';
+}
+
+async function submitAddAccount() {
+  const label = document.getElementById('acc-label').value.trim();
+  const symbol = document.getElementById('acc-symbol').value.trim();
+  const apiKey = document.getElementById('acc-api-key').value.trim();
+  const apiSecret = document.getElementById('acc-api-secret').value.trim();
+  if (!label || !symbol || !apiKey || !apiSecret) {
+    alert('All fields are required.');
+    return;
+  }
+  try {
+    const resp = await apiFetch('/api/accounts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label, symbol, api_key: apiKey, api_secret: apiSecret }),
+    });
+    if (resp.ok) {
+      closeAddAccountModal();
+      loadAccounts();
+    } else {
+      const err = await resp.json();
+      alert('Error: ' + (err.detail || 'Failed to add account'));
+    }
+  } catch (e) {
+    alert('Network error: ' + e.message);
+  }
+}
+</script>
+{% endblock %}

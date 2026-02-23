@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+
+{% block title %}System Administration - Crypto Multi-Trader{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">System Administration</h1>
+</div>
+
+<!-- System Health Summary -->
+<section class="dashboard-section">
+  <div class="section-header">
+    <h2 class="section-title">System Health</h2>
+    <button class="btn btn-outline btn-sm" onclick="loadAdminOverview()">Refresh</button>
+  </div>
+  <div id="admin-health" class="health-grid">
+    <div class="loading-spinner">Loading...</div>
+  </div>
+</section>
+
+<!-- All Accounts -->
+<section class="dashboard-section">
+  <div class="section-header">
+    <h2 class="section-title">All Accounts</h2>
+  </div>
+  <div class="table-wrapper">
+    <table class="data-table" id="admin-accounts-table">
+      <thead>
+        <tr>
+          <th>Label</th>
+          <th>Symbol</th>
+          <th>Owner</th>
+          <th>Active</th>
+          <th>Health</th>
+          <th>Circuit Breaker</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="admin-accounts-tbody">
+        <tr><td colspan="7" class="table-empty">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- Users -->
+<section class="dashboard-section">
+  <div class="section-header">
+    <h2 class="section-title">Users</h2>
+  </div>
+  <div class="table-wrapper">
+    <table class="data-table" id="admin-users-table">
+      <thead>
+        <tr>
+          <th>Email</th>
+          <th>Role</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="admin-users-tbody">
+        <tr><td colspan="3" class="table-empty">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  loadAdminOverview();
+  loadAdminAccounts();
+  loadAdminUsers();
+});
+</script>
+{% endblock %}

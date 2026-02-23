@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "crypto-multi-trader"
+version = "0.1.0"
+description = "멀티 계정 비트코인 자동매매 봇"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "jinja2>=3.1.0",
+    "python-multipart>=0.0.9",
+    "sqlalchemy[asyncio]>=2.0.0",
+    "asyncpg>=0.29.0",
+    "alembic>=1.13.0",
+    "supabase>=2.0.0",
+    "itsdangerous>=2.1.0",
+    "starlette-csrf>=3.0.0",
+    "python-binance>=1.0.20",
+    "aiolimiter>=1.1.0",
+    "pydantic-settings>=2.0.0",
+    "python-dotenv>=1.0.0",
+    "cryptography>=42.0.0",
+    "pandas>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "httpx>=0.27.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

@@ -1,0 +1,1073 @@
+# crypto-multi-trader 프로젝트 구조 및 파일별 상세 설명
+
+> 멀티 계정 비트코인 자동매매 봇 - 파일별 구조 해설서
+> 작성일: 2026-02-24
+
+---
+
+## 목차
+
+1. [프로젝트 전체 개요](#1-프로젝트-전체-개요)
+2. [루트 디렉토리 파일](#2-루트-디렉토리-파일)
+3. [app/ - 메인 애플리케이션](#3-app---메인-애플리케이션)
+4. [app/models/ - 데이터베이스 모델](#4-appmodels---데이터베이스-모델)
+5. [app/db/ - 데이터베이스 접근 계층](#5-appdb---데이터베이스-접근-계층)
+6. [app/exchange/ - 거래소 클라이언트](#6-appexchange---거래소-클라이언트)
+7. [app/strategies/ - 매매 전략 플러그인](#7-appstrategies---매매-전략-플러그인)
+8. [app/services/ - 비즈니스 로직 서비스](#8-appservices---비즈니스-로직-서비스)
+9. [app/middleware/ - HTTP 미들웨어](#9-appmiddleware---http-미들웨어)
+10. [app/api/ - REST API 엔드포인트](#10-appapi---rest-api-엔드포인트)
+11. [app/schemas/ - API 요청/응답 스키마](#11-appschemas---api-요청응답-스키마)
+12. [app/dashboard/ - 대시보드 UI (SSR)](#12-appdashboard---대시보드-ui-ssr)
+13. [app/utils/ - 유틸리티](#13-apputils---유틸리티)
+14. [alembic/ - DB 마이그레이션](#14-alembic---db-마이그레이션)
+15. [backtest/ - 백테스트 엔진](#15-backtest---백테스트-엔진)
+16. [scripts/ - 운영 스크립트](#16-scripts---운영-스크립트)
+17. [docker/ - 컨테이너 배포](#17-docker---컨테이너-배포)
+18. [systemd/ - 시스템 서비스](#18-systemd---시스템-서비스)
+19. [tests/ - 테스트](#19-tests---테스트)
+20. [데이터 흐름 요약](#20-데이터-흐름-요약)
+
+---
+
+## 1. 프로젝트 전체 개요
+
+이 프로젝트는 **바이낸스(Binance) 거래소에서 비트코인(BTC)을 자동으로 매매하는 봇**입니다.
+기존 `btc-staking-bot`(단일 계정)을 확장하여, **여러 계정을 동시에 운영**할 수 있도록 설계되었습니다.
+
+### 핵심 특징
+- **멀티 계정**: 여러 바이낸스 계정을 독립적으로 운영. 각 계정마다 별도의 API 키, 전략 파라미터, 매매 루프를 가짐
+- **전략 플러그인**: LOT Stacking(분할 매수)과 TREND Buy(추세 매수) 두 가지 전략을 플러그인 방식으로 운영
+- **Google OAuth 인증**: Supabase Auth를 통한 Google 로그인, 계정별 접근 권한 제어
+- **실시간 대시보드**: 계정별 차트, 로트(매수 묶음) 현황, 전략 파라미터 실시간 조정
+- **장애 격리**: 서킷 브레이커(5회 연속 실패 시 자동 비활성화), 지수 백오프, API 속도 제한
+
+### 기술 스택
+```
+Python 3.12+ / FastAPI / SQLAlchemy 2.0 (async) / PostgreSQL
+Supabase Auth (Google OAuth) / python-binance / Jinja2 (SSR)
+aiolimiter / MultiFernet / itsdangerous / Alembic
+```
+
+### 전체 폴더 트리
+```
+crypto-multi-trader/
+├── app/                          # 메인 애플리케이션 코드
+│   ├── main.py                   # FastAPI 앱 진입점
+│   ├── config.py                 # 환경 설정
+│   ├── dependencies.py           # FastAPI 의존성 주입
+│   ├── models/                   # SQLAlchemy DB 모델 (11개 테이블)
+│   ├── db/                       # 데이터베이스 세션 + 리포지토리 (7개)
+│   ├── exchange/                 # 거래소 클라이언트 (Binance + 백테스트)
+│   ├── strategies/               # 매매 전략 플러그인 (LOT + TREND)
+│   ├── services/                 # 비즈니스 로직 서비스 (8개)
+│   ├── middleware/               # HTTP 미들웨어 (인증 + CSRF)
+│   ├── api/                      # REST API 라우터 (7개)
+│   ├── schemas/                  # Pydantic 스키마 (6개)
+│   ├── dashboard/                # 대시보드 UI (템플릿 + CSS + JS)
+│   └── utils/                    # 유틸리티 (암호화 + 로깅)
+├── alembic/                      # DB 마이그레이션
+├── backtest/                     # 백테스트 엔진
+├── scripts/                      # 운영 스크립트 (마이그레이션 + 키 로테이션)
+├── docker/                       # Docker 배포 설정
+├── systemd/                      # systemd 서비스 파일
+└── tests/                        # 테스트 디렉토리
+```
+
+---
+
+## 2. 루트 디렉토리 파일
+
+### `.env.example`
+환경 변수 템플릿. 실제 운영 시 `.env` 파일로 복사하여 값을 채움.
+
+주요 설정값:
+- `DATABASE_URL`: PostgreSQL 직접 연결 주소 (트레이딩 엔진용)
+- `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`: Supabase 인증 관련
+- `ENCRYPTION_KEYS`: API 키 암호화용 Fernet 키 (쉼표 구분, 첫 번째가 최신)
+- `SESSION_SECRET_KEY`: 세션 쿠키 서명 키
+- `CSRF_SECRET`: CSRF 방어 토큰 시크릿
+- `API_RATE_LIMIT`: 바이낸스 API 분당 최대 호출 가중치 (기본 1000)
+
+### `pyproject.toml`
+Python 프로젝트 메타데이터. 프로젝트 이름, 버전, Python 버전 요구사항 등 정의.
+
+### `requirements.txt`
+Python 패키지 의존성 목록. 주요 패키지:
+- `fastapi`, `uvicorn`: 웹 프레임워크 + ASGI 서버
+- `sqlalchemy[asyncio]`, `asyncpg`: 비동기 DB ORM
+- `python-binance`: 바이낸스 API 클라이언트
+- `supabase`: Supabase Auth 클라이언트
+- `itsdangerous`: 세션 쿠키 서명
+- `starlette-csrf`: CSRF 보호 미들웨어
+- `aiolimiter`: 비동기 속도 제한기
+- `cryptography`: MultiFernet 암호화
+- `jinja2`: HTML 템플릿 엔진
+
+### `.gitignore`
+Git에서 무시할 파일 패턴. `.env`, `__pycache__`, `.venv` 등.
+
+### `alembic.ini`
+Alembic(DB 마이그레이션 도구) 설정 파일. DB 연결 문자열과 마이그레이션 스크립트 위치를 지정.
+
+---
+
+## 3. app/ - 메인 애플리케이션
+
+### `app/__init__.py`
+빈 파일. `app` 디렉토리를 Python 패키지로 인식시킴.
+
+### `app/main.py` - FastAPI 앱 진입점
+**프로젝트의 가장 핵심적인 파일.** 앱 시작/종료 전체 생명주기를 관리.
+
+**역할:**
+1. **FastAPI 앱 생성**: 제목, 버전, 라이프사이클 등록
+2. **라이프사이클(lifespan)**: 앱 시작 시 필요한 모든 서비스를 초기화
+   - 로깅 설정 (`setup_logging`)
+   - 스레드 풀 설정 (`ThreadPoolExecutor`) - 바이낸스 동기 API를 비동기로 감싸기 위해 필요
+   - 암호화 매니저 (`EncryptionManager`) 초기화
+   - 인증 서비스 (`AuthService`) + 세션 매니저 (`SessionManager`) 초기화
+   - 트레이딩 엔진 (`TradingEngine`) 시작 - 모든 활성 계정의 자동매매 시작
+3. **미들웨어 등록**:
+   - `CSRFMiddleware`: SSR 폼 POST 요청에 CSRF 토큰 요구
+   - `LazyAuthMiddleware`: 쿠키에서 사용자 인증 정보 추출 → `request.state.user`에 주입
+4. **라우터 등록**: 7개 API 라우터 + 1개 SSR 페이지 라우터
+5. **정적 파일 서빙**: CSS, JS 파일을 `/static` 경로로 서빙
+
+**`LazyAuthMiddleware`** 내부 동작:
+- 공개 경로(`/health`, `/login`, `/api/auth/*`, `/static`)는 인증 없이 통과
+- 나머지 경로: 쿠키에서 세션 토큰 추출 → Supabase로 검증 → 만료 시 자동 갱신 → `request.state.user`에 사용자 정보 주입
+- 인증 실패 시: API 요청이면 401 반환, 페이지 요청이면 `/login`으로 리다이렉트
+
+### `app/config.py` - 글로벌 설정
+`pydantic-settings`의 `BaseSettings`를 상속하여 `.env` 파일에서 환경 변수를 자동 로딩.
+
+**주요 필드:**
+- `supabase_url`, `supabase_anon_key`, `supabase_service_role_key`: Supabase 연결
+- `database_url`: PostgreSQL 직접 연결 (트레이딩 엔진용)
+- `encryption_keys`: 쉼표 구분 다중 Fernet 키 문자열
+- `session_secret_key`, `csrf_secret`: 세션/CSRF 시크릿
+- `api_rate_limit`: 바이낸스 API 분당 가중치 한도 (기본 1000)
+- `thread_pool_size`: `asyncio.to_thread` 풀 크기 (기본 20)
+
+**특수 프로퍼티:**
+- `encryption_key_list`: 쉼표로 구분된 `encryption_keys` 문자열을 리스트로 변환
+
+### `app/dependencies.py` - FastAPI 의존성 주입
+FastAPI의 `Depends()` 시스템에 사용되는 함수들. 라우터 핸들러가 필요한 객체를 자동으로 주입받음.
+
+**제공하는 의존성:**
+- `get_db()`: DB 세션 (SQLAlchemy AsyncSession)
+- `get_trading_engine()`: 트레이딩 엔진 (app.state에서 가져옴)
+- `get_current_user()`: 현재 인증된 사용자 (미인증 시 401)
+- `require_admin()`: 관리자 권한 확인 (비관리자 시 403)
+- `get_auth_service()`: 인증 서비스
+- `get_session_manager()`: 세션 매니저
+- `get_encryption()`: 암호화 매니저
+
+---
+
+## 4. app/models/ - 데이터베이스 모델
+
+SQLAlchemy 2.0의 선언적 매핑(`DeclarativeBase`)을 사용. 각 파일이 하나의 DB 테이블에 대응.
+
+### `app/models/base.py` - 베이스 클래스
+모든 모델이 상속하는 SQLAlchemy `Base` 클래스 정의.
+
+### `app/models/user.py` - 사용자 프로필 (`user_profiles` 테이블)
+Google OAuth로 로그인한 사용자 정보.
+
+| 컬럼 | 타입 | 설명 |
+|-------|------|------|
+| `id` | UUID (PK) | Supabase Auth의 사용자 ID와 동일 |
+| `email` | String | Google 이메일 |
+| `display_name` | String (nullable) | 표시 이름 |
+| `role` | String | 역할: `"user"` 또는 `"admin"` |
+| `created_at` | Timestamp | 생성 시각 |
+
+**관계:** `accounts` → 이 사용자가 소유한 트레이딩 계정 목록
+
+### `app/models/account.py` - 트레이딩 계정 (`trading_accounts` 테이블)
+**시스템의 핵심 단위.** 하나의 바이낸스 API 키 + 매매 설정 묶음.
+
+| 컬럼 | 타입 | 설명 |
+|-------|------|------|
+| `id` | UUID (PK) | 계정 고유 ID |
+| `owner_id` | UUID (FK→user_profiles) | 소유자 |
+| `name` | String | 계정 별명 (예: "메인계정", "테스트") |
+| `exchange` | String | 거래소 종류 (기본: "binance") |
+| `symbol` | String | 매매 대상 심볼 (예: "BTCUSDT") |
+| `base_asset` / `quote_asset` | String | 기초/인용 자산 (예: "BTC"/"USDT") |
+| `api_key_encrypted` | String | **암호화된** 바이낸스 API 키 |
+| `api_secret_encrypted` | String | **암호화된** 바이낸스 API 시크릿 |
+| `encryption_key_version` | Integer | 암호화 키 버전 (키 로테이션용) |
+| `is_active` | Boolean | 매매 활성 상태 |
+| `circuit_breaker_failures` | Integer | 연속 실패 횟수 |
+| `circuit_breaker_disabled_at` | Timestamp | 서킷 브레이커 발동 시각 |
+| `last_success_at` | Timestamp | 마지막 성공 시각 |
+| `loop_interval_sec` | Integer | 매매 루프 주기 (기본 60초) |
+| `order_cooldown_sec` | Integer | 주문 간 최소 대기 (기본 7초) |
+
+**관계:** `strategy_configs`, `strategy_states`, `orders`, `fills`, `lots`, `positions`
+
+**설계 포인트:**
+- API 키는 **절대 평문 저장하지 않음**. MultiFernet으로 암호화 후 저장
+- 서킷 브레이커: 연속 5회 실패 시 `is_active=false`로 전환, 관리자가 수동 리셋
+- `loop_interval_sec`: 계정마다 매매 체크 주기를 다르게 설정 가능
+
+### `app/models/strategy_config.py` - 전략 설정 (`strategy_configs` 테이블)
+계정별로 어떤 전략을 사용하고, 어떤 파라미터로 운영하는지 정의.
+
+| 컬럼 | 타입 | 설명 |
+|-------|------|------|
+| `id` | UUID (PK) | |
+| `account_id` | UUID (FK) | 소속 계정 |
+| `strategy_name` | String | 전략 이름 (예: "lot_stacking", "trend_buy") |
+| `is_enabled` | Boolean | 전략 활성화 여부 |
+| `params` | JSONB | 전략 파라미터 (예: `{"drop_pct": 3.0, "tp_pct": 5.0, "buy_usdt": 50}`) |
+
+**유니크 제약:** `(account_id, strategy_name)` - 한 계정에서 같은 전략은 하나만
+
+**사용 예시:**
+```json
+{
+  "strategy_name": "lot_stacking",
+  "params": {
+    "drop_pct": 3.0,      // 기준가 대비 3% 하락 시 매수
+    "tp_pct": 5.0,         // 매수가 대비 5% 상승 시 익절
+    "buy_usdt": 50.0,      // 1회 매수 금액 50 USDT
+    "recenter_pct": 10.0,  // 기준가 리센터 임계값
+    "recenter_ema_n": 20   // EMA 이동평균 기간
+  }
+}
+```
+
+### `app/models/strategy_state.py` - 전략 상태 키-값 (`strategy_state` 테이블)
+전략이 매매 중 유지해야 하는 상태값을 저장하는 **키-값(Key-Value) 저장소**.
+
+| 컬럼 | 타입 | 설명 |
+|-------|------|------|
+| `account_id` | UUID (PK) | 계정 |
+| `scope` | String (PK) | 범위: `"lot_stacking"`, `"trend_buy"`, `"shared"` |
+| `key` | String (PK) | 상태 키 이름 |
+| `value` | String | 상태 값 (문자열로 저장, 필요 시 float/int 변환) |
+
+**3중 PK:** `(account_id, scope, key)` → 계정별, 전략별로 상태가 완전히 격리됨
+
+**저장되는 대표 키 (scope별):**
+
+`lot_stacking` scope:
+- `base_price`: 현재 기준가 (하락 매수 기준점)
+- `recenter_ema`: 기준가 리센터 EMA 값
+- `pending_order_id`: 대기 중인 매수 주문 ID
+- `pending_time_ms`: 대기 매수 주문 생성 시각
+- `core_bucket_usdt`: 코어 버킷 USDT 잔액
+
+`trend_buy` scope:
+- `base_price`: 추세 매수 기준가
+- `last_buy_price`: 마지막 추세 매수 가격
+
+`shared` scope:
+- `reserve_qty`: 리저브 풀 BTC 수량 (LOT과 TREND가 공유)
+- `reserve_cost_usdt`: 리저브 풀 원가
+
+### `app/models/order.py` - 주문 (`orders` 테이블)
+바이낸스에 제출된 주문 정보. 거래소 API 응답을 그대로 저장.
+
+| 주요 컬럼 | 설명 |
+|-----------|------|
+| `order_id` + `account_id` | 복합 PK (거래소 주문 ID + 계정) |
+| `symbol`, `side`, `type` | 심볼, 매수/매도, 주문 유형 |
+| `status` | 주문 상태: NEW, FILLED, CANCELED 등 |
+| `price`, `orig_qty`, `executed_qty` | 가격, 원래 수량, 체결 수량 |
+| `raw_json` | 거래소 API 원본 응답 (JSONB) |
+
+### `app/models/fill.py` - 체결 (`fills` 테이블)
+실제 체결(Trade) 기록. 하나의 주문이 여러 체결로 나뉠 수 있음.
+
+| 주요 컬럼 | 설명 |
+|-----------|------|
+| `trade_id` + `account_id` | 복합 PK |
+| `order_id` | 소속 주문 |
+| `price`, `qty`, `quote_qty` | 체결 가격, 수량, USDT 금액 |
+| `commission`, `commission_asset` | 수수료 |
+
+### `app/models/lot.py` - 로트 (`lots` 테이블)
+**매수 묶음 단위.** LOT Stacking과 TREND Buy 모두 이 테이블을 공유 (strategy_name으로 구분).
+
+"로트"란 하나의 매수와 그에 대응하는 익절 매도를 묶은 단위입니다.
+
+| 주요 컬럼 | 설명 |
+|-----------|------|
+| `lot_id` + `account_id` | 복합 PK |
+| `strategy_name` | `"lot_stacking"` 또는 `"trend_buy"` |
+| `buy_price`, `buy_qty` | 매수 가격/수량 |
+| `status` | `"OPEN"` (매수 완료, 보유 중) 또는 `"CLOSED"` (익절 완료) |
+| `sell_order_id`, `sell_price` | 매도 주문 정보 |
+| `net_profit_usdt` | 순이익 (체결 후 계산) |
+| `metadata_` | JSONB 확장 필드 (LOT 종류 등 추가 정보) |
+
+### `app/models/position.py` - 포지션 (`positions` 테이블)
+계정+심볼별 총 보유 현황. Fill(체결) 기록으로부터 재계산됨.
+
+| 컬럼 | 설명 |
+|-------|------|
+| `account_id` + `symbol` | 복합 PK |
+| `qty` | 총 보유 수량 |
+| `cost_basis_usdt` | 총 원가 |
+| `avg_entry` | 평균 매입가 |
+
+### `app/models/price_snapshot.py` - 가격 스냅샷 (`price_snapshots` 테이블)
+5분 간격으로 기록되는 가격 스냅샷. 대시보드 차트 표시용.
+
+| 컬럼 | 설명 |
+|-------|------|
+| `symbol` + `ts_ms` | 유니크 인덱스 (심볼 + 타임스탬프) |
+| `price` | 해당 시점 가격 |
+
+### `app/models/price_candle.py` - 5분봉 캔들 (`price_candles_5m` 테이블)
+5분봉 OHLC(시가/고가/저가/종가) 데이터. 차트 표시용.
+
+| 컬럼 | 설명 |
+|-------|------|
+| `symbol` + `ts_ms` | 유니크 인덱스 |
+| `open`, `high`, `low`, `close` | 시가, 고가, 저가, 종가 |
+
+### `app/models/core_btc_history.py` - 코어 BTC 이력 (`core_btc_history` 테이블)
+리저브 풀(reserve pool) 변동 이력. 코어 버킷에서 리저브로 이동된 BTC 기록.
+
+| 컬럼 | 설명 |
+|-------|------|
+| `account_id` | 계정 |
+| `btc_qty`, `cost_usdt` | 이동 수량, 원가 |
+| `source` | 출처 (예: "lot_stacking_core", "trend_buy_core") |
+
+---
+
+## 5. app/db/ - 데이터베이스 접근 계층
+
+### `app/db/session.py` - DB 세션 관리
+**이중 연결 전략**의 핵심.
+
+**`engine_trading`** (SQLAlchemy 직접 연결):
+- 트레이딩 엔진이 사용. RLS(Row Level Security)를 **바이패스**하여 모든 계정 데이터에 직접 접근
+- 성능이 중요한 매매 로직에서 사용
+- `pool_size=20`, `max_overflow=10`으로 커넥션 풀 구성
+
+**`TradingSessionLocal`** (세션 팩토리):
+- `AsyncSession`을 생성하는 팩토리. `expire_on_commit=False`로 설정하여 커밋 후에도 객체 사용 가능
+
+**`get_trading_session()`**:
+- FastAPI 라우터에서 `Depends(get_trading_session)`으로 사용하는 DB 세션 제너레이터
+
+### `app/db/repository.py` - 베이스 리포지토리
+제네릭 CRUD 베이스. `get_by_id()`, `create()`, `delete_by_id()` 공통 메서드 제공.
+모든 모델별 리포지토리가 이를 상속하거나 유사한 패턴을 따름.
+
+### `app/db/account_repo.py` - 계정 리포지토리
+`TradingAccount` 모델 전용 데이터 접근.
+
+**주요 메서드:**
+- `get_by_id(account_id)`: 계정 조회
+- `get_active_accounts()`: 활성(`is_active=True`) 계정 목록
+- `get_by_owner(owner_id)`: 특정 사용자의 계정 목록
+- `create(account)`: 계정 생성
+- `update_circuit_breaker(account_id, failures, disabled_at)`: 서킷 브레이커 상태 업데이트
+- `reset_circuit_breaker(account_id)`: 서킷 브레이커 리셋 (관리자용)
+- `update_last_success(account_id)`: 마지막 성공 시각 갱신
+
+### `app/db/lot_repo.py` - 로트 리포지토리
+`Lot` 모델 전용.
+
+**주요 메서드:**
+- `get_open_lots(account_id, symbol, strategy_name)`: 열린 로트 목록
+- `insert_lot(...)`: 새 로트 생성 (매수 완료 시)
+- `close_lot(lot_id, account_id, ...)`: 로트 닫기 (익절 완료 시)
+- `set_sell_order(lot_id, account_id, sell_order_id)`: 익절 주문 ID 연결
+- `clear_sell_order(lot_id, account_id)`: 익절 주문 초기화
+
+### `app/db/order_repo.py` - 주문 리포지토리
+`Order` + `Fill` 모델.
+
+**주요 메서드:**
+- `upsert_order(account_id, order_data)`: PostgreSQL UPSERT로 주문 정보 갱신 (거래소 API 응답 그대로 저장)
+- `get_order(order_id, account_id)`: 주문 조회
+- `get_recent_open_orders(account_id)`: 미체결 주문 ID 목록
+- `insert_fill(account_id, order_id, trade_data)`: 체결 기록 삽입
+
+### `app/db/position_repo.py` - 포지션 리포지토리
+**주요 메서드:**
+- `get(account_id, symbol)`: 포지션 조회
+- `upsert(account_id, symbol, qty, cost_basis_usdt, avg_entry)`: 포지션 갱신
+- `recompute_from_fills(account_id, symbol)`: **체결 기록으로부터 포지션 재계산** - fills 테이블의 매수/매도를 집계하여 현재 보유량과 평균 매입가를 산출
+
+### `app/db/price_repo.py` - 가격 데이터 리포지토리
+**모듈 레벨 함수** (클래스 없음). 가격 스냅샷과 캔들 데이터 저장/조회.
+
+**주요 함수:**
+- `insert_snapshot(symbol, ts_ms, price, session)`: 가격 스냅샷 삽입 (중복 무시)
+- `upsert_candle_5m(symbol, ts_ms, price, session)`: 5분봉 캔들 upsert (고가/저가 갱신)
+- `get_candles(symbol, from_ms, to_ms, session)`: 캔들 조회 (차트용)
+- `get_snapshots(symbol, from_ms, to_ms, session)`: 스냅샷 조회
+
+### `app/db/strategy_state_repo.py` - 전략 상태 리포지토리
+`StrategyStateStore` 클래스를 재수출하고, 추가 유틸리티 함수 제공.
+
+- `get_all_for_account(account_id, session)`: 계정의 모든 전략 상태를 한 번에 조회
+
+---
+
+## 6. app/exchange/ - 거래소 클라이언트
+
+### `app/exchange/base_client.py` - 거래소 클라이언트 추상 인터페이스
+모든 거래소 클라이언트가 구현해야 하는 **추상 클래스(ABC)**.
+
+**`SymbolFilters` 데이터클래스:**
+- `step_size`: 수량 최소 단위 (예: 0.00001 BTC)
+- `tick_size`: 가격 최소 단위 (예: 0.01 USDT)
+- `min_notional`: 최소 주문 금액
+
+**12개 추상 메서드:**
+| 메서드 | 설명 |
+|--------|------|
+| `get_price(symbol)` | 현재가 조회 |
+| `get_symbol_filters(symbol)` | 심볼 필터(최소단위) 조회 |
+| `adjust_qty(qty, symbol)` | 수량을 step_size에 맞게 내림 |
+| `adjust_price(price, symbol)` | 가격을 tick_size에 맞게 내림 |
+| `get_open_orders(symbol)` | 미체결 주문 목록 |
+| `get_order(order_id, symbol)` | 주문 상세 조회 |
+| `cancel_order(order_id, symbol)` | 주문 취소 |
+| `get_my_trades(symbol, limit, order_id)` | 체결 내역 조회 |
+| `place_limit_sell(qty, price, symbol)` | 지정가 매도 |
+| `place_limit_buy_by_quote(quote_usdt, price, symbol)` | USDT 금액 기준 지정가 매수 |
+| `get_balance(asset)` | 자산 잔고 조회 |
+| `get_free_balance(asset)` | 사용 가능 잔고 조회 |
+
+### `app/exchange/binance_client.py` - 바이낸스 실제 클라이언트
+`ExchangeClient`를 구현한 실제 바이낸스 연동 클라이언트.
+
+**핵심 설계: 동기 코어 + 비동기 래퍼**
+
+`python-binance` 라이브러리는 동기(sync) 방식이므로, 비동기 이벤트 루프를 블로킹하지 않기 위해
+모든 메서드를 두 단계로 구현:
+
+```python
+# 1단계: 동기 메서드 (실제 API 호출)
+def _sync_get_price(self, symbol: str) -> float:
+    ticker = self.client.get_symbol_ticker(symbol=symbol)
+    return float(ticker["price"])
+
+# 2단계: 비동기 래퍼 (asyncio.to_thread로 감쌈)
+async def get_price(self, symbol: str) -> float:
+    return await asyncio.to_thread(self._sync_get_price, symbol)
+```
+
+이 방식으로 바이낸스 API 호출이 별도 스레드에서 실행되어 다른 계정의 매매 루프를 방해하지 않음.
+
+**심볼 필터 캐시:** `_filters_cache`로 한 번 조회한 심볼의 step_size/tick_size를 캐시하여 반복 API 호출 방지.
+
+### `app/exchange/backtest_client.py` - 백테스트용 가상 클라이언트
+`ExchangeClient`를 구현한 **시뮬레이션 클라이언트**. 실제 API 호출 없이 메모리에서 거래를 시뮬레이션.
+
+**동작 방식:**
+1. `set_price(price)` 호출로 현재 시뮬레이션 가격 설정
+2. 가격 설정 시 자동으로 `_check_order_fills()` 호출 → 대기 중인 지정가 주문이 체결 가격에 도달했는지 확인
+3. 매수 주문: USDT를 free → locked으로 이동, 체결 시 BTC free에 추가
+4. 매도 주문: BTC를 free → locked으로 이동, 체결 시 USDT free에 추가
+5. 잔고, 주문, 체결 내역을 모두 메모리에서 관리
+
+**용도:** 과거 캔들 데이터를 순서대로 `set_price()`로 재생하면서 전략의 수익률을 시뮬레이션.
+
+---
+
+## 7. app/strategies/ - 매매 전략 플러그인
+
+### `app/strategies/base.py` - 전략 베이스 클래스
+모든 전략이 상속하는 추상 클래스.
+
+**`StrategyContext` 데이터클래스** - 매 tick마다 전략에 전달되는 불변 컨텍스트:
+- `account_id`: 계정 ID
+- `symbol`: 매매 심볼 (예: "BTCUSDT")
+- `current_price`: 현재 가격
+- `params`: 전략 파라미터 (strategy_configs에서 로드)
+- `client_order_prefix`: 주문 ID 접두어 (계정 식별용)
+
+**`RepositoryBundle` 데이터클래스** - DB 리포지토리 묶음:
+- `lot`: 로트 리포지토리
+- `order`: 주문 리포지토리
+- `position`: 포지션 리포지토리
+- `price`: 가격 리포지토리 (또는 None)
+
+**`BaseStrategy` 추상 클래스:**
+- `tick(ctx, state, exchange, account_state, repos)`: **메인 매매 사이클**. 60초마다 호출되어 매매 판단
+- `on_fill(ctx, state, fill_data, account_state, repos)`: **주문 체결 후처리**. 로트 생성, 익절 주문 등
+- `validate_params(params)`: 파라미터 유효성 검증 + 기본값 병합
+- `_last_order_ts`: 주문 간 쿨다운 제어용 타임스탬프
+
+### `app/strategies/state_store.py` - 전략 상태 저장소
+`strategy_state` 테이블을 key-value 방식으로 접근하는 래퍼.
+
+**생성 시 3가지를 받음:** `account_id`, `scope` (전략 이름 또는 "shared"), `session` (DB 세션)
+
+**주요 메서드:**
+- `get(key)` / `set(key, value)`: 키-값 읽기/쓰기 (PostgreSQL UPSERT)
+- `get_float(key)` / `get_int(key)`: 타입 변환 헬퍼
+- `delete(key)`: 키 삭제
+- `clear_keys(*keys)`: 여러 키를 빈 문자열로 설정
+- `get_all()`: 이 scope의 모든 키-값 조회
+
+**scope 격리:** `StrategyStateStore(account_id, "lot_stacking", session)`과
+`StrategyStateStore(account_id, "trend_buy", session)`은 서로 다른 상태 공간.
+`"shared"` scope는 두 전략이 공유하는 리저브 풀에 사용.
+
+### `app/strategies/registry.py` - 전략 레지스트리
+전략 클래스를 이름으로 등록하고 조회하는 싱글톤 레지스트리.
+
+```python
+@StrategyRegistry.register
+class LotStackingStrategy(BaseStrategy):
+    name = "lot_stacking"
+    ...
+```
+
+등록 후 `StrategyRegistry.create_instance("lot_stacking")`으로 인스턴스 생성 가능.
+
+### `app/strategies/lot_stacking.py` - LOT Stacking 전략 (~571줄)
+**분할 매수 + 익절 전략.** 가격 하락 시 일정 비율마다 매수하고, 상승 시 익절.
+
+**tick() 내부 흐름 (매 60초마다 실행):**
+1. `_process_pending_buy()`: 대기 중인 매수 주문 확인
+   - 체결됨 → `on_fill()` 호출하여 로트 생성
+   - 타임아웃(5분) → 주문 취소
+   - 리바운드 감지 → 주문 취소 (가격이 되돌아온 경우)
+2. `_maybe_recenter_base()`: 기준가 리센터
+   - EMA(지수이동평균)를 업데이트하고, 현재가가 기준가 대비 일정% 이상 이탈하면 기준가를 조정
+3. `_maybe_take_profit()`: 익절 판단
+   - 보유 중인 로트 중 매수가 대비 일정% 이상 상승한 로트에 매도 주문
+4. `_maybe_buy_on_drop()`: 하락 매수 판단
+   - 현재가가 기준가 대비 일정% 이상 하락하면 매수 주문 생성
+
+**on_fill() 내부:**
+- 매수 체결 → 새 로트(Lot) 행 생성, 코어 버킷(core_bucket) USDT 분배 계산
+- 코어 버킷이 임계값 초과 → 리저브 풀로 BTC 이동
+
+**상태키 예시:** `base_price`, `recenter_ema`, `pending_order_id`, `core_bucket_usdt` 등
+
+### `app/strategies/trend_buy.py` - TREND Buy 전략 (~498줄)
+**추세 매수 전략.** LOT 기준가 위에서 단계적으로 매수하여 상승 추세에 참여.
+
+**LOT과의 차이점:**
+- LOT은 하락 시 매수, TREND는 상승 추세에서 매수
+- TREND는 LOT의 `base_price`를 읽어와서 활성화 기준으로 사용 (교차 참조)
+- 매수 간격이 `step_pct`로 균일하게 분포
+
+**교차 스코프 참조:**
+```python
+# TREND 전략이 LOT의 base_price를 읽는 방식
+lot_state = StrategyStateStore(account_id, "lot_stacking", session)
+lot_base_price = await lot_state.get_float("base_price")
+```
+
+### `app/strategies/__init__.py` - 전략 패키지 초기화
+모든 전략 관련 클래스를 재수출하고, LOT/TREND 전략 모듈을 import하여 자동 등록.
+
+---
+
+## 8. app/services/ - 비즈니스 로직 서비스
+
+### `app/services/trading_engine.py` - 멀티 계정 트레이딩 엔진
+**모든 계정의 자동매매를 총괄하는 오케스트레이터.**
+
+**동작 방식:**
+1. `start()`: 모든 활성 계정을 DB에서 로드 → 각 계정마다 `AccountTrader`를 생성하고 asyncio Task로 실행
+2. **스태거드 스케줄링**: 계정 간 시작 시간을 `jitter = random(0~3초) + (순번 * 0.5초)`만큼 분산
+   - 모든 계정이 동시에 API를 호출하는 것을 방지
+3. `stop_account(id)`, `start_account(id)`: 개별 계정 시작/중지
+4. `reload_account(id)`: 중지 후 재시작 (설정 변경 적용 시)
+5. `get_account_health()`: 모든 계정의 건강 상태 조회
+
+**공유 자원:**
+- `PriceCollector`: 동일 심볼 가격 조회를 중복하지 않음
+- `GlobalRateLimiter`: 모든 계정이 하나의 속도 제한기를 공유
+
+### `app/services/account_trader.py` - 단일 계정 매매 루프
+**하나의 계정에 대한 자동매매 루프.** TradingEngine이 각 계정마다 하나씩 생성.
+
+**`run_forever()` 메인 루프:**
+```
+while 실행중:
+    try:
+        step()을 호출하여 매매 사이클 1회 실행
+    except 오류:
+        연속 실패 카운터 증가
+        5회 이상이면 → 서킷 브레이커 발동 (계정 비활성화)
+        아니면 → 지수 백오프로 대기 (1s, 2s, 4s, 8s, max 60s)
+    성공 시:
+        루프 간격(기본 60초)만큼 대기
+```
+
+**`step()` 매매 사이클:**
+1. DB에서 계정 정보 로드
+2. 레이트 리미터에서 API 호출 용량 확보
+3. 거래소와 주문/체결 데이터 동기화 (`_sync_orders_and_fills`)
+4. 현재 가격 조회 (PriceCollector 경유)
+5. 가격 스냅샷/캔들 저장
+6. 활성화된 전략들의 `tick()` 실행
+7. 성공 기록 (연속 실패 카운터 리셋)
+
+**전략 인스턴스 캐시:** `_strategy_instances` 딕셔너리에 전략 인스턴스를 캐시. 계정 생명주기 동안 재사용.
+
+### `app/services/rate_limiter.py` - API 속도 제한기
+바이낸스 API의 속도 제한(1200 weight/분)에 걸리지 않도록 보호.
+
+**`GlobalRateLimiter`:**
+- `aiolimiter`의 `AsyncLimiter`를 래핑
+- 기본 1000 weight/분 (1200의 83% 안전 마진)
+- `acquire(weight)`: 지정 가중치만큼 용량 확보, 초과 시 자동 대기
+
+**`CircuitBreaker`:**
+- 정의만 있고 현재는 `AccountTrader`에서 인라인으로 구현됨
+- `MAX_FAILURES = 5`: 5회 연속 실패 시 계정 비활성화
+
+### `app/services/price_collector.py` - 가격 수집기
+**심볼별 가격을 중앙에서 관리.** 여러 계정이 같은 심볼(예: BTCUSDT)을 사용해도 가격 조회는 1회만.
+
+**동작:**
+1. `register_client(symbol, client)`: AccountTrader가 초기화 시 자기 클라이언트를 등록 (첫 번째만 저장)
+2. `get_price(symbol)`: 캐시된 가격 반환, 없으면 `refresh_symbol()` 호출
+3. `maybe_store_snapshot()` / `maybe_store_candle()`: 5분 버킷 기준으로 중복 없이 DB에 저장
+
+### `app/services/account_service.py` - 계정 서비스
+계정 CRUD + API 키 암호화 관리를 담당하는 서비스 계층.
+
+**주요 기능:**
+- `create_account(...)`: 계정 생성 시 API 키를 MultiFernet으로 **암호화 후 저장**
+- `decrypt_api_key(account)` / `decrypt_api_secret(account)`: 복호화 (AccountTrader 초기화 시 사용)
+- `update_api_keys(account_id, ...)`: API 키 변경 시 재암호화
+- `reset_circuit_breaker(account_id)`: 서킷 브레이커 리셋
+
+### `app/services/account_state_manager.py` - 공유 상태 매니저
+LOT과 TREND 전략이 **공유하는 리저브 풀**을 관리.
+
+내부적으로 `StrategyStateStore(account_id, scope="shared", session)`을 사용.
+
+**주요 메서드:**
+- `get_reserve_qty()` / `set_reserve_qty(v)`: 리저브 BTC 수량
+- `get_reserve_cost_usdt()` / `set_reserve_cost_usdt(v)`: 리저브 원가
+- `add_to_reserve(qty, cost)`: 리저브에 추가 (LOT/TREND 코어 버킷 초과분)
+
+### `app/services/auth_service.py` - 인증 서비스
+Supabase Auth를 통한 Google OAuth 로그인 처리.
+
+**흐름:**
+1. `get_google_oauth_url(redirect_url)`: Google 로그인 URL 생성
+2. `exchange_code_for_session(code)`: OAuth 콜백 코드 → access_token + refresh_token 교환
+3. `get_user_from_token(access_token)`: 토큰으로 사용자 정보 조회 (검증)
+4. `refresh_session(refresh_token)`: 만료된 access_token 갱신
+5. `ensure_user_profile(user_id, email)`: user_profiles 테이블에 행 존재 보장 (upsert)
+6. `get_user_role(user_id)`: 사용자 역할(admin/user) 조회
+
+**두 종류의 Supabase 클라이언트:**
+- `_anon_client` (anon key): 일반 사용자 인증 작업
+- `_service_client` (service role key): RLS를 우회하는 관리자 작업 (user_profiles upsert 등)
+
+### `app/services/session_manager.py` - 세션 매니저
+`itsdangerous`의 `URLSafeTimedSerializer`를 사용한 서버사이드 세션 관리.
+
+**동작:**
+1. `create_session_cookie(access_token, refresh_token)`: 토큰을 서명된 쿠키 값으로 인코딩
+2. `read_session_cookie(cookie_value)`: 쿠키에서 토큰 추출 (서명 검증 + 7일 만료 확인)
+
+**쿠키 설정:**
+- `httponly=True`: JavaScript에서 접근 불가 (XSS 방지)
+- `secure=True`: HTTPS에서만 전송 (운영 환경)
+- `samesite="lax"`: CSRF 완화
+- `max_age=7일`: 쿠키 유효 기간
+
+---
+
+## 9. app/middleware/ - HTTP 미들웨어
+
+### `app/middleware/auth_middleware.py` - 인증 미들웨어
+독립 파일로 정의된 `AuthMiddleware` 클래스. (현재는 `main.py`의 `LazyAuthMiddleware`가 실제 사용됨)
+
+**동작:** 쿠키에서 세션 토큰 추출 → Supabase 검증 → 만료 시 자동 갱신 → `request.state.user`에 주입
+
+**`LazyAuthMiddleware`** (main.py에 정의):
+- AuthMiddleware의 "지연 초기화" 버전. 앱 시작 시에는 아직 auth_service가 없으므로
+  요청 시점에 `app.state`에서 가져옴
+
+### `app/middleware/csrf_middleware.py` - CSRF 설정
+`starlette-csrf` 미들웨어의 설정. SSR 폼 POST 요청에 CSRF 토큰을 요구하여 CSRF 공격 방어.
+
+**면제 경로:** `/api/auth/callback`, `/health` (인증 콜백과 헬스체크는 CSRF 불요)
+
+---
+
+## 10. app/api/ - REST API 엔드포인트
+
+### `app/api/__init__.py` - API 패키지
+6개 라우터를 모아서 재수출.
+
+### `app/api/health.py` - 헬스 체크 (`GET /health`)
+인증 없이 접근 가능. 시스템 건강 상태 반환.
+
+```json
+{
+  "status": "healthy",  // 또는 "degraded"
+  "accounts": {
+    "uuid-1": {"running": true, "consecutive_failures": 0, "last_success_at": 1234567890}
+  }
+}
+```
+
+### `app/api/auth.py` - 인증 API (`/api/auth/*`)
+
+| 엔드포인트 | 설명 |
+|------------|------|
+| `GET /api/auth/google` | Google 로그인 URL 반환 |
+| `GET /api/auth/callback` | OAuth 콜백. 코드→토큰 교환 → 세션 쿠키 설정 → /accounts로 리다이렉트 |
+| `POST /api/auth/logout` | 세션 쿠키 삭제 → /login으로 리다이렉트 |
+| `GET /api/auth/me` | 현재 로그인한 사용자 정보 |
+
+### `app/api/accounts.py` - 계정 관리 API (`/api/accounts/*`)
+
+| 엔드포인트 | 설명 |
+|------------|------|
+| `GET /api/accounts` | 내 계정 목록 |
+| `POST /api/accounts` | 계정 생성 (API 키 암호화 저장) |
+| `GET /api/accounts/{id}` | 계정 상세 |
+| `PUT /api/accounts/{id}` | 계정 수정 |
+| `DELETE /api/accounts/{id}` | 계정 삭제 |
+| `POST /api/accounts/{id}/start` | 매매 시작 |
+| `POST /api/accounts/{id}/stop` | 매매 중지 |
+| `POST /api/accounts/{id}/reset-circuit-breaker` | 서킷 브레이커 리셋 (관리자 전용) |
+
+**보안:** 모든 엔드포인트에서 `owner_id` 확인. 본인 계정 또는 관리자만 접근 가능.
+
+### `app/api/strategies.py` - 전략 API (`/api/accounts/{id}/strategies/*`)
+
+| 엔드포인트 | 설명 |
+|------------|------|
+| `GET /api/strategies` | 사용 가능한 전략 목록 + 파라미터 스키마 |
+| `GET /api/accounts/{id}/strategies` | 계정의 전략 설정 목록 |
+| `PUT /api/accounts/{id}/strategies/{name}` | 전략 파라미터 수정 |
+| `POST /api/accounts/{id}/strategies/{name}/enable` | 전략 활성화 |
+| `POST /api/accounts/{id}/strategies/{name}/disable` | 전략 비활성화 |
+
+### `app/api/dashboard.py` - 대시보드 데이터 API (`/api/dashboard/*`)
+
+| 엔드포인트 | 설명 |
+|------------|------|
+| `GET /api/dashboard/{id}` | 계정별 대시보드 종합 (포지션, 로트 수, 수익, 리저브, 건강상태) |
+| `GET /api/dashboard/{id}/lots` | 로트 목록 (전략/상태 필터) |
+| `GET /api/dashboard/{id}/trades` | 주문 내역 |
+| `GET /api/dashboard/{id}/price_candles` | 5분봉 차트 데이터 |
+| `GET /api/dashboard/{id}/tune` | 튜닝 값 조회 (전략 파라미터) |
+| `POST /api/dashboard/{id}/tune` | 튜닝 값 저장 (봇 재시작 없이 실시간 적용) |
+
+**보안:** 모든 엔드포인트에 `_check_account_access()` 소유권 확인. 본인 계정 또는 관리자만 접근.
+
+### `app/api/admin.py` - 관리자 API (`/api/admin/*`)
+
+| 엔드포인트 | 설명 |
+|------------|------|
+| `GET /api/admin/accounts` | 전체 계정 목록 + 건강 상태 |
+| `GET /api/admin/users` | 전체 사용자 목록 |
+| `GET /api/admin/overview` | 시스템 전체 현황 (계정 수, 활성 수, 총 수익 등) |
+| `POST /api/admin/users/{id}/role` | 사용자 역할 변경 (user ↔ admin) |
+
+**보안:** 모든 엔드포인트에 `require_admin` 의존성. `role="admin"`인 사용자만 접근.
+
+### `app/api/backtest.py` - 백테스트 API (`/api/backtest/*`)
+
+| 엔드포인트 | 설명 |
+|------------|------|
+| `POST /api/backtest/run` | 백테스트 실행. 심볼, 기간, 전략, 초기 자금을 지정하면 수익률 결과 반환 |
+
+---
+
+## 11. app/schemas/ - API 요청/응답 스키마
+
+Pydantic v2 모델. API의 요청 바디와 응답 형식을 정의하고 자동 검증.
+
+### `app/schemas/auth.py`
+- `UserResponse`: 사용자 정보 (id, email, role)
+- `LoginUrlResponse`: Google 로그인 URL
+
+### `app/schemas/account.py`
+- `AccountCreate`: 계정 생성 요청 (name, api_key, api_secret, symbol 등)
+- `AccountUpdate`: 계정 수정 요청
+- `AccountResponse`: 계정 상세 응답 (API 키는 제외)
+- `AccountListResponse`: 계정 목록 응답
+
+### `app/schemas/strategy.py`
+- `StrategyInfo`: 전략 정보 (name, display_name, default_params)
+- `StrategyConfigResponse`: 계정별 전략 설정
+- `StrategyParamsUpdate`: 파라미터 수정 요청
+
+### `app/schemas/trade.py`
+- `LotResponse`: 로트 정보 (매수가, 수량, 상태, 손익)
+- `OrderResponse`: 주문 정보
+
+### `app/schemas/dashboard.py`
+- `DashboardSummary`: 대시보드 종합 데이터
+- `AssetStatus`: 자산 현황
+- `TuneValues`: 튜닝 값 조회 응답
+- `TuneUpdate`: 튜닝 값 수정 요청 (strategy_name + params)
+
+### `app/schemas/settings.py`
+- `StrategyStateResponse`: 전략 상태 키-값
+- `AccountSettingsResponse`: 계정 설정 종합
+
+---
+
+## 12. app/dashboard/ - 대시보드 UI (SSR)
+
+서버사이드 렌더링(SSR) 방식의 웹 대시보드. FastAPI + Jinja2 템플릿.
+
+### `app/dashboard/routes.py` - 페이지 라우트
+SSR HTML 페이지를 서빙하는 라우터.
+
+| 경로 | 설명 |
+|------|------|
+| `/login` | Google 로그인 페이지 (공개) |
+| `/accounts` | 내 계정 목록 (인증 필요) |
+| `/accounts/{account_id}` | 계정별 대시보드 (인증 필요) |
+| `/admin` | 관리자 전체 뷰 (admin만) |
+
+### `app/dashboard/templates/base.html` - 베이스 레이아웃
+모든 페이지가 상속하는 HTML 템플릿.
+- 네비게이션 바: 로고, 계정 목록 링크, 관리자 링크(admin만), 사용자 이메일, 로그아웃
+- CSS/JS 로딩
+- content, scripts 블록
+
+### `app/dashboard/templates/login.html` - 로그인 페이지
+중앙 정렬된 카드에 "Sign in with Google" 버튼. `/api/auth/google`으로 링크.
+
+### `app/dashboard/templates/accounts.html` - 계정 목록
+- 계정 카드 그리드 (JS로 `/api/accounts`에서 데이터 로딩)
+- 각 카드: 계정 이름, 심볼, 활성 상태, 건강 상태 표시
+- "Add Account" 버튼 + 모달 폼
+
+### `app/dashboard/templates/account_detail.html` - 계정 대시보드
+**가장 복잡한 페이지.** 5개 섹션으로 구성:
+
+1. **가격 차트**: LightweightCharts CDN으로 5분봉 캔들 차트 표시, 매수/매도 마커
+2. **자산 현황**: BTC 잔고, USDT 잔고, 리저브 풀 정보
+3. **로트 테이블**: LOT Stacking / TREND Buy 별 보유 로트 (매수가, 수량, 손익)
+4. **튜닝 컨트롤**: 전략 파라미터를 실시간으로 조정할 수 있는 폼 (POST with CSRF)
+5. **서킷 브레이커 상태**: 발동 여부 + 리셋 버튼
+
+### `app/dashboard/templates/admin.html` - 관리자 뷰
+- 시스템 건강 요약 (활성 계정 수, 전체 수익 등)
+- 전체 계정 테이블 (서킷 브레이커 리셋 버튼 포함)
+- 전체 사용자 테이블 (역할 변경 드롭다운)
+
+### `app/dashboard/static/css/style.css` - 스타일시트
+다크 테마 트레이딩 대시보드 디자인.
+- CSS 변수: `--bg: #0f172a`, `--card-bg: #1e293b`, `--primary: #2563eb`
+- 반응형 그리드, 카드, 테이블, 폼, 버튼, 상태 배지 스타일
+
+### `app/dashboard/static/js/main.js` - 클라이언트 JavaScript
+대시보드의 모든 동적 기능을 담당.
+
+**핵심 함수:**
+- `apiFetch(url, options)`: fetch 래퍼 (credentials 포함, 401 시 자동 리다이렉트)
+- `getCsrfToken()`: meta 태그 또는 쿠키에서 CSRF 토큰 추출
+- `loadAccounts()`: 계정 목록 로딩 및 카드 렌더링
+- `loadPriceChart(accountId)`: LightweightCharts로 캔들 차트 그리기
+- `loadLots(accountId)`: 로트 테이블 렌더링 + 전략별 필터 탭
+- `loadTuneValues(accountId)`: 튜닝 폼에 현재 값 채우기
+- `saveTuneValues(accountId)`: 튜닝 값 POST (CSRF 토큰 포함)
+- `resetCircuitBreaker(accountId)`: 서킷 브레이커 리셋 API 호출
+- `loadAdminOverview()`: 관리자 페이지 데이터 로딩
+
+---
+
+## 13. app/utils/ - 유틸리티
+
+### `app/utils/encryption.py` - 암호화 매니저
+바이낸스 API 키를 안전하게 저장하기 위한 **MultiFernet 다중 키 암호화**.
+
+**MultiFernet 동작 원리:**
+- 암호화: **첫 번째 키(newest)**로 수행
+- 복호화: **모든 키를 순서대로** 시도 (어떤 키로 암호화했든 복호화 가능)
+- 키 로테이션: 새 키를 `ENCRYPTION_KEYS` 맨 앞에 추가 → 기존 데이터도 여전히 복호화 가능
+
+### `app/utils/logging.py` - 구조화 로깅
+**JSON 형식 로깅** + `account_id` 컨텍스트 자동 포함.
+
+**`StructuredFormatter`:**
+```json
+{
+  "ts": "2026-02-24 10:00:00",
+  "level": "INFO",
+  "account_id": "uuid-of-account",
+  "msg": "매수 주문 생성: BTCUSDT @ 50000",
+  "module": "lot_stacking"
+}
+```
+
+**`current_account_id`:** `contextvars.ContextVar`를 사용하여 각 매매 루프에서 자동으로
+해당 계정 ID가 모든 로그에 포함됨. 멀티 계정 환경에서 어떤 로그가 어떤 계정의 것인지 추적 가능.
+
+---
+
+## 14. alembic/ - DB 마이그레이션
+
+### `alembic/env.py` - Alembic 환경 설정
+SQLAlchemy 모델의 메타데이터를 Alembic에 연결. 비동기 엔진 사용.
+
+### `alembic/versions/001_initial_schema.py` - 초기 스키마
+모든 테이블을 생성하는 첫 번째 마이그레이션.
+- 11개 테이블 생성
+- `is_admin()` SECURITY DEFINER 함수 생성 (RLS에서 admin 판단 시 자기참조 재귀 방지)
+- 인덱스 생성
+
+---
+
+## 15. backtest/ - 백테스트 엔진
+
+### `backtest/runner.py` - 백테스트 러너
+과거 가격 데이터로 전략의 수익률을 시뮬레이션.
+
+**동작:**
+1. DB에서 지정 기간의 5분봉 캔들 데이터 로드
+2. `BacktestClient` 생성 (가상 거래소)
+3. 임시 account_id 생성
+4. 각 캔들에 대해:
+   - `client.set_price(close_price)`: 시뮬레이션 가격 설정 (자동으로 대기 주문 체결 확인)
+   - 각 전략의 `tick()` 호출: 실제 매매 로직과 동일하게 동작
+5. 최종 잔고 계산: USDT + (BTC * 최종가)
+6. 결과 반환: 수익률, 거래 횟수, 최종 잔고
+
+---
+
+## 16. scripts/ - 운영 스크립트
+
+### `scripts/migrate_from_old.py` - 기존 봇 데이터 마이그레이션
+`btc-staking-bot`의 데이터를 새 시스템으로 이관.
+
+**매핑 테이블 (19개 키):**
+| 기존 키 | 새 위치 |
+|---------|---------|
+| `base_price.BTCUSDT` | `strategy_state[lot_stacking].base_price` |
+| `core_bucket_usdt` | `strategy_state[lot_stacking].core_bucket_usdt` |
+| `reserve_btc_qty` | `strategy_state[shared].reserve_qty` |
+| `trend_base_price` | `strategy_state[trend_buy].base_price` |
+| `tune.lot_drop_pct` | `strategy_configs[lot_stacking].params.drop_pct` |
+| ... | (19개 매핑) |
+
+**이관 대상 테이블:**
+- btc_lots → lots (strategy_name='lot_stacking')
+- btc_trend_lots → lots (strategy_name='trend_buy')
+- btc_orders → orders
+- btc_fills → fills
+- btc_position → positions
+- core_btc_history → core_btc_history
+- price_snapshots, price_candles_5m → 그대로 복사
+
+**사용법:**
+```bash
+python scripts/migrate_from_old.py \
+  --legacy-db-url "postgresql://..." \
+  --new-db-url "postgresql+asyncpg://..." \
+  --api-key "바이낸스키" \
+  --api-secret "시크릿" \
+  --account-label "기존봇계정" \
+  --dry-run  # 실제 쓰기 없이 확인만
+```
+
+### `scripts/rotate_encryption_key.py` - 암호화 키 로테이션
+모든 계정의 API 키를 새 암호화 키로 재암호화.
+
+**사용 절차:**
+1. 새 Fernet 키 생성
+2. `ENCRYPTION_KEYS` 환경변수 맨 앞에 새 키 추가
+3. 이 스크립트 실행 → 모든 계정의 API 키가 새 키로 재암호화
+
+---
+
+## 17. docker/ - 컨테이너 배포
+
+### `docker/Dockerfile`
+2단계 빌드:
+1. **builder 단계**: Python 3.12-slim에서 requirements.txt 설치
+2. **runtime 단계**: 설치된 패키지만 복사, 비root 사용자로 실행
+
+### `docker/docker-compose.yml`
+두 서비스:
+- **app**: 메인 앱 (포트 8000, .env 로딩)
+- **db**: PostgreSQL 16 Alpine (볼륨 마운트로 데이터 영속화)
+
+---
+
+## 18. systemd/ - 시스템 서비스
+
+### `systemd/crypto-multi-trader.service`
+Linux systemd 서비스 파일. `Restart=always`로 크래시 시 자동 재시작.
+보안 강화: `NoNewPrivileges`, `PrivateTmp`, `ProtectSystem=strict`.
+
+---
+
+## 19. tests/ - 테스트
+
+테스트 디렉토리 구조가 생성되어 있음. 각 모듈별 테스트 패키지:
+- `tests/test_api/`: API 엔드포인트 테스트
+- `tests/test_exchange/`: 거래소 클라이언트 테스트
+- `tests/test_services/`: 서비스 계층 테스트
+- `tests/test_strategies/`: 전략 로직 테스트
+
+---
+
+## 20. 데이터 흐름 요약
+
+### 매매 루프 (60초 주기)
+```
+[TradingEngine]
+    ├── [AccountTrader #1] ──────────── asyncio Task
+    │       │
+    │       ├── [PriceCollector] ← 가격 조회 (심볼별 1회만)
+    │       ├── [GlobalRateLimiter] ← API 호출 속도 제한
+    │       ├── [BinanceClient] ← 실제 거래소 API (asyncio.to_thread)
+    │       │
+    │       ├── [LotStackingStrategy.tick()]
+    │       │       ├── StrategyStateStore (scope=lot_stacking)
+    │       │       ├── ExchangeClient (매수/매도 주문)
+    │       │       └── LotRepository (로트 생성/닫기)
+    │       │
+    │       └── [TrendBuyStrategy.tick()]
+    │               ├── StrategyStateStore (scope=trend_buy)
+    │               ├── StrategyStateStore (scope=lot_stacking) ← 교차 참조
+    │               └── AccountStateManager (scope=shared) ← 리저브 풀 공유
+    │
+    ├── [AccountTrader #2] ──────────── 독립 asyncio Task
+    └── [AccountTrader #N] ──────────── ...
+```
+
+### 인증 흐름
+```
+사용자 → /login → "Sign in with Google" 클릭
+    → /api/auth/google → Google OAuth URL 반환
+    → Google 로그인
+    → /api/auth/callback (code 수신)
+        → Supabase: code → access_token + refresh_token
+        → itsdangerous: 토큰을 서명된 쿠키로 인코딩
+        → Set-Cookie (httponly, secure, samesite=lax)
+    → /accounts 리다이렉트
+
+이후 모든 요청:
+    LazyAuthMiddleware → 쿠키에서 토큰 추출 → Supabase 검증
+    → 만료 시 자동 갱신 → request.state.user에 주입
+```
+
+### 보안 계층
+```
+1. 암호화: API 키 → MultiFernet 암호화 → DB 저장
+2. 인증: Google OAuth → Supabase Auth → 서명된 쿠키 세션
+3. 권한: owner_id 확인 (본인 계정만) + role 확인 (admin 전용 기능)
+4. CSRF: starlette-csrf 미들웨어 → SSR POST 요청에 토큰 요구
+5. 속도 제한: GlobalRateLimiter → 바이낸스 API 1000 weight/분
+6. 장애 격리: 서킷 브레이커 → 5회 연속 실패 시 계정 자동 비활성화
+```

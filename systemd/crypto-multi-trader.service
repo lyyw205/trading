@@ -1,0 +1,26 @@
+[Unit]
+Description=Crypto Multi-Trader Bot
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=appuser
+Group=appuser
+WorkingDirectory=/opt/crypto-multi-trader
+EnvironmentFile=/opt/crypto-multi-trader/.env
+ExecStart=/usr/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=crypto-multi-trader
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/crypto-multi-trader
+
+[Install]
+WantedBy=multi-user.target
