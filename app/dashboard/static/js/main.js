@@ -552,6 +552,254 @@ async function changeUserRole(userId, role) {
 }
 
 /* ============================================================
+   Backtest
+   ============================================================ */
+
+let _backtestPollTimer = null;
+
+/**
+ * Show/hide tune panels based on strategy checkbox state.
+ * @param {string} which - 'lot' or 'trend'
+ */
+function toggleBtTunePanel(which) {
+  if (which === 'lot') {
+    const panel = document.getElementById('bt-tune-lot');
+    if (panel) panel.style.display = document.getElementById('bt-strat-lot').checked ? '' : 'none';
+  } else if (which === 'trend') {
+    const panel = document.getElementById('bt-tune-trend');
+    if (panel) panel.style.display = document.getElementById('bt-strat-trend').checked ? '' : 'none';
+  }
+}
+
+/**
+ * Collect strategy params from tune panels.
+ * @returns {Object} e.g. { "lot_stacking": { ... }, "trend_buy": { ... } }
+ */
+function _collectBtStrategyParams() {
+  const params = {};
+
+  if (document.getElementById('bt-strat-lot').checked) {
+    params.lot_stacking = {};
+    const fields = {
+      'bt-ls-drop-pct': 'drop_pct',
+      'bt-ls-tp-pct': 'tp_pct',
+      'bt-ls-buy-usdt': 'buy_usdt',
+      'bt-ls-prebuy-pct': 'prebuy_pct',
+      'bt-ls-cancel-rebound-pct': 'cancel_rebound_pct',
+      'bt-ls-recenter-pct': 'recenter_pct',
+      'bt-ls-recenter-ema-n': 'recenter_ema_n',
+    };
+    for (const [elId, key] of Object.entries(fields)) {
+      const el = document.getElementById(elId);
+      if (el && el.value !== '') params.lot_stacking[key] = parseFloat(el.value);
+    }
+    const reEl = document.getElementById('bt-ls-recenter-enabled');
+    if (reEl) params.lot_stacking.recenter_enabled = reEl.value === 'true';
+  }
+
+  if (document.getElementById('bt-strat-trend').checked) {
+    params.trend_buy = {};
+    const fields = {
+      'bt-tb-drop-pct': 'drop_pct',
+      'bt-tb-tp-pct': 'tp_pct',
+      'bt-tb-buy-usdt': 'buy_usdt',
+      'bt-tb-enable-pct': 'enable_pct',
+      'bt-tb-recenter-pct': 'recenter_pct',
+      'bt-tb-step-pct': 'step_pct',
+    };
+    for (const [elId, key] of Object.entries(fields)) {
+      const el = document.getElementById(elId);
+      if (el && el.value !== '') params.trend_buy[key] = parseFloat(el.value);
+    }
+  }
+
+  return params;
+}
+
+/**
+ * Start a new backtest run.
+ */
+async function startBacktest() {
+  const symbol = document.getElementById('bt-symbol').value;
+  const initialUsdt = parseFloat(document.getElementById('bt-initial-usdt').value) || 10000;
+  const startDate = document.getElementById('bt-start-date').value;
+  const endDate = document.getElementById('bt-end-date').value;
+
+  if (!startDate || !endDate) {
+    showToast('Please select start and end dates', 'error');
+    return;
+  }
+
+  const startTsMs = new Date(startDate).getTime();
+  const endTsMs = new Date(endDate + 'T23:59:59').getTime();
+
+  if (startTsMs >= endTsMs) {
+    showToast('Start date must be before end date', 'error');
+    return;
+  }
+
+  const strategies = [];
+  if (document.getElementById('bt-strat-lot').checked) strategies.push('lot_stacking');
+  if (document.getElementById('bt-strat-trend').checked) strategies.push('trend_buy');
+
+  if (!strategies.length) {
+    showToast('Select at least one strategy', 'error');
+    return;
+  }
+
+  const strategyParams = _collectBtStrategyParams();
+
+  const btn = document.getElementById('bt-run-btn');
+  btn.disabled = true;
+  btn.textContent = 'Starting...';
+
+  try {
+    const resp = await apiFetch('/api/backtest/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+      body: JSON.stringify({
+        symbol,
+        start_ts_ms: startTsMs,
+        end_ts_ms: endTsMs,
+        initial_usdt: initialUsdt,
+        strategies,
+        strategy_params: strategyParams,
+      }),
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.detail || 'Failed to start backtest');
+    }
+
+    const data = await resp.json();
+    showToast('Backtest started', 'success');
+
+    // Start polling
+    _startBacktestPolling(data.id);
+    loadBacktestHistory();
+  } catch (e) {
+    showToast('Error: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Run Backtest';
+  }
+}
+
+/**
+ * Poll backtest status until completed/failed.
+ * @param {string} runId
+ */
+function _startBacktestPolling(runId) {
+  if (_backtestPollTimer) clearInterval(_backtestPollTimer);
+
+  _backtestPollTimer = setInterval(async () => {
+    try {
+      const resp = await apiFetch('/api/backtest/' + runId + '/status');
+      if (!resp.ok) return;
+      const data = await resp.json();
+
+      if (data.status === 'COMPLETED' || data.status === 'FAILED') {
+        clearInterval(_backtestPollTimer);
+        _backtestPollTimer = null;
+        loadBacktestHistory();
+        if (data.status === 'COMPLETED') {
+          showToast('Backtest completed!', 'success');
+        } else {
+          showToast('Backtest failed: ' + (data.error_message || 'Unknown error'), 'error');
+        }
+      }
+    } catch (e) {
+      // ignore polling errors
+    }
+  }, 2000);
+}
+
+/**
+ * Load backtest history table.
+ */
+async function loadBacktestHistory() {
+  const tbody = document.getElementById('backtest-history-tbody');
+  if (!tbody) return;
+
+  try {
+    const resp = await apiFetch('/api/backtest/list');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const runs = await resp.json();
+
+    if (!runs.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="table-empty">No backtests yet</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = runs.map(r => {
+      const created = new Date(r.created_at).toLocaleString();
+      const startD = new Date(r.start_ts_ms).toLocaleDateString();
+      const endD = new Date(r.end_ts_ms).toLocaleDateString();
+      const strats = r.strategies.join(', ');
+      const pnlClass = r.pnl_pct != null ? (r.pnl_pct >= 0 ? 'pnl-positive' : 'pnl-negative') : '';
+      const pnlText = r.pnl_pct != null ? r.pnl_pct.toFixed(2) + '%' : '-';
+
+      let statusBadge = '';
+      if (r.status === 'COMPLETED') statusBadge = '<span class="status-badge badge-success">Completed</span>';
+      else if (r.status === 'RUNNING') statusBadge = '<span class="status-badge badge-warning">Running</span>';
+      else if (r.status === 'PENDING') statusBadge = '<span class="status-badge badge-neutral">Pending</span>';
+      else statusBadge = '<span class="status-badge badge-danger">Failed</span>';
+
+      let actions = '';
+      if (r.status === 'COMPLETED') {
+        actions = `<a href="/admin/backtest/${r.id}" class="btn btn-outline btn-sm">View Report</a>`;
+      }
+      if (r.status !== 'RUNNING' && r.status !== 'PENDING') {
+        actions += ` <button class="btn btn-danger btn-sm" onclick="deleteBacktest('${r.id}')">Delete</button>`;
+      }
+
+      return `<tr>
+        <td>${escapeHtml(created)}</td>
+        <td>${escapeHtml(r.symbol)}</td>
+        <td>${escapeHtml(strats)}</td>
+        <td>${escapeHtml(startD)} ~ ${escapeHtml(endD)}</td>
+        <td class="${pnlClass}">${pnlText}</td>
+        <td>${statusBadge}</td>
+        <td>${actions}</td>
+      </tr>`;
+    }).join('');
+
+    // Auto-poll if any are still running/pending
+    const hasActive = runs.some(r => r.status === 'RUNNING' || r.status === 'PENDING');
+    if (hasActive && !_backtestPollTimer) {
+      const activeRun = runs.find(r => r.status === 'RUNNING' || r.status === 'PENDING');
+      if (activeRun) _startBacktestPolling(activeRun.id);
+    }
+  } catch (e) {
+    tbody.innerHTML = '<tr><td colspan="7" class="table-empty error-text">Failed to load history</td></tr>';
+  }
+}
+
+/**
+ * Delete a backtest run.
+ * @param {string} runId
+ */
+async function deleteBacktest(runId) {
+  if (!confirm('Delete this backtest?')) return;
+  try {
+    const resp = await apiFetch('/api/backtest/' + runId, {
+      method: 'DELETE',
+      headers: { 'X-CSRFToken': getCsrfToken() },
+    });
+    if (resp.ok) {
+      showToast('Backtest deleted', 'success');
+      loadBacktestHistory();
+    } else {
+      const err = await resp.json().catch(() => ({}));
+      showToast('Error: ' + (err.detail || 'Delete failed'), 'error');
+    }
+  } catch (e) {
+    showToast('Network error: ' + e.message, 'error');
+  }
+}
+
+/* ============================================================
    Utility Functions
    ============================================================ */
 
@@ -614,5 +862,6 @@ document.addEventListener('DOMContentLoaded', () => {
     loadAdminOverview();
     loadAdminAccounts();
     loadAdminUsers();
+    loadBacktestHistory();
   }
 });

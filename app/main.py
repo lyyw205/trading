@@ -69,6 +69,25 @@ async def lifespan(app: FastAPI):
     # Start trading (non-blocking)
     engine_task = asyncio.create_task(engine.start())
 
+    # Clean up orphan RUNNING backtests from previous crashes
+    try:
+        from sqlalchemy import update
+        from app.db.session import TradingSessionLocal
+        from app.models.backtest_run import BacktestRun
+
+        async with TradingSessionLocal() as bt_session:
+            stmt = (
+                update(BacktestRun)
+                .where(BacktestRun.status.in_(["RUNNING", "PENDING"]))
+                .values(status="FAILED", error_message="Server restarted during execution")
+            )
+            result = await bt_session.execute(stmt)
+            if result.rowcount > 0:
+                logger.info("Marked %d orphan backtests as FAILED", result.rowcount)
+            await bt_session.commit()
+    except Exception as e:
+        logger.warning("Failed to clean up orphan backtests: %s", e)
+
     yield
 
     # Shutdown

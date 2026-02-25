@@ -43,6 +43,151 @@
   </div>
 </section>
 
+<!-- Backtest -->
+<section class="dashboard-section">
+  <div class="section-header">
+    <h2 class="section-title">Backtest</h2>
+  </div>
+
+  <!-- Config Form -->
+  <div class="tune-panel" style="margin-bottom: 1.25rem;">
+    <h3 class="tune-panel-title">Run Backtest</h3>
+    <form id="backtest-form" class="tune-form" onsubmit="return false;">
+      <div class="tune-grid">
+        <div class="form-group">
+          <label class="form-label">Symbol</label>
+          <select id="bt-symbol" class="form-input">
+            <option value="BTCUSDT" selected>BTCUSDT</option>
+            <option value="ETHUSDT">ETHUSDT</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Initial USDT</label>
+          <input type="number" step="100" id="bt-initial-usdt" class="form-input" value="10000">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Start Date</label>
+          <input type="date" id="bt-start-date" class="form-input">
+        </div>
+        <div class="form-group">
+          <label class="form-label">End Date</label>
+          <input type="date" id="bt-end-date" class="form-input">
+        </div>
+      </div>
+      <div style="margin-top: 0.75rem;">
+        <label class="form-label" style="margin-bottom: 0.5rem; display: block;">Strategies</label>
+        <label style="margin-right: 1rem; cursor: pointer;">
+          <input type="checkbox" id="bt-strat-lot" value="lot_stacking" checked onchange="toggleBtTunePanel('lot')"> LOT Stacking
+        </label>
+        <label style="cursor: pointer;">
+          <input type="checkbox" id="bt-strat-trend" value="trend_buy" onchange="toggleBtTunePanel('trend')"> TREND Buy
+        </label>
+      </div>
+    </form>
+  </div>
+
+  <!-- Strategy Tune Panels (same layout as account_detail.html) -->
+  <div class="tune-panels" style="margin-bottom: 1.25rem;">
+    <!-- LOT Stacking Params -->
+    <div class="tune-panel" id="bt-tune-lot">
+      <h3 class="tune-panel-title">LOT Stacking Parameters</h3>
+      <div class="tune-grid">
+        <div class="form-group">
+          <label class="form-label">Drop % <span class="form-hint">(entry trigger)</span></label>
+          <input type="number" step="0.001" id="bt-ls-drop-pct" class="form-input" value="0.006">
+        </div>
+        <div class="form-group">
+          <label class="form-label">TP % <span class="form-hint">(take profit)</span></label>
+          <input type="number" step="0.001" id="bt-ls-tp-pct" class="form-input" value="0.033">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Buy USDT</label>
+          <input type="number" step="1" id="bt-ls-buy-usdt" class="form-input" value="100">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Pre-buy %</label>
+          <input type="number" step="0.001" id="bt-ls-prebuy-pct" class="form-input" value="0.0015">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Cancel Rebound %</label>
+          <input type="number" step="0.001" id="bt-ls-cancel-rebound-pct" class="form-input" value="0.004">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Recenter %</label>
+          <input type="number" step="0.001" id="bt-ls-recenter-pct" class="form-input" value="0.02">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Recenter EMA N</label>
+          <input type="number" step="1" id="bt-ls-recenter-ema-n" class="form-input" value="40">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Recenter Enabled</label>
+          <select id="bt-ls-recenter-enabled" class="form-input">
+            <option value="true" selected>Yes</option>
+            <option value="false">No</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- TREND Buy Params -->
+    <div class="tune-panel" id="bt-tune-trend" style="display: none;">
+      <h3 class="tune-panel-title">TREND Buy Parameters</h3>
+      <div class="tune-grid">
+        <div class="form-group">
+          <label class="form-label">Drop %</label>
+          <input type="number" step="0.001" id="bt-tb-drop-pct" class="form-input" value="0.01">
+        </div>
+        <div class="form-group">
+          <label class="form-label">TP %</label>
+          <input type="number" step="0.001" id="bt-tb-tp-pct" class="form-input" value="0.03">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Buy USDT</label>
+          <input type="number" step="1" id="bt-tb-buy-usdt" class="form-input" value="50">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Enable %</label>
+          <input type="number" step="0.001" id="bt-tb-enable-pct" class="form-input" value="0.03">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Recenter %</label>
+          <input type="number" step="0.001" id="bt-tb-recenter-pct" class="form-input" value="0.02">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Step %</label>
+          <input type="number" step="0.001" id="bt-tb-step-pct" class="form-input" value="0.01">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-bottom: 1.25rem;">
+    <button type="button" class="btn btn-primary" id="bt-run-btn" onclick="startBacktest()">Run Backtest</button>
+  </div>
+
+  <!-- History Table -->
+  <h3 class="tune-panel-title">History</h3>
+  <div class="table-wrapper">
+    <table class="data-table" id="backtest-history-table">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Symbol</th>
+          <th>Strategies</th>
+          <th>Period</th>
+          <th>PnL %</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="backtest-history-tbody">
+        <tr><td colspan="7" class="table-empty">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
 <!-- Users -->
 <section class="dashboard-section">
   <div class="section-header">
@@ -71,6 +216,13 @@ document.addEventListener('DOMContentLoaded', () => {
   loadAdminOverview();
   loadAdminAccounts();
   loadAdminUsers();
+  loadBacktestHistory();
+
+  // Set default dates (last 7 days)
+  const now = new Date();
+  const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  document.getElementById('bt-end-date').value = now.toISOString().split('T')[0];
+  document.getElementById('bt-start-date').value = weekAgo.toISOString().split('T')[0];
 });
 </script>
 {% endblock %}

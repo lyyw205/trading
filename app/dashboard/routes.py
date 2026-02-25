@@ -37,3 +37,16 @@ async def admin_page(request: Request):
         return RedirectResponse(url="/accounts", status_code=302)
     templates = request.app.state.templates
     return templates.TemplateResponse("admin.html", {"request": request, "user": user})
+
+
+@router.get("/admin/backtest/{backtest_id}", response_class=HTMLResponse)
+async def backtest_report_page(request: Request, backtest_id: str):
+    user = getattr(request.state, "user", None)
+    if not user or user.get("role") != "admin":
+        return RedirectResponse(url="/accounts", status_code=302)
+    templates = request.app.state.templates
+    return templates.TemplateResponse("backtest_report.html", {
+        "request": request,
+        "user": user,
+        "backtest_id": backtest_id,
+    })

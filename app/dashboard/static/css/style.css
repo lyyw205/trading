@@ -492,6 +492,23 @@ select.form-input { cursor: pointer; }
 @keyframes slide-in { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 
 /* ============================================================
+   Backtest
+   ============================================================ */
+.bt-running-indicator {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--warning);
+  animation: bt-pulse 1s ease-in-out infinite;
+  margin-right: 0.4rem;
+}
+@keyframes bt-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* ============================================================
    Responsive
    ============================================================ */
 @media (max-width: 768px) {

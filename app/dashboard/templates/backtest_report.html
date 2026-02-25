@@ -1,0 +1,311 @@
+{% extends "base.html" %}
+
+{% block title %}Backtest Report - Crypto Multi-Trader{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <a href="/admin" class="back-link">&larr; Back to Admin</a>
+  <h1 class="page-title">Backtest Report</h1>
+</div>
+
+<!-- Summary Cards -->
+<section class="dashboard-section">
+  <div class="section-header">
+    <h2 class="section-title">Summary</h2>
+    <span class="section-subtitle" id="bt-report-info"></span>
+  </div>
+  <div id="bt-summary" class="health-grid">
+    <div class="loading-spinner">Loading...</div>
+  </div>
+</section>
+
+<!-- Candlestick Chart with Trade Markers -->
+<section class="dashboard-section">
+  <div class="section-header">
+    <h2 class="section-title">Price Chart &amp; Trades</h2>
+  </div>
+  <div id="bt-price-chart" class="chart-container"></div>
+</section>
+
+<!-- Equity Curve -->
+<section class="dashboard-section">
+  <div class="section-header">
+    <h2 class="section-title">Equity Curve</h2>
+  </div>
+  <div id="bt-equity-chart" class="chart-container" style="height: 300px;"></div>
+</section>
+
+<!-- Strategy Parameters Used -->
+<section class="dashboard-section">
+  <div class="section-header">
+    <h2 class="section-title">Strategy Parameters</h2>
+  </div>
+  <div id="bt-params" class="tune-panels">
+    <div class="loading-spinner">Loading...</div>
+  </div>
+</section>
+
+<!-- Trade Log -->
+<section class="dashboard-section">
+  <div class="section-header">
+    <h2 class="section-title">Trade Log</h2>
+    <span class="section-subtitle" id="bt-trade-count"></span>
+  </div>
+  <div class="table-wrapper">
+    <table class="data-table" id="bt-trade-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Time</th>
+          <th>Side</th>
+          <th>Price</th>
+          <th>Qty</th>
+          <th>Quote Amount</th>
+        </tr>
+      </thead>
+      <tbody id="bt-trade-tbody">
+        <tr><td colspan="6" class="table-empty">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://unpkg.com/lightweight-charts@4/dist/lightweight-charts.standalone.production.js"></script>
+<script>
+const BACKTEST_ID = '{{ backtest_id }}';
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadBacktestReport(BACKTEST_ID);
+});
+
+async function loadBacktestReport(runId) {
+  try {
+    const resp = await apiFetch('/api/backtest/' + runId + '/report');
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.detail || 'Failed to load report');
+    }
+    const report = await resp.json();
+    renderSummary(report);
+    renderStrategyParams(report);
+    renderPriceChart(report);
+    renderEquityCurve(report);
+    renderTradeLog(report);
+  } catch (e) {
+    document.getElementById('bt-summary').innerHTML =
+      '<p class="error-text">Failed to load report: ' + escapeHtml(e.message) + '</p>';
+  }
+}
+
+function renderSummary(report) {
+  const cfg = report.config;
+  const s = report.summary;
+
+  const infoEl = document.getElementById('bt-report-info');
+  if (infoEl) {
+    const startD = new Date(cfg.start_ts_ms).toLocaleDateString();
+    const endD = new Date(cfg.end_ts_ms).toLocaleDateString();
+    infoEl.textContent = cfg.symbol + ' | ' + cfg.strategies.join(', ') + ' | ' + startD + ' ~ ' + endD;
+  }
+
+  if (!s) {
+    document.getElementById('bt-summary').innerHTML = '<p class="error-text">No summary data</p>';
+    return;
+  }
+
+  const pnlClass = s.pnl_pct >= 0 ? 'pnl-positive' : 'pnl-negative';
+  const ddClass = s.max_drawdown_pct < 0 ? 'pnl-negative' : '';
+
+  document.getElementById('bt-summary').innerHTML = `
+    <div class="health-card">
+      <div class="health-card-label">Initial Value</div>
+      <div class="health-card-value">${fmtNum(cfg.initial_usdt, 2)} USDT</div>
+    </div>
+    <div class="health-card">
+      <div class="health-card-label">Final Value</div>
+      <div class="health-card-value">${fmtNum(s.final_value_usdt, 2)} USDT</div>
+    </div>
+    <div class="health-card">
+      <div class="health-card-label">PnL</div>
+      <div class="health-card-value ${pnlClass}">${s.pnl_usdt >= 0 ? '+' : ''}${fmtNum(s.pnl_usdt, 2)} USDT</div>
+      <div class="asset-sub ${pnlClass}">${s.pnl_pct >= 0 ? '+' : ''}${fmtNum(s.pnl_pct, 2)}%</div>
+    </div>
+    <div class="health-card">
+      <div class="health-card-label">Total Trades</div>
+      <div class="health-card-value">${s.total_trades}</div>
+    </div>
+    <div class="health-card">
+      <div class="health-card-label">Win Rate</div>
+      <div class="health-card-value">${fmtNum(s.win_rate, 1)}%</div>
+      <div class="asset-sub">${s.winning_trades}W / ${s.losing_trades}L</div>
+    </div>
+    <div class="health-card">
+      <div class="health-card-label">Max Drawdown</div>
+      <div class="health-card-value ${ddClass}">${fmtNum(s.max_drawdown_pct, 2)}%</div>
+    </div>
+    <div class="health-card">
+      <div class="health-card-label">Profit Factor</div>
+      <div class="health-card-value">${fmtNum(s.profit_factor, 2)}</div>
+    </div>
+  `;
+}
+
+function renderStrategyParams(report) {
+  const container = document.getElementById('bt-params');
+  if (!container) return;
+
+  const cfg = report.config;
+  const params = cfg.strategy_params || {};
+  const strategies = cfg.strategies || [];
+
+  if (!strategies.length) {
+    container.innerHTML = '<p class="error-text">No strategies</p>';
+    return;
+  }
+
+  // Readable labels for param keys
+  const labels = {
+    drop_pct: 'Drop %', tp_pct: 'TP %', buy_usdt: 'Buy USDT',
+    prebuy_pct: 'Pre-buy %', cancel_rebound_pct: 'Cancel Rebound %',
+    recenter_pct: 'Recenter %', recenter_ema_n: 'Recenter EMA N',
+    recenter_enabled: 'Recenter Enabled', min_trade_usdt: 'Min Trade USDT',
+    use_fixed_usdt_reference: 'Fixed USDT Ref',
+    enable_pct: 'Enable %', step_pct: 'Step %',
+  };
+
+  container.innerHTML = strategies.map(strat => {
+    const p = params[strat] || {};
+    const entries = Object.entries(p);
+    const title = strat === 'lot_stacking' ? 'LOT Stacking' : strat === 'trend_buy' ? 'TREND Buy' : strat;
+
+    if (!entries.length) {
+      return `<div class="tune-panel">
+        <h3 class="tune-panel-title">${escapeHtml(title)}</h3>
+        <p style="color: var(--text-muted); font-size: 0.85rem;">Default parameters used</p>
+      </div>`;
+    }
+
+    const grid = entries.map(([k, v]) => {
+      const label = labels[k] || k;
+      const display = typeof v === 'boolean' ? (v ? 'Yes' : 'No') : v;
+      return `<div class="form-group">
+        <span class="form-label">${escapeHtml(label)}</span>
+        <span style="font-weight: 600;">${escapeHtml(String(display))}</span>
+      </div>`;
+    }).join('');
+
+    return `<div class="tune-panel">
+      <h3 class="tune-panel-title">${escapeHtml(title)}</h3>
+      <div class="tune-grid">${grid}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderPriceChart(report) {
+  const container = document.getElementById('bt-price-chart');
+  if (!container || !report.candles || !report.candles.length) return;
+
+  const chart = LightweightCharts.createChart(container, {
+    layout: { background: { color: '#1e293b' }, textColor: '#e2e8f0' },
+    grid: { vertLines: { color: '#334155' }, horzLines: { color: '#334155' } },
+    rightPriceScale: { borderColor: '#334155' },
+    timeScale: { borderColor: '#334155', timeVisible: true, secondsVisible: false },
+    width: container.clientWidth,
+    height: container.clientHeight || 400,
+  });
+
+  const candleSeries = chart.addCandlestickSeries({
+    upColor: '#16a34a', downColor: '#dc2626',
+    borderUpColor: '#16a34a', borderDownColor: '#dc2626',
+    wickUpColor: '#16a34a', wickDownColor: '#dc2626',
+  });
+
+  candleSeries.setData(report.candles);
+
+  // Trade markers
+  if (report.trade_log && report.trade_log.length) {
+    const markers = report.trade_log
+      .filter(t => t.ts_ms)
+      .map(t => ({
+        time: Math.floor(t.ts_ms / 1000),
+        position: t.side === 'BUY' ? 'belowBar' : 'aboveBar',
+        color: t.side === 'BUY' ? '#16a34a' : '#dc2626',
+        shape: t.side === 'BUY' ? 'arrowUp' : 'arrowDown',
+        text: t.side === 'BUY' ? 'B' : 'S',
+      }))
+      .sort((a, b) => a.time - b.time);
+    if (markers.length) candleSeries.setMarkers(markers);
+  }
+
+  chart.timeScale().fitContent();
+
+  window.addEventListener('resize', () => {
+    chart.applyOptions({ width: container.clientWidth });
+  });
+}
+
+function renderEquityCurve(report) {
+  const container = document.getElementById('bt-equity-chart');
+  if (!container || !report.equity_curve || !report.equity_curve.length) return;
+
+  const chart = LightweightCharts.createChart(container, {
+    layout: { background: { color: '#1e293b' }, textColor: '#e2e8f0' },
+    grid: { vertLines: { color: '#334155' }, horzLines: { color: '#334155' } },
+    rightPriceScale: { borderColor: '#334155' },
+    timeScale: { borderColor: '#334155', timeVisible: true, secondsVisible: false },
+    width: container.clientWidth,
+    height: container.clientHeight || 300,
+  });
+
+  const lineSeries = chart.addLineSeries({
+    color: '#2563eb',
+    lineWidth: 2,
+  });
+
+  const data = report.equity_curve.map(p => ({
+    time: Math.floor(p.ts_ms / 1000),
+    value: p.value,
+  }));
+  lineSeries.setData(data);
+  chart.timeScale().fitContent();
+
+  window.addEventListener('resize', () => {
+    chart.applyOptions({ width: container.clientWidth });
+  });
+}
+
+function renderTradeLog(report) {
+  const tbody = document.getElementById('bt-trade-tbody');
+  const countEl = document.getElementById('bt-trade-count');
+  if (!tbody) return;
+
+  const trades = report.trade_log || [];
+  if (countEl) countEl.textContent = trades.length + ' trades';
+
+  if (!trades.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="table-empty">No trades</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = trades.map((t, i) => {
+    const time = t.ts_ms ? new Date(t.ts_ms).toLocaleString() : '-';
+    const sideClass = t.side === 'BUY' ? 'pnl-positive' : 'pnl-negative';
+    return `<tr>
+      <td>${i + 1}</td>
+      <td>${escapeHtml(time)}</td>
+      <td class="${sideClass}">${escapeHtml(t.side || '-')}</td>
+      <td>${fmtNum(parseFloat(t.price || 0), 2)}</td>
+      <td>${fmtNum(parseFloat(t.qty || 0), 6)}</td>
+      <td>${fmtNum(parseFloat(t.quote_qty || 0), 2)}</td>
+    </tr>`;
+  }).join('');
+}
+
+function fmtNum(val, decimals) {
+  if (val == null) return '-';
+  return Number(val).toFixed(decimals);
+}
+</script>
+{% endblock %}

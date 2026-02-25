@@ -1,0 +1,219 @@
+  Project crypto_trader {                                                
+  database_type: "PostgreSQL"                                            
+  }                                                                      
+                                                                         
+  Table user_profiles {                                                  
+  id uuid [pk, note: '사용자 ID']                                        
+  email varchar [not null, note: '이메일']                               
+  display_name varchar [note: '표시 이름']                               
+  role varchar [not null, default: 'user', note: '권한 user/admin']      
+  created_at timestamp                                                   
+  updated_at timestamp                                                   
+  Note: '사용자 프로필 저장'                                             
+  }                                                                      
+                                                                         
+  Table trading_accounts {                                               
+  id uuid [pk]                                                           
+  owner_id uuid [not null, note: '소유자 user_profiles.id']              
+  name varchar [not null, note: '계정 이름']                             
+  exchange varchar [not null, default: 'binance']                        
+  symbol varchar [not null, default: 'ETHUSDT']                          
+  base_asset varchar [not null, default: 'ETH']                          
+  quote_asset varchar [not null, default: 'USDT']                        
+  api_key_encrypted varchar [not null, note: '암호화된 API Key']         
+  api_secret_encrypted varchar [not null, note: '암호화된 API Secret']   
+  encryption_key_version int [not null, default: 1]                      
+  is_active boolean [not null, default: true]                            
+  circuit_breaker_failures int [not null, default: 0]                    
+  circuit_breaker_disabled_at timestamp                                  
+  last_success_at timestamp                                              
+  loop_interval_sec int [not null, default: 60]                          
+  order_cooldown_sec int [not null, default: 7]                          
+  created_at timestamp                                                   
+  updated_at timestamp
+                                                                         
+  indexes {                                                              
+  owner_id [name: 'idx_trading_accounts_owner']                          
+  }                                                                      
+                                                                         
+  Note: '계정별 거래 설정 및 상태 저장'                                  
+  }                                                                      
+                                                                         
+  Table strategy_configs {                                               
+  id uuid [pk]                                                           
+  account_id uuid [not null]                                             
+  strategy_name varchar [not null, note: '전략 이름']                    
+  is_enabled boolean [default: true]                                     
+  params json [not null, default: '{}', note: '전략 파라미터 JSON']      
+  created_at timestamp                                                   
+  updated_at timestamp                                                   
+                                                                         
+  indexes {                                                              
+  (account_id, strategy_name) [unique, name: 'uq_strategy_per_account']  
+  }                                                                      
+                                                                         
+  Note: '계정별 전략 설정 저장'                                          
+  }                                                                      
+                                                                         
+  Table strategy_state {                                                 
+  account_id uuid [not null]                                             
+  scope varchar [not null, note: 'lot_stacking/trend_buy/shared']        
+  key varchar [not null]                                                 
+  value varchar                                                          
+  updated_at timestamp                                                   
+                                                                         
+  indexes {                                                              
+  (account_id, scope, key) [pk]                                          
+  account_id [name: 'idx_strategy_state_account']                        
+  }                                                                      
+                                                                         
+  Note: '전략 런타임 상태 KV 저장'                                       
+  }                                                                      
+                                                                         
+  Table orders {                                                         
+  order_id bigint [not null]                                             
+  account_id uuid [not null]                                             
+  symbol varchar [not null]                                              
+  side varchar                                                           
+  type varchar                                                           
+  status varchar                                                         
+  price decimal                                                          
+  orig_qty decimal                                                       
+  executed_qty decimal                                                   
+  cum_quote_qty decimal                                                  
+  client_order_id varchar                                                
+  update_time_ms bigint                                                  
+  raw_json json                                                          
+  updated_at timestamp                                                   
+                                                                         
+  indexes {                                                              
+  (order_id, account_id) [pk]                                            
+  (account_id, status) [name: 'idx_orders_status']                       
+  }                                                                      
+                                                                         
+  Note: '거래소 주문 정보 저장'                                          
+  }                                                                      
+                                                                         
+  Table fills {                                                          
+  trade_id bigint [not null]                                             
+  account_id uuid [not null]                                             
+  order_id bigint                                                        
+  symbol varchar [not null]                                              
+  side varchar                                                           
+  price decimal                                                          
+  qty decimal                                                            
+  quote_qty decimal                                                      
+  commission decimal                                                     
+  commission_asset varchar                                               
+  trade_time_ms bigint                                                   
+  raw_json json                                                          
+  inserted_at timestamp                                                  
+                                                                         
+  indexes {                                                              
+  (trade_id, account_id) [pk]                                            
+  }                                                                      
+                                                                         
+  Note: '실제 체결 기록 저장'                                            
+  }                                                                      
+                                                                         
+  Table lots {                                                           
+  lot_id bigint [not null, increment]                                    
+  account_id uuid [not null]                                             
+  symbol varchar [not null]                                              
+  strategy_name varchar [not null, default: 'lot_stacking']              
+  buy_order_id bigint                                                    
+  buy_price decimal [not null]                                           
+  buy_qty decimal [not null]                                             
+  buy_time timestamp                                                     
+  buy_time_ms bigint                                                     
+  status varchar [default: 'OPEN']                                       
+  sell_order_id bigint                                                   
+  sell_order_time_ms bigint                                              
+  sell_price decimal                                                     
+  sell_time timestamp                                                    
+  sell_time_ms bigint                                                    
+  fee_usdt decimal                                                       
+  net_profit_usdt decimal                                                
+  metadata json [default: '{}']                                          
+                                                                         
+  indexes {                                                              
+  (lot_id, account_id) [pk]                                              
+  (account_id, symbol, status) [name: 'idx_lots_open']                   
+  (account_id, strategy_name, status) [name: 'idx_lots_strategy']        
+  }                                                                      
+                                                                         
+  Note: '매수-매도 로트 및 손익 저장'                                    
+  }                                                                      
+                                                                         
+  Table positions {                                                      
+  account_id uuid [not null]                                             
+  symbol varchar [not null]                                              
+  qty decimal [not null]                                                 
+  cost_basis_usdt decimal [not null]                                     
+  avg_entry decimal [not null]                                           
+  updated_at timestamp                                                   
+                                                                         
+  indexes {                                                              
+  (account_id, symbol) [pk]                                              
+  }                                                                      
+                                                                         
+  Note: '계정+심볼 포지션 요약 저장'                                     
+  }                                                                      
+                                                                         
+  Table core_btc_history {                                               
+  id bigint [pk, increment]                                              
+  account_id uuid [not null]                                             
+  symbol varchar [not null]                                              
+  btc_qty decimal [not null]                                             
+  cost_usdt decimal [not null]                                           
+  source varchar [not null]                                              
+  created_at timestamp                                                   
+                                                                         
+  indexes {                                                              
+  account_id [name: 'idx_core_btc_history_account']                      
+  }                                                                      
+                                                                         
+  Note: '리저브/코어 BTC 이동 이력 저장'                                 
+  }                                                                      
+                                                                         
+  Table price_snapshots {                                                
+  id bigint [pk, increment]                                              
+  symbol varchar [not null]                                              
+  ts_ms bigint [not null]                                                
+  price decimal [not null]                                               
+  created_at timestamp                                                   
+                                                                         
+  indexes {                                                              
+  (symbol, ts_ms) [unique, name: 'idx_price_snapshots_symbol_ts']        
+  }                                                                      
+                                                                         
+  Note: '가격 스냅샷 시계열 저장'                                        
+  }                                                                      
+                                                                         
+  Table price_candles_5m {                                               
+  id bigint [pk, increment]                                              
+  symbol varchar [not null]                                              
+  ts_ms bigint [not null]                                                
+  open decimal [not null]                                                
+  high decimal [not null]                                                
+  low decimal [not null]                                                 
+  close decimal [not null]                                               
+  created_at timestamp                                                   
+  updated_at timestamp                                                   
+                                                                         
+  indexes {                                                              
+  (symbol, ts_ms) [unique, name: 'idx_price_candles_5m_symbol_ts']       
+  }                                                                      
+                                                                         
+  Note: '5분봉 OHLC 저장'                                                
+  }                                                                      
+                                                                         
+  Ref: trading_accounts.owner_id > user_profiles.id                      
+  Ref: strategy_configs.account_id > trading_accounts.id                 
+  Ref: strategy_state.account_id > trading_accounts.id                   
+  Ref: orders.account_id > trading_accounts.id                           
+  Ref: fills.account_id > trading_accounts.id                            
+  Ref: lots.account_id > trading_accounts.id                             
+  Ref: positions.account_id > trading_accounts.id                        
+  Ref: core_btc_history.account_id > trading_accounts.id                 
+  Ref: fills.(order_id, account_id) > orders.(order_id, account_id)   

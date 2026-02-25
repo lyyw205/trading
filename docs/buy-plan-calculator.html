@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Buy Plan Calculator</title>
+  <style>
+    :root {
+      --bg: #f4f6f8;
+      --card: #ffffff;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --line: #e5e7eb;
+      --accent: #0f766e;
+      --danger: #b91c1c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--text);
+      background: linear-gradient(180deg, #eef2ff 0%, var(--bg) 28%);
+    }
+    .wrap {
+      max-width: 1080px;
+      margin: 28px auto 40px;
+      padding: 0 16px;
+    }
+    .title {
+      font-size: 28px;
+      font-weight: 800;
+      margin: 0 0 8px;
+    }
+    .sub {
+      margin: 0 0 20px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 14px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(120px, 1fr));
+      gap: 10px;
+      align-items: end;
+    }
+    label {
+      display: block;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    input {
+      width: 100%;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      padding: 10px 10px;
+      font-size: 14px;
+      outline: none;
+      background: #fff;
+    }
+    input:focus { border-color: var(--accent); }
+    button {
+      border: 0;
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      color: #fff;
+      background: var(--accent);
+    }
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(160px, 1fr));
+      gap: 10px;
+    }
+    .metric {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px 12px;
+      background: #fcfcfd;
+    }
+    .metric .k { font-size: 12px; color: var(--muted); }
+    .metric .v { font-size: 18px; font-weight: 800; margin-top: 4px; }
+    .warn {
+      color: var(--danger);
+      font-weight: 700;
+      font-size: 13px;
+      margin-top: 8px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      margin-top: 8px;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 8px 8px;
+      text-align: right;
+      white-space: nowrap;
+    }
+    th:first-child, td:first-child { text-align: center; }
+    th {
+      color: var(--muted);
+      font-weight: 700;
+      background: #f8fafc;
+    }
+    .section-title {
+      margin: 0 0 8px;
+      font-size: 16px;
+      font-weight: 800;
+    }
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    @media (max-width: 860px) {
+      .grid { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
+      .metrics { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1 class="title">매수 계획 계산기</h1>
+    <p class="sub">1~5회는 <span class="mono">x, 2x, 3x, 4x, 5x</span>, 6회 이후는 5회차 매수금액(A) 근사 유지 규칙으로 계산합니다.</p>
+
+    <form id="calcForm" class="card">
+      <div class="grid">
+        <div>
+          <label for="initialUsdt">초기 USDT</label>
+          <input id="initialUsdt" type="number" step="0.01" min="0" value="2000">
+        </div>
+        <div>
+          <label for="xPct">x (%)</label>
+          <input id="xPct" type="number" step="0.01" min="0.01" max="19.99" value="0.5">
+        </div>
+        <div>
+          <label for="minOrderUsdt">최소 주문금액 USDT</label>
+          <input id="minOrderUsdt" type="number" step="0.01" min="0" value="10">
+        </div>
+        <div>
+          <label for="similarityRatio">근사 허용비율 (0~1)</label>
+          <input id="similarityRatio" type="number" step="0.01" min="0" max="1" value="0.8">
+        </div>
+        <div>
+          <label for="previewAfter5">6회 이후 % 미리보기 개수</label>
+          <input id="previewAfter5" type="number" step="1" min="1" max="50" value="10">
+        </div>
+      </div>
+      <div style="margin-top: 12px; display: flex; gap: 8px;">
+        <button type="submit">계산하기</button>
+      </div>
+      <div id="formWarn" class="warn" style="display:none;"></div>
+    </form>
+
+    <section class="card">
+      <h2 class="section-title">요약</h2>
+      <div class="metrics">
+        <div class="metric">
+          <div class="k">5회차 기준금액 A</div>
+          <div class="v" id="mA">-</div>
+        </div>
+        <div class="metric">
+          <div class="k">예상 최대 거래 횟수</div>
+          <div class="v" id="mTrades">-</div>
+        </div>
+        <div class="metric">
+          <div class="k">마지막 주문 금액</div>
+          <div class="v" id="mLast">-</div>
+        </div>
+        <div class="metric">
+          <div class="k">종료 후 잔고</div>
+          <div class="v" id="mRemain">-</div>
+        </div>
+      </div>
+      <div id="stopReason" class="warn" style="display:none;"></div>
+    </section>
+
+    <section class="card">
+      <h2 class="section-title">1~5회 예상 매수</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>회차</th>
+            <th>매수 %</th>
+            <th>매수금액(USDT)</th>
+            <th>매수 후 잔고(USDT)</th>
+          </tr>
+        </thead>
+        <tbody id="firstFiveBody"></tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2 class="section-title">6회 이후 예상 (A 근사 유지)</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>회차</th>
+            <th>예상 매수 %</th>
+            <th>목표/실행 매수금액(USDT)</th>
+          </tr>
+        </thead>
+        <tbody id="afterFiveBody"></tbody>
+      </table>
+    </section>
+  </div>
+
+  <script>
+    function fmt(v, d = 4) {
+      if (v == null || Number.isNaN(v)) return "-";
+      return Number(v).toFixed(d);
+    }
+
+    function calcBuyPlan({
+      initialUsdt,
+      xPct,
+      minOrderUsdt = 10,
+      similarityRatio = 0.8,
+      previewAfter5 = 8,
+    }) {
+      const x = xPct / 100;
+      if (!(x > 0 && x < 0.2)) throw new Error("x(%)는 0보다 크고 20보다 작아야 합니다.");
+      if (!(initialUsdt > 0)) throw new Error("초기 USDT는 0보다 커야 합니다.");
+      if (!(similarityRatio >= 0 && similarityRatio <= 1)) throw new Error("근사 허용비율은 0~1이어야 합니다.");
+
+      let R = initialUsdt;
+      const firstFive = [];
+      let tradeCount = 0;
+
+      for (let k = 1; k <= 5; k++) {
+        const pct = k * x;
+        const usdt = R * pct;
+        if (usdt < minOrderUsdt) {
+          return {
+            firstFive,
+            post5TargetUsdt: null,
+            after5PctPreview: [],
+            maxTrades: tradeCount,
+            lastOrder: null,
+            remainUsdt: R,
+            stoppedReason: k + "회차 주문금액이 최소 주문금액 미만",
+          };
+        }
+        R -= usdt;
+        firstFive.push({
+          round: k,
+          buyPct: pct * 100,
+          buyUsdt: usdt,
+          remainAfter: R,
+        });
+        tradeCount++;
+      }
+
+      const A = firstFive[4].buyUsdt;
+      const after5PctPreview = [];
+      let tmpR = R;
+
+      for (let i = 0; i < previewAfter5; i++) {
+        const round = 6 + i;
+        if (tmpR <= 0) break;
+        const needPct = (A / tmpR) * 100;
+        after5PctPreview.push({
+          round: round,
+          estBuyPct: Math.min(needPct, 100),
+          targetBuyUsdt: Math.min(A, tmpR),
+        });
+        if (tmpR >= A) tmpR -= A;
+        else break;
+      }
+
+      let lastOrder = null;
+      let stoppedReason = "";
+
+      while (R > 0) {
+        if (R >= A) {
+          if (A < minOrderUsdt) {
+            stoppedReason = "6회 이후 목표금액(A)이 최소 주문금액 미만";
+            break;
+          }
+          R -= A;
+          tradeCount++;
+          continue;
+        }
+
+        if (R < minOrderUsdt) {
+          stoppedReason = "잔고가 최소 주문금액 미만";
+          break;
+        }
+
+        const similar = R >= A * similarityRatio;
+        lastOrder = {
+          finalBuyPct: 100,
+          finalBuyUsdt: R,
+          isSimilarToA: similar,
+          ratioToA: R / A,
+        };
+        tradeCount++;
+        R = 0;
+        if (!similar) {
+          stoppedReason = "마지막 100% 주문이 A와 근사하지 않음";
+        }
+        break;
+      }
+
+      return {
+        firstFive,
+        post5TargetUsdt: A,
+        after5PctPreview,
+        maxTrades: tradeCount,
+        lastOrder,
+        remainUsdt: R,
+        stoppedReason,
+      };
+    }
+
+    function render(result) {
+      const firstFiveBody = document.getElementById("firstFiveBody");
+      const afterFiveBody = document.getElementById("afterFiveBody");
+
+      firstFiveBody.innerHTML = result.firstFive.map(r => (
+        "<tr>" +
+          "<td>" + r.round + "</td>" +
+          "<td>" + fmt(r.buyPct, 4) + "%</td>" +
+          "<td>" + fmt(r.buyUsdt, 4) + "</td>" +
+          "<td>" + fmt(r.remainAfter, 4) + "</td>" +
+        "</tr>"
+      )).join("");
+
+      if (!result.firstFive.length) {
+        firstFiveBody.innerHTML = "<tr><td colspan='4'>계산 결과 없음</td></tr>";
+      }
+
+      afterFiveBody.innerHTML = result.after5PctPreview.map(r => (
+        "<tr>" +
+          "<td>" + r.round + "</td>" +
+          "<td>" + fmt(r.estBuyPct, 4) + "%</td>" +
+          "<td>" + fmt(r.targetBuyUsdt, 4) + "</td>" +
+        "</tr>"
+      )).join("");
+      if (!result.after5PctPreview.length) {
+        afterFiveBody.innerHTML = "<tr><td colspan='3'>해당 없음</td></tr>";
+      }
+
+      document.getElementById("mA").textContent = result.post5TargetUsdt == null ? "-" : fmt(result.post5TargetUsdt, 4);
+      document.getElementById("mTrades").textContent = result.maxTrades;
+      document.getElementById("mLast").textContent = result.lastOrder ? fmt(result.lastOrder.finalBuyUsdt, 4) : "-";
+      document.getElementById("mRemain").textContent = fmt(result.remainUsdt, 4);
+
+      const stopReason = document.getElementById("stopReason");
+      if (result.stoppedReason) {
+        stopReason.style.display = "block";
+        stopReason.textContent = "중단 사유: " + result.stoppedReason;
+      } else {
+        stopReason.style.display = "none";
+        stopReason.textContent = "";
+      }
+    }
+
+    function runCalc() {
+      const warn = document.getElementById("formWarn");
+      warn.style.display = "none";
+      warn.textContent = "";
+      try {
+        const result = calcBuyPlan({
+          initialUsdt: Number(document.getElementById("initialUsdt").value),
+          xPct: Number(document.getElementById("xPct").value),
+          minOrderUsdt: Number(document.getElementById("minOrderUsdt").value),
+          similarityRatio: Number(document.getElementById("similarityRatio").value),
+          previewAfter5: Number(document.getElementById("previewAfter5").value),
+        });
+        render(result);
+      } catch (e) {
+        warn.style.display = "block";
+        warn.textContent = e.message;
+      }
+    }
+
+    document.getElementById("calcForm").addEventListener("submit", function (e) {
+      e.preventDefault();
+      runCalc();
+    });
+
+    runCalc();
+  </script>
+</body>
+</html>

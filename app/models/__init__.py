@@ -10,6 +10,7 @@ from app.models.position import Position
 from app.models.core_btc_history import CoreBtcHistory
 from app.models.price_snapshot import PriceSnapshot
 from app.models.price_candle import PriceCandle5m
+from app.models.backtest_run import BacktestRun
 
 __all__ = [
     "Base",
@@ -24,4 +25,5 @@ __all__ = [
     "CoreBtcHistory",
     "PriceSnapshot",
     "PriceCandle5m",
+    "BacktestRun",
 ]
