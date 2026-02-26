@@ -469,6 +469,95 @@ async def api_change_user_role(user_id: str):
     return {"status": "updated"}
 
 
+# ---- [SAMPLE_DATA] Mock Combo / Logic API endpoints ----
+
+import importlib as _importlib
+from app.strategies.registry import BuyLogicRegistry, SellLogicRegistry
+_importlib.import_module("app.strategies.buys.lot_stacking")
+_importlib.import_module("app.strategies.buys.trend")
+_importlib.import_module("app.strategies.sells.fixed_tp")
+
+@app.get("/api/buy-logics")
+async def api_buy_logics():
+    """[SAMPLE_DATA] Return real buy logic metadata."""
+    return BuyLogicRegistry.list_all()
+
+@app.get("/api/sell-logics")
+async def api_sell_logics():
+    """[SAMPLE_DATA] Return real sell logic metadata."""
+    return SellLogicRegistry.list_all()
+
+# [SAMPLE_DATA] In-memory combo storage for preview
+import uuid as _uuid
+_preview_combos: dict[str, dict] = {}
+
+@app.get("/api/accounts/{account_id}/combos")
+async def api_list_combos(account_id: str):
+    """[SAMPLE_DATA] List combos for account."""
+    return [c for c in _preview_combos.values() if c["account_id"] == account_id]
+
+@app.post("/api/accounts/{account_id}/combos", status_code=201)
+async def api_create_combo(account_id: str, request: Request):
+    """[SAMPLE_DATA] Create a combo (in-memory)."""
+    body = await request.json()
+    combo_id = str(_uuid.uuid4())
+    combo = {
+        "id": combo_id,
+        "account_id": account_id,
+        "name": body.get("name", "Unnamed"),
+        "buy_logic_name": body.get("buy_logic_name", "lot_stacking"),
+        "buy_params": body.get("buy_params", {}),
+        "sell_logic_name": body.get("sell_logic_name", "fixed_tp"),
+        "sell_params": body.get("sell_params", {}),
+        "reference_combo_id": body.get("reference_combo_id"),
+        "is_enabled": True,
+    }
+    _preview_combos[combo_id] = combo
+    return combo
+
+@app.put("/api/accounts/{account_id}/combos/{combo_id}")
+async def api_update_combo(account_id: str, combo_id: str, request: Request):
+    """[SAMPLE_DATA] Update a combo (in-memory)."""
+    body = await request.json()
+    combo = _preview_combos.get(combo_id)
+    if not combo:
+        return JSONResponse({"detail": "Not found"}, status_code=404)
+    if body.get("name") is not None:
+        combo["name"] = body["name"]
+    if body.get("buy_params") is not None:
+        combo["buy_params"] = body["buy_params"]
+    if body.get("sell_params") is not None:
+        combo["sell_params"] = body["sell_params"]
+    if body.get("reference_combo_id") is not None:
+        combo["reference_combo_id"] = body["reference_combo_id"]
+    reapply = body.get("reapply_open_orders", False)
+    if reapply:
+        print(f"[PREVIEW] reapply_open_orders=True for combo {combo_id}")
+    return combo
+
+@app.delete("/api/accounts/{account_id}/combos/{combo_id}")
+async def api_delete_combo(account_id: str, combo_id: str):
+    """[SAMPLE_DATA] Delete a combo (in-memory)."""
+    _preview_combos.pop(combo_id, None)
+    return {"status": "deleted"}
+
+@app.post("/api/accounts/{account_id}/combos/{combo_id}/enable")
+async def api_enable_combo(account_id: str, combo_id: str):
+    """[SAMPLE_DATA] Enable combo."""
+    combo = _preview_combos.get(combo_id)
+    if combo:
+        combo["is_enabled"] = True
+    return {"status": "enabled"}
+
+@app.post("/api/accounts/{account_id}/combos/{combo_id}/disable")
+async def api_disable_combo(account_id: str, combo_id: str):
+    """[SAMPLE_DATA] Disable combo."""
+    combo = _preview_combos.get(combo_id)
+    if combo:
+        combo["is_enabled"] = False
+    return {"status": "disabled"}
+
+
 # ---- [SAMPLE_DATA] Mock Backtest API endpoints ----
 
 import uuid as _uuid

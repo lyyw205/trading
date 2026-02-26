@@ -10,6 +10,7 @@ from app.db.account_repo import AccountRepository
 from app.services.account_trader import AccountTrader
 from app.services.price_collector import PriceCollector
 from app.services.rate_limiter import GlobalRateLimiter
+from app.services.kline_ws_manager import KlineWsManager
 
 if TYPE_CHECKING:
     from app.utils.encryption import EncryptionManager
@@ -31,9 +32,15 @@ class TradingEngine:
         self._price_collector = PriceCollector()
         self._rate_limiter = rate_limiter
         self._encryption = encryption
+        self._kline_ws = KlineWsManager()
+        self._price_collector.set_kline_ws(self._kline_ws)
+        self._account_symbols: dict[UUID, str] = {}  # account_id -> symbol mapping
 
     async def start(self):
         """Start trading loops for all active accounts with staggered scheduling"""
+        # Start WebSocket kline manager
+        await self._kline_ws.start()
+
         async with TradingSessionLocal() as session:
             repo = AccountRepository(session)
             accounts = await repo.get_active_accounts()
@@ -51,12 +58,19 @@ class TradingEngine:
         if account_id in self._tasks:
             return
         # Phase 3-C: 서킷 브레이커 상태 확인 후 시작 차단
+        symbol = None
         async with TradingSessionLocal() as session:
             repo = AccountRepository(session)
             account = await repo.get_by_id(account_id)
             if account and (account.circuit_breaker_failures or 0) >= 5:
                 logger.warning(f"Account {account_id} has active circuit breaker ({account.circuit_breaker_failures} failures), skipping start")
                 return
+            if account:
+                symbol = account.symbol
+        # Subscribe symbol to kline WS stream
+        if symbol:
+            self._account_symbols[account_id] = symbol
+            await self._kline_ws.subscribe(symbol)
         trader = AccountTrader(
             account_id=account_id,
             price_collector=self._price_collector,
@@ -72,6 +86,10 @@ class TradingEngine:
     async def stop_account(self, account_id: UUID):
         if account_id not in self._tasks:
             return
+        # Unsubscribe symbol from kline WS stream
+        symbol = self._account_symbols.pop(account_id, None)
+        if symbol:
+            await self._kline_ws.unsubscribe(symbol)
         trader = self._traders.get(account_id)
         if trader:
             trader.stop()
@@ -90,6 +108,8 @@ class TradingEngine:
         account_ids = list(self._tasks.keys())
         for aid in account_ids:
             await self.stop_account(aid)
+        # Stop WebSocket kline manager
+        await self._kline_ws.stop()
 
     async def reload_account(self, account_id: UUID):
         await self.stop_account(account_id)

@@ -12,6 +12,7 @@ from app.schemas.strategy import (
 )
 from app.dependencies import get_owned_account, get_current_user, limiter
 from app.utils.logging import audit_log
+from app.services.combo_reapply import reapply_combo_orders
 
 router = APIRouter(prefix="/api", tags=["combos"])
 
@@ -127,11 +128,24 @@ async def update_combo(
     await session.commit()
     await session.refresh(combo)
 
+    # Reapply: cancel existing open orders so next cycle re-places with new params
+    reapply_result = None
+    if body.reapply_open_orders and (body.buy_params is not None or body.sell_params is not None):
+        from app.utils.encryption import EncryptionManager
+        encryption: EncryptionManager = request.app.state.encryption
+        try:
+            reapply_result = await reapply_combo_orders(account, combo, session, encryption)
+            await session.commit()
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).error("combo reapply failed: %s", exc)
+
     audit_log(
         "combo_updated",
         user_id=user["id"],
         account_id=str(account.id),
         combo_id=str(combo.id),
+        reapply=body.reapply_open_orders,
     )
     return ComboResponse.model_validate(combo)
 

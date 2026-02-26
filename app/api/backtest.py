@@ -101,24 +101,49 @@ async def get_backtest_report(
         )
 
     # Load candles for the chart
-    from app.models.price_candle import PriceCandle5m
+    from app.models.price_candle import PriceCandle5m, PriceCandle1m
 
-    stmt = (
+    # Try 1m candles first (higher resolution)
+    stmt_1m = (
         select(
-            PriceCandle5m.ts_ms,
-            PriceCandle5m.open,
-            PriceCandle5m.high,
-            PriceCandle5m.low,
-            PriceCandle5m.close,
+            PriceCandle1m.ts_ms,
+            PriceCandle1m.open,
+            PriceCandle1m.high,
+            PriceCandle1m.low,
+            PriceCandle1m.close,
+            PriceCandle1m.volume,
         )
         .where(
-            PriceCandle5m.symbol == run.symbol,
-            PriceCandle5m.ts_ms >= run.start_ts_ms,
-            PriceCandle5m.ts_ms <= run.end_ts_ms,
+            PriceCandle1m.symbol == run.symbol,
+            PriceCandle1m.ts_ms >= run.start_ts_ms,
+            PriceCandle1m.ts_ms <= run.end_ts_ms,
         )
-        .order_by(PriceCandle5m.ts_ms)
+        .order_by(PriceCandle1m.ts_ms)
     )
-    result = await session.execute(stmt)
+    candle_result = await session.execute(stmt_1m)
+    candle_rows = candle_result.all()
+
+    # Fall back to 5m if no 1m data
+    if not candle_rows:
+        stmt_5m = (
+            select(
+                PriceCandle5m.ts_ms,
+                PriceCandle5m.open,
+                PriceCandle5m.high,
+                PriceCandle5m.low,
+                PriceCandle5m.close,
+                PriceCandle5m.volume,
+            )
+            .where(
+                PriceCandle5m.symbol == run.symbol,
+                PriceCandle5m.ts_ms >= run.start_ts_ms,
+                PriceCandle5m.ts_ms <= run.end_ts_ms,
+            )
+            .order_by(PriceCandle5m.ts_ms)
+        )
+        candle_result = await session.execute(stmt_5m)
+        candle_rows = candle_result.all()
+
     candles = [
         {
             "time": int(r.ts_ms / 1000),
@@ -126,8 +151,9 @@ async def get_backtest_report(
             "high": float(r.high),
             "low": float(r.low),
             "close": float(r.close),
+            "volume": float(r.volume) if r.volume else 0.0,
         }
-        for r in result.all()
+        for r in candle_rows
     ]
 
     config = BacktestConfigOut(

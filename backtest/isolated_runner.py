@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import select, update
 
 from app.db.session import TradingSessionLocal, engine_trading
-from app.models.price_candle import PriceCandle5m
+from app.models.price_candle import PriceCandle5m, PriceCandle1m
 from app.models.backtest_run import BacktestRun
 from app.models.user import UserProfile
 from app.models.account import TradingAccount
@@ -269,25 +269,52 @@ class IsolatedBacktestRunner:
     async def _load_candles(
         self, symbol: str, start_ts_ms: int, end_ts_ms: int
     ) -> list[dict]:
-        """Load candles from production DB as plain dicts (read-only)."""
+        """Load candles from production DB as plain dicts (read-only).
+
+        Prefers 1m candles for higher resolution; falls back to 5m.
+        """
         async with TradingSessionLocal() as session:
-            stmt = (
+            # Try 1m candles first (higher resolution)
+            stmt_1m = (
                 select(
-                    PriceCandle5m.ts_ms,
-                    PriceCandle5m.open,
-                    PriceCandle5m.high,
-                    PriceCandle5m.low,
-                    PriceCandle5m.close,
+                    PriceCandle1m.ts_ms,
+                    PriceCandle1m.open,
+                    PriceCandle1m.high,
+                    PriceCandle1m.low,
+                    PriceCandle1m.close,
+                    PriceCandle1m.volume,
                 )
                 .where(
-                    PriceCandle5m.symbol == symbol,
-                    PriceCandle5m.ts_ms >= start_ts_ms,
-                    PriceCandle5m.ts_ms <= end_ts_ms,
+                    PriceCandle1m.symbol == symbol,
+                    PriceCandle1m.ts_ms >= start_ts_ms,
+                    PriceCandle1m.ts_ms <= end_ts_ms,
                 )
-                .order_by(PriceCandle5m.ts_ms)
+                .order_by(PriceCandle1m.ts_ms)
             )
-            result = await session.execute(stmt)
+            result = await session.execute(stmt_1m)
             rows = result.all()
+
+            # Fall back to 5m if no 1m data
+            if not rows:
+                stmt_5m = (
+                    select(
+                        PriceCandle5m.ts_ms,
+                        PriceCandle5m.open,
+                        PriceCandle5m.high,
+                        PriceCandle5m.low,
+                        PriceCandle5m.close,
+                        PriceCandle5m.volume,
+                    )
+                    .where(
+                        PriceCandle5m.symbol == symbol,
+                        PriceCandle5m.ts_ms >= start_ts_ms,
+                        PriceCandle5m.ts_ms <= end_ts_ms,
+                    )
+                    .order_by(PriceCandle5m.ts_ms)
+                )
+                result = await session.execute(stmt_5m)
+                rows = result.all()
+
             return [
                 {
                     "ts_ms": r.ts_ms,
@@ -295,6 +322,7 @@ class IsolatedBacktestRunner:
                     "high": float(r.high),
                     "low": float(r.low),
                     "close": float(r.close),
+                    "volume": float(r.volume) if r.volume else 0.0,
                 }
                 for r in rows
             ]

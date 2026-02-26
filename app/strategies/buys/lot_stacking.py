@@ -62,42 +62,51 @@ class LotStackingBuy(BaseBuyLogic):
                 {"value": "scaled_plan", "label": "단계별 비율"},
             ],
             "title": "매수 금액 모드",
+            "group": "sizing",
         },
         "buy_usdt": {
             "type": "float", "min": 10.0, "max": 500.0, "step": 1.0,
             "title": "롯 매수금액", "unit": "USDT",
             "visible_when": {"sizing_mode": "fixed"},
+            "group": "sizing",
         },
         "buy_balance_pct": {
             "type": "float", "min": 1.0, "max": 50.0, "step": 0.5,
             "title": "잔고 대비 매수 비율", "unit": "%",
             "visible_when": {"sizing_mode": "pct_balance"},
+            "group": "sizing",
         },
         "plan_x_pct": {
             "type": "float", "min": 0.1, "max": 10.0, "step": 0.1,
             "title": "단계별 기본 비율 (x%)", "unit": "%",
             "visible_when": {"sizing_mode": "scaled_plan"},
+            "group": "sizing",
         },
         "max_buy_usdt": {
             "type": "float", "min": 10.0, "max": 5000.0, "step": 10.0,
             "title": "최대 매수 금액", "unit": "USDT",
             "visible_when": {"sizing_mode": ["pct_balance", "scaled_plan"]},
+            "group": "sizing",
         },
         "drop_pct": {
             "type": "float", "min": 0.006, "max": 0.02, "step": 0.0005,
             "title": "\ud558\ub77d \ud2b8\ub9ac\uac70 \ube44\uc728", "unit": "%",
+            "group": "condition",
         },
         "recenter_pct": {
             "type": "float", "min": 0.005, "max": 0.05, "step": 0.0005,
             "title": "\uae30\uc900\uac00 \ub9ac\uc13c\ud130 \ube44\uc728", "unit": "%",
+            "group": "condition",
         },
         "recenter_ema_n": {
             "type": "int", "min": 5, "max": 200, "step": 1,
             "title": "EMA \uae30\uac04", "unit": "N",
+            "group": "condition",
         },
         "recenter_enabled": {
             "type": "bool",
             "title": "\ub9ac\uc13c\ud130 \ud65c\uc131\ud654",
+            "group": "condition",
         },
     }
 

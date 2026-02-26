@@ -35,6 +35,7 @@ class FixedTpSell(BaseSellLogic):
         "tp_pct": {
             "type": "float", "min": 0.01, "max": 0.1, "step": 0.001,
             "title": "\uc775\uc808 \ube44\uc728", "unit": "%",
+            "group": "condition",
         },
         "base_price_update_mode": {
             "type": "select",
@@ -43,6 +44,7 @@ class FixedTpSell(BaseSellLogic):
                 {"value": "always", "label": "\ud56d\uc0c1 \uac31\uc2e0"},
                 {"value": "if_higher", "label": "\uc0c1\uc2b9\uc2dc\ub9cc"},
             ],
+            "group": "condition",
         },
     }
 

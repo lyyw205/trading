@@ -7,7 +7,7 @@ from app.db.session import get_trading_session
 from app.db.lot_repo import LotRepository
 from app.db.position_repo import PositionRepository
 from app.db.account_repo import AccountRepository
-from app.db.price_repo import get_candles, get_snapshots
+from app.db.price_repo import get_candles
 from app.db.strategy_state_repo import get_all_for_account
 from app.models.lot import Lot
 from app.models.order import Order
@@ -195,8 +195,15 @@ async def get_price_candles(
     request: Request,
     from_ms: int = 0,
     to_ms: int = 0,
+    interval: str = Query(default="5m"),
     account=Depends(get_owned_account),
     session: AsyncSession = Depends(get_trading_session),
 ):
-    candles = await get_candles(account.symbol, from_ms, to_ms, session)
-    return [{"ts_ms": c.ts_ms, "open": float(c.open), "high": float(c.high), "low": float(c.low), "close": float(c.close)} for c in candles]
+    candles = await get_candles(account.symbol, from_ms, to_ms, session, interval=interval)
+    result = []
+    for c in candles:
+        d = {"ts_ms": c.ts_ms, "open": float(c.open), "high": float(c.high), "low": float(c.low), "close": float(c.close)}
+        if hasattr(c, "volume"):
+            d["volume"] = float(c.volume)
+        result.append(d)
+    return result

@@ -75,25 +75,57 @@
   <div class="modal-content">
     <h3 id="combo-modal-title">New Combo</h3>
     <input type="hidden" id="combo-edit-id">
-    <div class="form-group">
-      <label class="form-label">Name</label>
-      <input type="text" id="combo-name" class="form-input" placeholder="e.g. BTC LOT + Fixed TP">
+
+    <!-- General Settings -->
+    <div class="combo-section combo-section-general">
+      <div class="combo-section-title">General</div>
+      <div class="form-group">
+        <label class="form-label">Name</label>
+        <input type="text" id="combo-name" class="form-input" placeholder="e.g. BTC LOT + Fixed TP">
+      </div>
+      <div class="form-group" style="margin-top:0.5rem;">
+        <label class="form-label">Reference Combo (optional)</label>
+        <select id="combo-reference" class="form-input">
+          <option value="">None</option>
+        </select>
+      </div>
     </div>
-    <div class="form-group" id="combo-buy-logic-group">
-      <label class="form-label">Buy Logic</label>
-      <select id="combo-buy-logic" class="form-input" onchange="renderComboParams('buy')"></select>
+
+    <!-- Buy Strategy (condition) -->
+    <div class="combo-section combo-section-buy">
+      <div class="combo-section-title">매수 전략</div>
+      <div id="combo-buy-logic-group">
+        <select id="combo-buy-logic" class="form-input" onchange="renderComboParams('buy')"></select>
+      </div>
+      <div id="combo-buy-condition-params"></div>
     </div>
-    <div id="combo-buy-params"></div>
-    <div class="form-group" id="combo-sell-logic-group">
-      <label class="form-label">Sell Logic</label>
-      <select id="combo-sell-logic" class="form-input" onchange="renderComboParams('sell')"></select>
+
+    <!-- Buy Amount (sizing) -->
+    <div class="combo-section combo-section-buy-sizing" id="combo-buy-sizing-group">
+      <div class="combo-section-title">매수 금액</div>
+      <div id="combo-buy-sizing-params"></div>
     </div>
-    <div id="combo-sell-params"></div>
-    <div class="form-group">
-      <label class="form-label">Reference Combo (optional)</label>
-      <select id="combo-reference" class="form-input">
-        <option value="">None</option>
-      </select>
+
+    <!-- Sell Strategy (condition) -->
+    <div class="combo-section combo-section-sell">
+      <div class="combo-section-title">매도 전략</div>
+      <div id="combo-sell-logic-group">
+        <select id="combo-sell-logic" class="form-input" onchange="renderComboParams('sell')"></select>
+      </div>
+      <div id="combo-sell-condition-params"></div>
+    </div>
+
+    <!-- Sell Amount (sizing) -->
+    <div class="combo-section combo-section-sell-sizing" id="combo-sell-sizing-group">
+      <div class="combo-section-title">매도 금액</div>
+      <div id="combo-sell-sizing-params"></div>
+    </div>
+
+    <div id="combo-reapply-group" class="form-group" style="display:none;margin-top:0.75rem;">
+      <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;">
+        <input type="checkbox" id="combo-reapply-orders">
+        <span style="font-size:0.85rem;">미체결 주문 재등록 (기존 미체결 매수/매도 주문을 취소하고 변경된 값으로 재등록)</span>
+      </label>
     </div>
     <div style="display:flex;gap:0.5rem;margin-top:1rem;">
       <button class="btn btn-primary" onclick="saveCombo()">Save</button>

@@ -4,23 +4,15 @@ from sqlalchemy import select, func, literal
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.price_snapshot import PriceSnapshot
-from app.models.price_candle import PriceCandle5m
+from app.models.price_candle import PriceCandle5m, PriceCandle1m, PriceCandle1h, PriceCandle1d
 
-
-async def insert_snapshot(
-    symbol: str,
-    ts_ms: int,
-    price: float,
-    session: AsyncSession,
-) -> None:
-    """Insert a price snapshot; silently ignore duplicate (symbol, ts_ms)."""
-    stmt = (
-        pg_insert(PriceSnapshot)
-        .values(symbol=symbol, ts_ms=ts_ms, price=price)
-        .on_conflict_do_nothing(index_elements=["symbol", "ts_ms"])
-    )
-    await session.execute(stmt)
+# Interval -> Model mapping
+_TABLE_MAP = {
+    "1m": PriceCandle1m,
+    "5m": PriceCandle5m,
+    "1h": PriceCandle1h,
+    "1d": PriceCandle1d,
+}
 
 
 async def upsert_candle_5m(
@@ -29,7 +21,7 @@ async def upsert_candle_5m(
     price: float,
     session: AsyncSession,
 ) -> None:
-    """Upsert a 5-minute candle bucket.
+    """Upsert a 5-minute candle bucket (DEPRECATED — kept for backward compat).
 
     On insert: open = high = low = close = price.
     On conflict: update high = max(high, price), low = min(low, price), close = price.
@@ -61,36 +53,21 @@ async def get_candles(
     from_ts_ms: int,
     to_ts_ms: int,
     session: AsyncSession,
-) -> list[PriceCandle5m]:
-    """Return candles for symbol in [from_ts_ms, to_ts_ms] ordered by ts_ms."""
-    stmt = (
-        select(PriceCandle5m)
-        .where(
-            PriceCandle5m.symbol == symbol,
-            PriceCandle5m.ts_ms >= from_ts_ms,
-            PriceCandle5m.ts_ms <= to_ts_ms,
-        )
-        .order_by(PriceCandle5m.ts_ms)
-    )
-    result = await session.execute(stmt)
-    return list(result.scalars().all())
+    interval: str = "5m",
+) -> list:
+    """Return candles for symbol in [from_ts_ms, to_ts_ms] ordered by ts_ms.
 
-
-async def get_snapshots(
-    symbol: str,
-    from_ts_ms: int,
-    to_ts_ms: int,
-    session: AsyncSession,
-) -> list[PriceSnapshot]:
-    """Return snapshots for symbol in [from_ts_ms, to_ts_ms] ordered by ts_ms."""
+    Supports intervals: '1m', '5m', '1h', '1d'. Default '5m' for backward compat.
+    """
+    model = _TABLE_MAP.get(interval, PriceCandle5m)
     stmt = (
-        select(PriceSnapshot)
+        select(model)
         .where(
-            PriceSnapshot.symbol == symbol,
-            PriceSnapshot.ts_ms >= from_ts_ms,
-            PriceSnapshot.ts_ms <= to_ts_ms,
+            model.symbol == symbol,
+            model.ts_ms >= from_ts_ms,
+            model.ts_ms <= to_ts_ms,
         )
-        .order_by(PriceSnapshot.ts_ms)
+        .order_by(model.ts_ms)
     )
     result = await session.execute(stmt)
     return list(result.scalars().all())

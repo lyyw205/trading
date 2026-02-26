@@ -55,37 +55,45 @@ class TrendBuy(BaseBuyLogic):
                 {"value": "pct_balance", "label": "잔고 비율"},
             ],
             "title": "매수 금액 모드",
+            "group": "sizing",
         },
         "buy_usdt": {
             "type": "float", "min": 10.0, "max": 500.0, "step": 1.0,
             "title": "추세 매수금액", "unit": "USDT",
             "visible_when": {"sizing_mode": "fixed"},
+            "group": "sizing",
         },
         "buy_balance_pct": {
             "type": "float", "min": 1.0, "max": 50.0, "step": 0.5,
             "title": "잔고 대비 매수 비율", "unit": "%",
             "visible_when": {"sizing_mode": "pct_balance"},
+            "group": "sizing",
         },
         "max_buy_usdt": {
             "type": "float", "min": 10.0, "max": 5000.0, "step": 10.0,
             "title": "최대 매수 금액", "unit": "USDT",
             "visible_when": {"sizing_mode": "pct_balance"},
+            "group": "sizing",
         },
         "enable_pct": {
             "type": "float", "min": 0.01, "max": 0.1, "step": 0.005,
             "title": "\ucd94\uc138 \ud65c\uc131\ud654 \uae30\uc900", "unit": "%",
+            "group": "condition",
         },
         "recenter_pct": {
             "type": "float", "min": 0.005, "max": 0.05, "step": 0.005,
             "title": "\ucd94\uc138 \ub9ac\uc13c\ud130 \ube44\uc728", "unit": "%",
+            "group": "condition",
         },
         "drop_pct": {
             "type": "float", "min": 0.005, "max": 0.05, "step": 0.001,
             "title": "\ub418\ub3cc\ub9bc \ub9e4\uc218 \ube44\uc728", "unit": "%",
+            "group": "condition",
         },
         "step_pct": {
             "type": "float", "min": 0.005, "max": 0.05, "step": 0.001,
             "title": "\ub2e8\uacc4\ubcc4 \uac04\uaca9", "unit": "%",
+            "group": "condition",
         },
     }
 

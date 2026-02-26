@@ -497,6 +497,37 @@ select.form-input { cursor: pointer; }
 }
 .combo-params { font-family: monospace; font-size: 0.78rem; }
 
+/* Combo Section Groups */
+.combo-section {
+  border-left: 3px solid var(--card-border);
+  padding: 0.75rem 1rem;
+  margin: 0.75rem 0;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: rgba(15, 23, 42, 0.5);
+}
+.combo-section-buy { border-left-color: #4ade80; }
+.combo-section-buy-sizing { border-left-color: #2dd4bf; }
+.combo-section-sell { border-left-color: #f87171; }
+.combo-section-sell-sizing { border-left-color: #fb923c; }
+.combo-section-general { border-left-color: #60a5fa; }
+.combo-section-title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.combo-section-buy .combo-section-title { color: #4ade80; }
+.combo-section-buy-sizing .combo-section-title { color: #2dd4bf; }
+.combo-section-sell .combo-section-title { color: #f87171; }
+.combo-section-sell-sizing .combo-section-title { color: #fb923c; }
+.combo-section-general .combo-section-title { color: #60a5fa; }
+.combo-section .form-input { margin-bottom: 0; }
+.combo-section .tune-grid { margin-top: 0.5rem; }
+
 /* Earnings Card & Modal */
 .earnings-card.has-earnings {
   border-color: #f59e0b;

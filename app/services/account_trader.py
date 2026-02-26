@@ -124,10 +124,6 @@ class AccountTrader:
                     logger.warning(f"[{self.account_id}] Price is 0, skipping cycle")
                     return
 
-                # Store snapshots
-                await self._price_collector.maybe_store_snapshot(account.symbol, cur_price, session)
-                await self._price_collector.maybe_store_candle(account.symbol, cur_price, session)
-
                 # --- Balance pre-check (account-level, single API call) ---
                 balance_ok = True
                 try:

@@ -38,6 +38,7 @@ class ComboUpdate(BaseModel):
     buy_params: dict[str, Any] | None = None
     sell_params: dict[str, Any] | None = None
     reference_combo_id: UUID | None = None
+    reapply_open_orders: bool = False
 
 
 class ComboResponse(BaseModel):

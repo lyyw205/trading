@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pyarrow as pa
+import pyarrow.compute as pc
 import pyarrow.parquet as pq
 from binance.client import Client
 
@@ -136,10 +137,10 @@ def fetch_klines(symbol: str, interval: str, years: int) -> None:
         merged = new_table
 
     # ts_ms 기준 중복 제거 (정렬 후 unique)
-    df_indices = pa.compute.sort_indices(merged, sort_keys=[("ts_ms", "ascending")])
+    df_indices = pc.sort_indices(merged, sort_keys=[("ts_ms", "ascending")])
     merged = merged.take(df_indices)
     ts_col = merged.column("ts_ms")
-    unique_mask = pa.compute.list_flatten(
+    unique_mask = pc.list_flatten(
         pa.array(
             [[True] + [ts_col[i].as_py() != ts_col[i - 1].as_py() for i in range(1, len(ts_col))]],
             type=pa.list_(pa.bool_()),

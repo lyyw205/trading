@@ -9,7 +9,7 @@ from app.models.lot import Lot
 from app.models.position import Position
 from app.models.core_btc_history import CoreBtcHistory
 from app.models.price_snapshot import PriceSnapshot
-from app.models.price_candle import PriceCandle5m
+from app.models.price_candle import PriceCandle5m, PriceCandle1m, PriceCandle1h, PriceCandle1d
 from app.models.backtest_run import BacktestRun
 from app.models.trading_combo import TradingCombo
 
@@ -26,6 +26,9 @@ __all__ = [
     "CoreBtcHistory",
     "PriceSnapshot",
     "PriceCandle5m",
+    "PriceCandle1m",
+    "PriceCandle1h",
+    "PriceCandle1d",
     "BacktestRun",
     "TradingCombo",
 ]

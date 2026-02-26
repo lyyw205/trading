@@ -69,6 +69,10 @@ async def lifespan(app: FastAPI):
     # Start trading (non-blocking)
     engine_task = asyncio.create_task(engine.start())
 
+    # Start candle aggregation background job
+    from app.services.candle_aggregator import run_aggregation_loop
+    aggregation_task = asyncio.create_task(run_aggregation_loop())
+
     # Auto-bootstrap initial admin if configured and not yet created
     if settings.initial_admin_email and settings.initial_admin_password:
         try:
@@ -103,6 +107,7 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info("Shutting down trading engine...")
+    aggregation_task.cancel()
     engine_task.cancel()
     await engine.stop_all()
     logger.info("Trading engine stopped")

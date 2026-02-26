@@ -407,6 +407,104 @@ function _renderLots(filter) {
 }
 
 /* ============================================================
+   Shared Combo Param Utilities (계정 + 백테스트 공용)
+   ============================================================ */
+
+/**
+ * 파라미터 입력 HTML 생성 (공용)
+ * @param {Object} opts
+ * @param {Object} opts.tunableParams - 파라미터 메타데이터
+ * @param {Object} opts.defaults - 기본값
+ * @param {Object} opts.current - 현재값 (편집 시)
+ * @param {string} opts.side - 'buy' | 'sell'
+ * @param {Function} opts.inputId - (key) => input element id
+ * @param {Function} opts.dataAttrs - (key) => data-* 속성 문자열
+ * @param {Function} opts.onToggle - () => onchange 핸들러 문자열
+ * @param {boolean} [opts.showUnit=true] - 단위 표시 여부
+ * @param {string} [opts.extraHtml=''] - 추가 HTML (예: 계산기 버튼)
+ */
+function _renderParamsHtml(opts) {
+  const { tunableParams, defaults, current, side, inputId, dataAttrs, onToggle, showUnit = true, extraHtml = '' } = opts;
+
+  let html = '<div class="tune-grid">';
+  for (const [key, pm] of Object.entries(tunableParams)) {
+    const val = current[key] ?? defaults[key] ?? '';
+    const title = pm.title || key;
+    const unit = (showUnit && pm.unit) ? ` <span class="form-hint">(${escapeHtml(pm.unit)})</span>` : '';
+    const id = inputId(key);
+    const attrs = dataAttrs(key);
+
+    // visible_when: 조건부 표시
+    let groupAttrs = '';
+    let groupStyle = '';
+    if (pm.visible_when) {
+      const depKey = Object.keys(pm.visible_when)[0];
+      const depVals = Array.isArray(pm.visible_when[depKey]) ? pm.visible_when[depKey] : [pm.visible_when[depKey]];
+      const curDepVal = String(current[depKey] ?? defaults[depKey] ?? '');
+      const visible = depVals.includes(curDepVal);
+      groupAttrs = ` data-depends-on="${escapeHtml(depKey)}" data-depends-values="${depVals.map(v => escapeHtml(String(v))).join(',')}"`;
+      groupStyle = visible ? '' : ' style="display:none"';
+    }
+
+    html += `<div class="form-group"${groupAttrs}${groupStyle}>`;
+    html += `<label class="form-label">${escapeHtml(title)}${unit}</label>`;
+
+    if (pm.type === 'bool') {
+      const isTrue = val === true || val === 'true';
+      html += `<select id="${id}" class="form-input" ${attrs} data-param="${key}" data-type="bool">
+        <option value="true" ${isTrue ? 'selected' : ''}>Yes</option>
+        <option value="false" ${!isTrue ? 'selected' : ''}>No</option>
+      </select>`;
+    } else if (pm.type === 'select') {
+      const onchangeAttr = pm.visible_when ? '' : ` onchange="${onToggle()}"`;
+      html += `<select id="${id}" class="form-input" ${attrs} data-param="${key}" data-type="select"${onchangeAttr}>`;
+      for (const opt of (pm.options || [])) {
+        const ov = typeof opt === 'object' ? opt.value : opt;
+        const ol = typeof opt === 'object' ? opt.label : opt;
+        html += `<option value="${escapeHtml(String(ov))}" ${val === ov ? 'selected' : ''}>${escapeHtml(String(ol))}</option>`;
+      }
+      html += '</select>';
+    } else {
+      const step = pm.step || (pm.type === 'int' ? 1 : 0.001);
+      html += `<input type="number" step="${step}" id="${id}" class="form-input" value="${val}" ${attrs} data-param="${key}" data-type="${pm.type || 'float'}">`;
+    }
+    html += '</div>';
+  }
+  html += '</div>';
+  html += extraHtml;
+  return html;
+}
+
+/**
+ * 의존 파라미터 표시/숨김 토글 (공용)
+ */
+function _toggleDeps(container, key, val) {
+  if (!container) return;
+  container.querySelectorAll(`[data-depends-on="${key}"]`).forEach(group => {
+    const allowed = group.dataset.dependsValues.split(',');
+    group.style.display = allowed.includes(val) ? '' : 'none';
+  });
+}
+
+/**
+ * 입력값 수집 (공용)
+ * @param {string} selector - CSS 셀렉터
+ * @returns {Object} 파라미터 객체
+ */
+function _collectParamValues(selector) {
+  const params = {};
+  document.querySelectorAll(selector).forEach(input => {
+    const key = input.dataset.param;
+    const type = input.dataset.type;
+    if (type === 'bool') params[key] = input.value === 'true';
+    else if (type === 'int') { if (input.value !== '') params[key] = parseInt(input.value, 10); }
+    else if (type === 'select') params[key] = input.value;
+    else { if (input.value !== '') params[key] = parseFloat(input.value); }
+  });
+  return params;
+}
+
+/* ============================================================
    Trading Combos (CRUD + 동적 파라미터 렌더링)
    ============================================================ */
 
@@ -466,7 +564,9 @@ function _renderCombosPanel(accountId) {
         </div>
       </div>
       <div style="color:#94a3b8;font-size:0.85rem;margin-top:0.25rem;">
-        Buy: ${escapeHtml(buyMeta.display_name || combo.buy_logic_name)} | Sell: ${escapeHtml(sellMeta.display_name || combo.sell_logic_name)}
+        <span style="color:#4ade80;">Buy:</span> ${escapeHtml(buyMeta.display_name || combo.buy_logic_name)}
+        <span style="margin:0 0.25rem;">|</span>
+        <span style="color:#f87171;">Sell:</span> ${escapeHtml(sellMeta.display_name || combo.sell_logic_name)}
       </div>
       ${paramsHtml ? '<div style="color:#64748b;font-size:0.8rem;margin-top:0.25rem;">' + paramsHtml + '</div>' : ''}
     </div>`;
@@ -493,6 +593,8 @@ function showCreateComboModal() {
   renderComboParams('sell');
   document.getElementById('combo-buy-logic-group').style.display = '';
   document.getElementById('combo-sell-logic-group').style.display = '';
+  document.getElementById('combo-reapply-group').style.display = 'none';
+  document.getElementById('combo-reapply-orders').checked = false;
   document.getElementById('combo-modal').style.display = 'flex';
 }
 
@@ -509,6 +611,8 @@ function editCombo(comboId) {
   document.getElementById('combo-sell-logic-group').style.display = 'none';
   renderComboParams('buy', combo.buy_params);
   renderComboParams('sell', combo.sell_params);
+  document.getElementById('combo-reapply-group').style.display = '';
+  document.getElementById('combo-reapply-orders').checked = false;
   document.getElementById('combo-modal').style.display = 'flex';
 }
 
@@ -544,88 +648,36 @@ function renderComboParams(side, existingParams) {
   const defaults = meta.default_params || {};
   const current = existingParams || {};
 
-  let html = '<div class="tune-grid">';
-  for (const [key, pm] of Object.entries(tunableParams)) {
-    const val = current[key] ?? defaults[key] ?? '';
-    const title = pm.title || key;
-    const unit = pm.unit ? ` <span class="form-hint">(${escapeHtml(pm.unit)})</span>` : '';
-    const inputId = `combo-${side}-${key}`;
-
-    // visible_when: 조건부 표시
-    let groupAttrs = '';
-    let groupStyle = '';
-    if (pm.visible_when) {
-      const depKey = Object.keys(pm.visible_when)[0];
-      const depVals = Array.isArray(pm.visible_when[depKey]) ? pm.visible_when[depKey] : [pm.visible_when[depKey]];
-      const curDepVal = String(current[depKey] ?? defaults[depKey] ?? '');
-      const visible = depVals.includes(curDepVal);
-      groupAttrs = ` data-depends-on="${escapeHtml(depKey)}" data-depends-values="${depVals.map(v => escapeHtml(String(v))).join(',')}"`;
-      groupStyle = visible ? '' : ' style="display:none"';
-    }
-
-    html += `<div class="form-group"${groupAttrs}${groupStyle}>`;
-    html += `<label class="form-label">${escapeHtml(title)}${unit}</label>`;
-
-    if (pm.type === 'bool') {
-      const isTrue = val === true || val === 'true';
-      html += `<select id="${inputId}" class="form-input" data-combo-side="${side}" data-param="${key}" data-type="bool">
-        <option value="true" ${isTrue ? 'selected' : ''}>Yes</option>
-        <option value="false" ${!isTrue ? 'selected' : ''}>No</option>
-      </select>`;
-    } else if (pm.type === 'select') {
-      const onchangeAttr = pm.visible_when ? '' : ` onchange="toggleDependentParams(this,'${side}')"`;
-      html += `<select id="${inputId}" class="form-input" data-combo-side="${side}" data-param="${key}" data-type="select"${onchangeAttr}>`;
-      for (const opt of (pm.options || [])) {
-        const ov = typeof opt === 'object' ? opt.value : opt;
-        const ol = typeof opt === 'object' ? opt.label : opt;
-        html += `<option value="${escapeHtml(String(ov))}" ${val === ov ? 'selected' : ''}>${escapeHtml(String(ol))}</option>`;
-      }
-      html += '</select>';
-    } else {
-      const step = pm.step || (pm.type === 'int' ? 1 : 0.001);
-      html += `<input type="number" step="${step}" id="${inputId}" class="form-input" value="${val}" data-combo-side="${side}" data-param="${key}" data-type="${pm.type || 'float'}">`;
-    }
-    html += '</div>';
-  }
-  html += '</div>';
-
   // scaled_plan 계산기 버튼 (buy side만)
+  let extraHtml = '';
   if (side === 'buy' && tunableParams.sizing_mode) {
     const smOptions = (tunableParams.sizing_mode.options || []).map(o => typeof o === 'object' ? o.value : o);
     if (smOptions.includes('scaled_plan')) {
       const curSm = current.sizing_mode ?? defaults.sizing_mode ?? 'fixed';
       const btnVisible = curSm === 'scaled_plan' ? '' : 'display:none';
-      html += `<div data-depends-on="sizing_mode" data-depends-values="scaled_plan" style="${btnVisible};margin-top:4px;">
+      extraHtml = `<div data-depends-on="sizing_mode" data-depends-values="scaled_plan" style="${btnVisible};margin-top:4px;">
         <button type="button" class="btn btn-outline btn-sm" onclick="openBuyPlanCalc()">매수 계획 계산기</button>
       </div>`;
     }
   }
 
-  container.innerHTML = html;
+  container.innerHTML = _renderParamsHtml({
+    tunableParams, defaults, current, side,
+    inputId: (key) => `combo-${side}-${key}`,
+    dataAttrs: (key) => `data-combo-side="${side}"`,
+    onToggle: () => `toggleDependentParams(this,'${side}')`,
+    showUnit: true,
+    extraHtml,
+  });
 }
 
 function toggleDependentParams(selectEl, side) {
-  const val = selectEl.value;
-  const key = selectEl.dataset.param;
   const container = document.getElementById(side === 'buy' ? 'combo-buy-params' : 'combo-sell-params');
-  if (!container) return;
-  container.querySelectorAll(`[data-depends-on="${key}"]`).forEach(group => {
-    const allowed = group.dataset.dependsValues.split(',');
-    group.style.display = allowed.includes(val) ? '' : 'none';
-  });
+  _toggleDeps(container, selectEl.dataset.param, selectEl.value);
 }
 
 function _collectComboParams(side) {
-  const params = {};
-  document.querySelectorAll(`[data-combo-side="${side}"]`).forEach(input => {
-    const key = input.dataset.param;
-    const type = input.dataset.type;
-    if (type === 'bool') params[key] = input.value === 'true';
-    else if (type === 'int') { if (input.value !== '') params[key] = parseInt(input.value, 10); }
-    else if (type === 'select') params[key] = input.value;
-    else { if (input.value !== '') params[key] = parseFloat(input.value); }
-  });
-  return params;
+  return _collectParamValues(`[data-combo-side="${side}"]`);
 }
 
 async function saveCombo() {
@@ -648,6 +700,9 @@ async function saveCombo() {
     body.buy_logic_name = document.getElementById('combo-buy-logic').value;
     body.sell_logic_name = document.getElementById('combo-sell-logic').value;
   }
+  if (isEdit && document.getElementById('combo-reapply-orders').checked) {
+    body.reapply_open_orders = true;
+  }
   if (refComboId) body.reference_combo_id = refComboId;
 
   try {
@@ -657,7 +712,10 @@ async function saveCombo() {
       body: JSON.stringify(body),
     });
     if (resp.ok) {
-      showToast(isEdit ? 'Combo updated' : 'Combo created', 'success');
+      const msg = isEdit
+        ? (body.reapply_open_orders ? 'Combo updated + open orders will be re-placed' : 'Combo updated')
+        : 'Combo created';
+      showToast(msg, 'success');
       closeComboModal();
       await loadCombosAndLots(ACCOUNT_ID);
     } else {
@@ -1037,26 +1095,29 @@ function addBtCombo() {
       <h3 class="tune-panel-title" style="margin:0;">Combo ${idx + 1}</h3>
       <button type="button" class="btn btn-danger btn-sm" onclick="removeBtCombo(${idx})">Remove</button>
     </div>
-    <div class="tune-grid" style="margin-top:0.5rem;">
-      <div class="form-group">
-        <label class="form-label">Name</label>
-        <input type="text" class="form-input" id="bt-combo-name-${idx}" value="combo_${idx + 1}">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Buy Logic</label>
-        <select class="form-input" id="bt-combo-buy-${idx}" onchange="renderBtComboParams(${idx},'buy')">${buyOpts}</select>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Sell Logic</label>
-        <select class="form-input" id="bt-combo-sell-${idx}" onchange="renderBtComboParams(${idx},'sell')">${sellOpts}</select>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Reference Combo</label>
-        <input type="text" class="form-input" id="bt-combo-ref-${idx}" placeholder="(none)">
+    <div class="combo-section combo-section-general">
+      <div class="combo-section-title">General</div>
+      <div class="tune-grid" style="margin-top:0;">
+        <div class="form-group">
+          <label class="form-label">Name</label>
+          <input type="text" class="form-input" id="bt-combo-name-${idx}" value="combo_${idx + 1}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Reference Combo</label>
+          <input type="text" class="form-input" id="bt-combo-ref-${idx}" placeholder="(none)">
+        </div>
       </div>
     </div>
-    <div id="bt-combo-buy-params-${idx}" style="margin-top:0.5rem;"></div>
-    <div id="bt-combo-sell-params-${idx}" style="margin-top:0.5rem;"></div>
+    <div class="combo-section combo-section-buy">
+      <div class="combo-section-title">Buy Logic</div>
+      <select class="form-input" id="bt-combo-buy-${idx}" onchange="renderBtComboParams(${idx},'buy')">${buyOpts}</select>
+      <div id="bt-combo-buy-params-${idx}"></div>
+    </div>
+    <div class="combo-section combo-section-sell">
+      <div class="combo-section-title">Sell Logic</div>
+      <select class="form-input" id="bt-combo-sell-${idx}" onchange="renderBtComboParams(${idx},'sell')">${sellOpts}</select>
+      <div id="bt-combo-sell-params-${idx}"></div>
+    </div>
   `;
   container.appendChild(div);
   renderBtComboParams(idx, 'buy');
@@ -1077,102 +1138,39 @@ function renderBtComboParams(idx, side) {
   const container = document.getElementById(containerId);
   if (!container || !meta) { if (container) container.innerHTML = ''; return; }
 
-  const tunableParams = meta.tunable_params || {};
-  const defaults = meta.default_params || {};
-  let html = '<div class="tune-grid">';
-  for (const [key, pm] of Object.entries(tunableParams)) {
-    const val = defaults[key] ?? '';
-    const title = pm.title || key;
-    const inputId = `bt-c${idx}-${side}-${key}`;
-
-    // visible_when: 조건부 표시
-    let groupAttrs = '';
-    let groupStyle = '';
-    if (pm.visible_when) {
-      const depKey = Object.keys(pm.visible_when)[0];
-      const depVals = Array.isArray(pm.visible_when[depKey]) ? pm.visible_when[depKey] : [pm.visible_when[depKey]];
-      const curDepVal = String(defaults[depKey] ?? '');
-      const visible = depVals.includes(curDepVal);
-      groupAttrs = ` data-depends-on="${escapeHtml(depKey)}" data-depends-values="${depVals.map(v => escapeHtml(String(v))).join(',')}"`;
-      groupStyle = visible ? '' : ' style="display:none"';
-    }
-
-    html += `<div class="form-group"${groupAttrs}${groupStyle}>`;
-    html += `<label class="form-label">${escapeHtml(title)}</label>`;
-    if (pm.type === 'bool') {
-      const isTrue = val === true || val === 'true';
-      html += `<select id="${inputId}" class="form-input" data-bt-combo="${idx}" data-bt-side="${side}" data-param="${key}" data-type="bool">
-        <option value="true" ${isTrue ? 'selected' : ''}>Yes</option>
-        <option value="false" ${!isTrue ? 'selected' : ''}>No</option>
-      </select>`;
-    } else if (pm.type === 'select') {
-      const onchangeAttr = pm.visible_when ? '' : ` onchange="toggleBtDependentParams(this,${idx},'${side}')"`;
-      html += `<select id="${inputId}" class="form-input" data-bt-combo="${idx}" data-bt-side="${side}" data-param="${key}" data-type="select"${onchangeAttr}>`;
-      for (const opt of (pm.options || [])) {
-        const ov = typeof opt === 'object' ? opt.value : opt;
-        const ol = typeof opt === 'object' ? opt.label : opt;
-        html += `<option value="${escapeHtml(String(ov))}" ${val === ov ? 'selected' : ''}>${escapeHtml(String(ol))}</option>`;
-      }
-      html += '</select>';
-    } else {
-      const step = pm.step || (pm.type === 'int' ? 1 : 0.001);
-      html += `<input type="number" step="${step}" id="${inputId}" class="form-input" value="${val}" data-bt-combo="${idx}" data-bt-side="${side}" data-param="${key}" data-type="${pm.type || 'float'}">`;
-    }
-    html += '</div>';
-  }
-  html += '</div>';
-  container.innerHTML = html;
+  container.innerHTML = _renderParamsHtml({
+    tunableParams: meta.tunable_params || {},
+    defaults: meta.default_params || {},
+    current: {},
+    side,
+    inputId: (key) => `bt-c${idx}-${side}-${key}`,
+    dataAttrs: (key) => `data-bt-combo="${idx}" data-bt-side="${side}"`,
+    onToggle: () => `toggleBtDependentParams(this,${idx},'${side}')`,
+    showUnit: true,
+  });
 }
 
 function toggleBtDependentParams(selectEl, idx, side) {
-  const val = selectEl.value;
-  const key = selectEl.dataset.param;
   const containerId = side === 'buy' ? 'bt-combo-buy-params-' + idx : 'bt-combo-sell-params-' + idx;
-  const container = document.getElementById(containerId);
-  if (!container) return;
-  container.querySelectorAll(`[data-depends-on="${key}"]`).forEach(group => {
-    const allowed = group.dataset.dependsValues.split(',');
-    group.style.display = allowed.includes(val) ? '' : 'none';
-  });
+  _toggleDeps(document.getElementById(containerId), selectEl.dataset.param, selectEl.value);
 }
 
 function _collectBtCombos() {
   const combos = [];
-  document.querySelectorAll('[id^="bt-combo-"][id$="-0"], [id^="bt-combo-"]').forEach(el => {
+  document.querySelectorAll('[id^="bt-combo-"]').forEach(el => {
     const match = el.id.match(/^bt-combo-(\d+)$/);
     if (!match) return;
     const idx = parseInt(match[1], 10);
     const nameEl = document.getElementById('bt-combo-name-' + idx);
     if (!nameEl) return;
-    const name = nameEl.value.trim() || 'combo_' + (idx + 1);
-    const buyLogic = document.getElementById('bt-combo-buy-' + idx).value;
-    const sellLogic = document.getElementById('bt-combo-sell-' + idx).value;
-    const refName = document.getElementById('bt-combo-ref-' + idx).value.trim() || null;
-
-    const buyParams = {};
-    const sellParams = {};
-    document.querySelectorAll(`[data-bt-combo="${idx}"]`).forEach(input => {
-      const side = input.dataset.btSide;
-      const key = input.dataset.param;
-      const type = input.dataset.type;
-      let val;
-      if (type === 'bool') val = input.value === 'true';
-      else if (type === 'int') val = input.value !== '' ? parseInt(input.value, 10) : undefined;
-      else if (type === 'select') val = input.value;
-      else val = input.value !== '' ? parseFloat(input.value) : undefined;
-      if (val !== undefined) {
-        if (side === 'buy') buyParams[key] = val;
-        else sellParams[key] = val;
-      }
-    });
 
     combos.push({
-      name,
-      buy_logic_name: buyLogic,
-      buy_params: buyParams,
-      sell_logic_name: sellLogic,
-      sell_params: sellParams,
-      reference_combo_name: refName,
+      name: nameEl.value.trim() || 'combo_' + (idx + 1),
+      buy_logic_name: document.getElementById('bt-combo-buy-' + idx).value,
+      buy_params: _collectParamValues(`[data-bt-combo="${idx}"][data-bt-side="buy"]`),
+      sell_logic_name: document.getElementById('bt-combo-sell-' + idx).value,
+      sell_params: _collectParamValues(`[data-bt-combo="${idx}"][data-bt-side="sell"]`),
+      reference_combo_name: document.getElementById('bt-combo-ref-' + idx).value.trim() || null,
     });
   });
   return combos;
