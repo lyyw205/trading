@@ -543,7 +543,19 @@ function renderComboParams(side, existingParams) {
     const unit = pm.unit ? ` <span class="form-hint">(${escapeHtml(pm.unit)})</span>` : '';
     const inputId = `combo-${side}-${key}`;
 
-    html += '<div class="form-group">';
+    // visible_when: 조건부 표시
+    let groupAttrs = '';
+    let groupStyle = '';
+    if (pm.visible_when) {
+      const depKey = Object.keys(pm.visible_when)[0];
+      const depVals = Array.isArray(pm.visible_when[depKey]) ? pm.visible_when[depKey] : [pm.visible_when[depKey]];
+      const curDepVal = String(current[depKey] ?? defaults[depKey] ?? '');
+      const visible = depVals.includes(curDepVal);
+      groupAttrs = ` data-depends-on="${escapeHtml(depKey)}" data-depends-values="${depVals.map(v => escapeHtml(String(v))).join(',')}"`;
+      groupStyle = visible ? '' : ' style="display:none"';
+    }
+
+    html += `<div class="form-group"${groupAttrs}${groupStyle}>`;
     html += `<label class="form-label">${escapeHtml(title)}${unit}</label>`;
 
     if (pm.type === 'bool') {
@@ -553,7 +565,8 @@ function renderComboParams(side, existingParams) {
         <option value="false" ${!isTrue ? 'selected' : ''}>No</option>
       </select>`;
     } else if (pm.type === 'select') {
-      html += `<select id="${inputId}" class="form-input" data-combo-side="${side}" data-param="${key}" data-type="select">`;
+      const onchangeAttr = pm.visible_when ? '' : ` onchange="toggleDependentParams(this,'${side}')"`;
+      html += `<select id="${inputId}" class="form-input" data-combo-side="${side}" data-param="${key}" data-type="select"${onchangeAttr}>`;
       for (const opt of (pm.options || [])) {
         const ov = typeof opt === 'object' ? opt.value : opt;
         const ol = typeof opt === 'object' ? opt.label : opt;
@@ -567,7 +580,31 @@ function renderComboParams(side, existingParams) {
     html += '</div>';
   }
   html += '</div>';
+
+  // scaled_plan 계산기 버튼 (buy side만)
+  if (side === 'buy' && tunableParams.sizing_mode) {
+    const smOptions = (tunableParams.sizing_mode.options || []).map(o => typeof o === 'object' ? o.value : o);
+    if (smOptions.includes('scaled_plan')) {
+      const curSm = current.sizing_mode ?? defaults.sizing_mode ?? 'fixed';
+      const btnVisible = curSm === 'scaled_plan' ? '' : 'display:none';
+      html += `<div data-depends-on="sizing_mode" data-depends-values="scaled_plan" style="${btnVisible};margin-top:4px;">
+        <button type="button" class="btn btn-outline btn-sm" onclick="openBuyPlanCalc()">매수 계획 계산기</button>
+      </div>`;
+    }
+  }
+
   container.innerHTML = html;
+}
+
+function toggleDependentParams(selectEl, side) {
+  const val = selectEl.value;
+  const key = selectEl.dataset.param;
+  const container = document.getElementById(side === 'buy' ? 'combo-buy-params' : 'combo-sell-params');
+  if (!container) return;
+  container.querySelectorAll(`[data-depends-on="${key}"]`).forEach(group => {
+    const allowed = group.dataset.dependsValues.split(',');
+    group.style.display = allowed.includes(val) ? '' : 'none';
+  });
 }
 
 function _collectComboParams(side) {
@@ -972,7 +1009,20 @@ function renderBtComboParams(idx, side) {
     const val = defaults[key] ?? '';
     const title = pm.title || key;
     const inputId = `bt-c${idx}-${side}-${key}`;
-    html += '<div class="form-group">';
+
+    // visible_when: 조건부 표시
+    let groupAttrs = '';
+    let groupStyle = '';
+    if (pm.visible_when) {
+      const depKey = Object.keys(pm.visible_when)[0];
+      const depVals = Array.isArray(pm.visible_when[depKey]) ? pm.visible_when[depKey] : [pm.visible_when[depKey]];
+      const curDepVal = String(defaults[depKey] ?? '');
+      const visible = depVals.includes(curDepVal);
+      groupAttrs = ` data-depends-on="${escapeHtml(depKey)}" data-depends-values="${depVals.map(v => escapeHtml(String(v))).join(',')}"`;
+      groupStyle = visible ? '' : ' style="display:none"';
+    }
+
+    html += `<div class="form-group"${groupAttrs}${groupStyle}>`;
     html += `<label class="form-label">${escapeHtml(title)}</label>`;
     if (pm.type === 'bool') {
       const isTrue = val === true || val === 'true';
@@ -981,7 +1031,8 @@ function renderBtComboParams(idx, side) {
         <option value="false" ${!isTrue ? 'selected' : ''}>No</option>
       </select>`;
     } else if (pm.type === 'select') {
-      html += `<select id="${inputId}" class="form-input" data-bt-combo="${idx}" data-bt-side="${side}" data-param="${key}" data-type="select">`;
+      const onchangeAttr = pm.visible_when ? '' : ` onchange="toggleBtDependentParams(this,${idx},'${side}')"`;
+      html += `<select id="${inputId}" class="form-input" data-bt-combo="${idx}" data-bt-side="${side}" data-param="${key}" data-type="select"${onchangeAttr}>`;
       for (const opt of (pm.options || [])) {
         const ov = typeof opt === 'object' ? opt.value : opt;
         const ol = typeof opt === 'object' ? opt.label : opt;
@@ -996,6 +1047,18 @@ function renderBtComboParams(idx, side) {
   }
   html += '</div>';
   container.innerHTML = html;
+}
+
+function toggleBtDependentParams(selectEl, idx, side) {
+  const val = selectEl.value;
+  const key = selectEl.dataset.param;
+  const containerId = side === 'buy' ? 'bt-combo-buy-params-' + idx : 'bt-combo-sell-params-' + idx;
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  container.querySelectorAll(`[data-depends-on="${key}"]`).forEach(group => {
+    const allowed = group.dataset.dependsValues.split(',');
+    group.style.display = allowed.includes(val) ? '' : 'none';
+  });
 }
 
 function _collectBtCombos() {
@@ -1147,6 +1210,103 @@ async function deleteBacktest(runId) {
     if (resp.ok) { showToast('Backtest deleted', 'success'); loadBacktestHistory(); }
     else { const err = await resp.json().catch(() => ({})); showToast('Error: ' + (err.detail || 'Delete failed'), 'error'); }
   } catch (e) { showToast('Network error: ' + e.message, 'error'); }
+}
+
+/* ============================================================
+   Buy Plan Calculator (매수 계획 계산기)
+   ============================================================ */
+
+function openBuyPlanCalc() {
+  const modal = document.getElementById('buyplan-calc-modal');
+  if (!modal) return;
+  // USDT 잔고 자동 입력 시도
+  const usdtEl = document.querySelector('.asset-value');
+  if (usdtEl) {
+    const parsed = parseFloat(usdtEl.textContent);
+    if (!isNaN(parsed) && parsed > 0) {
+      document.getElementById('bp-initialUsdt').value = parsed.toFixed(2);
+    }
+  }
+  // plan_x_pct 값 동기화
+  const xPctInput = document.querySelector('[data-param="plan_x_pct"]');
+  if (xPctInput && xPctInput.value) {
+    document.getElementById('bp-xPct').value = xPctInput.value;
+  }
+  modal.style.display = 'flex';
+  runBuyPlanCalc();
+}
+
+function closeBuyPlanCalc() {
+  const modal = document.getElementById('buyplan-calc-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+function calcBuyPlan(initialUsdt, xPct, minOrderUsdt, previewAfter5) {
+  const x = xPct / 100;
+  if (!(x > 0 && x < 0.2)) return null;
+  if (!(initialUsdt > 0)) return null;
+
+  let R = initialUsdt;
+  const firstFive = [];
+  let tradeCount = 0;
+
+  for (let k = 1; k <= 5; k++) {
+    const pct = k * x;
+    const usdt = R * pct;
+    if (usdt < minOrderUsdt) {
+      return { firstFive, post5TargetUsdt: null, after5: [], maxTrades: tradeCount, lastUsdt: null, remainUsdt: R, reason: k + '회차 주문금액이 최소 주문금액 미만' };
+    }
+    R -= usdt;
+    firstFive.push({ round: k, pct: pct * 100, usdt, remain: R });
+    tradeCount++;
+  }
+
+  const A = firstFive[4].usdt;
+  const after5 = [];
+  let tmpR = R;
+  for (let i = 0; i < previewAfter5; i++) {
+    if (tmpR <= 0) break;
+    const needPct = (A / tmpR) * 100;
+    after5.push({ round: 6 + i, pct: Math.min(needPct, 100), usdt: Math.min(A, tmpR) });
+    if (tmpR >= A) tmpR -= A; else break;
+  }
+
+  let reason = '';
+  while (R > 0) {
+    if (R >= A) { if (A < minOrderUsdt) { reason = '6회 이후 목표금액(A)이 최소 주문금액 미만'; break; } R -= A; tradeCount++; continue; }
+    if (R < minOrderUsdt) { reason = '잔고가 최소 주문금액 미만'; break; }
+    tradeCount++; R = 0; break;
+  }
+
+  return { firstFive, post5TargetUsdt: A, after5, maxTrades: tradeCount, remainUsdt: R, reason };
+}
+
+function runBuyPlanCalc() {
+  const warn = document.getElementById('bp-warn');
+  warn.style.display = 'none';
+  const result = calcBuyPlan(
+    Number(document.getElementById('bp-initialUsdt').value),
+    Number(document.getElementById('bp-xPct').value),
+    Number(document.getElementById('bp-minOrder').value),
+    Number(document.getElementById('bp-preview').value),
+  );
+  if (!result) { warn.textContent = '입력값을 확인해 주세요.'; warn.style.display = 'block'; return; }
+
+  const summary = document.getElementById('bp-summary');
+  summary.innerHTML = `
+    <div class="asset-card"><div class="asset-label">5회차 기준금액 A</div><div class="asset-value">${result.post5TargetUsdt != null ? fmt(result.post5TargetUsdt, 2) : '-'}</div></div>
+    <div class="asset-card"><div class="asset-label">예상 최대 거래 횟수</div><div class="asset-value">${result.maxTrades}</div></div>
+    <div class="asset-card"><div class="asset-label">종료 후 잔고</div><div class="asset-value">${fmt(result.remainUsdt, 2)}</div></div>
+  `;
+  if (result.reason) { warn.textContent = '중단 사유: ' + result.reason; warn.style.display = 'block'; }
+
+  document.getElementById('bp-firstFive').innerHTML = result.firstFive.map(r =>
+    `<tr><td>${r.round}</td><td>${fmt(r.pct, 2)}%</td><td>${fmt(r.usdt, 2)}</td><td>${fmt(r.remain, 2)}</td></tr>`
+  ).join('') || '<tr><td colspan="4">-</td></tr>';
+
+  document.getElementById('bp-afterFive').innerHTML = result.after5.map(r =>
+    `<tr><td>${r.round}</td><td>${fmt(r.pct, 2)}%</td><td>${fmt(r.usdt, 2)}</td></tr>`
+  ).join('') || '<tr><td colspan="3">-</td></tr>';
 }
 
 /* ============================================================

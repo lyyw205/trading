@@ -30,6 +30,7 @@ cryptography>=42.0.0
 
 # Data
 pandas>=2.0.0
+pyarrow>=14.0.0
 
 # Testing
 pytest>=8.0.0

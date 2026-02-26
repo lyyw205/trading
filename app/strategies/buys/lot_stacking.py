@@ -7,6 +7,7 @@ from uuid import UUID
 
 from app.strategies.base import BaseBuyLogic, StrategyContext, RepositoryBundle
 from app.strategies.registry import BuyLogicRegistry
+from app.strategies.sizing import resolve_buy_usdt
 from app.strategies.utils import extract_base_commission_qty
 from app.models.core_btc_history import CoreBtcHistory
 
@@ -38,6 +39,10 @@ class LotStackingBuy(BaseBuyLogic):
 
     default_params = {
         "buy_usdt": 100.0,
+        "sizing_mode": "fixed",
+        "buy_balance_pct": 10.0,
+        "plan_x_pct": 0.5,
+        "max_buy_usdt": 500.0,
         "drop_pct": 0.006,
         "prebuy_pct": 0.0015,
         "cancel_rebound_pct": 0.004,
@@ -49,9 +54,34 @@ class LotStackingBuy(BaseBuyLogic):
     }
 
     tunable_params = {
+        "sizing_mode": {
+            "type": "select",
+            "options": [
+                {"value": "fixed", "label": "고정 금액"},
+                {"value": "pct_balance", "label": "잔고 비율"},
+                {"value": "scaled_plan", "label": "단계별 비율"},
+            ],
+            "title": "매수 금액 모드",
+        },
         "buy_usdt": {
             "type": "float", "min": 10.0, "max": 500.0, "step": 1.0,
-            "title": "\ub85c\ud2b8 \ub9e4\uc218\uae08\uc561", "unit": "USDT",
+            "title": "롯 매수금액", "unit": "USDT",
+            "visible_when": {"sizing_mode": "fixed"},
+        },
+        "buy_balance_pct": {
+            "type": "float", "min": 1.0, "max": 50.0, "step": 0.5,
+            "title": "잔고 대비 매수 비율", "unit": "%",
+            "visible_when": {"sizing_mode": "pct_balance"},
+        },
+        "plan_x_pct": {
+            "type": "float", "min": 0.1, "max": 10.0, "step": 0.1,
+            "title": "단계별 기본 비율 (x%)", "unit": "%",
+            "visible_when": {"sizing_mode": "scaled_plan"},
+        },
+        "max_buy_usdt": {
+            "type": "float", "min": 10.0, "max": 5000.0, "step": 10.0,
+            "title": "최대 매수 금액", "unit": "USDT",
+            "visible_when": {"sizing_mode": ["pct_balance", "scaled_plan"]},
         },
         "drop_pct": {
             "type": "float", "min": 0.006, "max": 0.02, "step": 0.0005,
@@ -234,6 +264,15 @@ class LotStackingBuy(BaseBuyLogic):
                 buy_time_ms=update_time_ms,
                 combo_id=combo_id,
             )
+
+            # scaled_plan: 회차 증가 + 5회차 금액(A) 저장
+            sizing_mode = ctx.params.get("sizing_mode", "fixed")
+            if sizing_mode == "scaled_plan":
+                cur_round = await state.get_int("sizing_round", 1)
+                if cur_round == 5:
+                    await state.set("plan_5th_amount", spent_usdt)
+                await state.set("sizing_round", cur_round + 1)
+
             logger.info(
                 "lot_stacking_buy: LOT buy filled qty_net=%.8f avg=%.2f",
                 bought_qty_net, avg_price,
@@ -259,6 +298,14 @@ class LotStackingBuy(BaseBuyLogic):
         open_lots = await repos.lot.get_open_lots_by_combo(ctx.account_id, ctx.symbol, combo_id)
         if open_lots:
             return
+
+        # scaled_plan: open_lots 없고 pending 없으면 회차 리셋
+        pending = await state.get("pending_order_id")
+        if not pending or str(pending).strip() == "":
+            sizing_mode = ctx.params.get("sizing_mode", "fixed")
+            if sizing_mode == "scaled_plan":
+                await state.set("sizing_round", 1)
+                await state.set("plan_5th_amount", "")
 
         base_price = await state.get_float("base_price", 0.0)
         if base_price <= 0:
@@ -313,7 +360,6 @@ class LotStackingBuy(BaseBuyLogic):
         drop_pct = ctx.params.get("drop_pct", 0.006)
         prebuy_pct = ctx.params.get("prebuy_pct", 0.0015)
         min_trade_usdt = ctx.params.get("min_trade_usdt", 6.0)
-        buy_usdt = ctx.params.get("buy_usdt", 100.0)
 
         trigger_price = base_price * (1 - drop_pct)
         prebuy_price = trigger_price * (1 + prebuy_pct)
@@ -323,7 +369,12 @@ class LotStackingBuy(BaseBuyLogic):
 
         filters = await exchange.get_symbol_filters(ctx.symbol)
 
-        total_buy_usdt = buy_usdt
+        free_balance = await exchange.get_free_balance(ctx.quote_asset)
+        sizing_round = await state.get_int("sizing_round", 1)
+        plan_5th_amt = await state.get_float("plan_5th_amount", 0.0)
+        total_buy_usdt = resolve_buy_usdt(
+            ctx.params, free_balance, sizing_round, plan_5th_amt,
+        )
 
         if total_buy_usdt < min_trade_usdt:
             logger.warning(

@@ -7,6 +7,7 @@ from uuid import UUID
 
 from app.strategies.base import BaseBuyLogic, StrategyContext, RepositoryBundle
 from app.strategies.registry import BuyLogicRegistry
+from app.strategies.sizing import resolve_buy_usdt
 from app.strategies.utils import extract_base_commission_qty
 
 if TYPE_CHECKING:
@@ -36,6 +37,9 @@ class TrendBuy(BaseBuyLogic):
 
     default_params = {
         "buy_usdt": 50.0,
+        "sizing_mode": "fixed",
+        "buy_balance_pct": 10.0,
+        "max_buy_usdt": 500.0,
         "enable_pct": 0.03,
         "recenter_pct": 0.02,
         "drop_pct": 0.01,
@@ -44,9 +48,28 @@ class TrendBuy(BaseBuyLogic):
     }
 
     tunable_params = {
+        "sizing_mode": {
+            "type": "select",
+            "options": [
+                {"value": "fixed", "label": "고정 금액"},
+                {"value": "pct_balance", "label": "잔고 비율"},
+            ],
+            "title": "매수 금액 모드",
+        },
         "buy_usdt": {
             "type": "float", "min": 10.0, "max": 500.0, "step": 1.0,
-            "title": "\ucd94\uc138 \ub9e4\uc218\uae08\uc561", "unit": "USDT",
+            "title": "추세 매수금액", "unit": "USDT",
+            "visible_when": {"sizing_mode": "fixed"},
+        },
+        "buy_balance_pct": {
+            "type": "float", "min": 1.0, "max": 50.0, "step": 0.5,
+            "title": "잔고 대비 매수 비율", "unit": "%",
+            "visible_when": {"sizing_mode": "pct_balance"},
+        },
+        "max_buy_usdt": {
+            "type": "float", "min": 10.0, "max": 5000.0, "step": 10.0,
+            "title": "최대 매수 금액", "unit": "USDT",
+            "visible_when": {"sizing_mode": "pct_balance"},
         },
         "enable_pct": {
             "type": "float", "min": 0.01, "max": 0.1, "step": 0.005,
@@ -228,7 +251,6 @@ class TrendBuy(BaseBuyLogic):
         drop_pct = ctx.params.get("drop_pct", 0.01)
         step_pct = ctx.params.get("step_pct", 0.01)
         min_trade_usdt = ctx.params.get("min_trade_usdt", 6.0)
-        buy_usdt = ctx.params.get("buy_usdt", 50.0)
 
         if ctx.current_price < lot_base_price * (1 + enable_pct):
             return
@@ -258,7 +280,8 @@ class TrendBuy(BaseBuyLogic):
 
         filters = await exchange.get_symbol_filters(ctx.symbol)
 
-        total_buy_usdt = buy_usdt
+        free_balance = await exchange.get_free_balance(ctx.quote_asset)
+        total_buy_usdt = resolve_buy_usdt(ctx.params, free_balance)
 
         if total_buy_usdt < min_trade_usdt:
             logger.warning(
