@@ -31,3 +31,25 @@ def setup_logging(level: str = "INFO") -> None:
     root.handlers.clear()
     root.addHandler(handler)
     root.setLevel(getattr(logging, level.upper(), logging.INFO))
+
+    # 감사 로그 전용 핸들러 (JSON 문자열을 그대로 출력)
+    audit = logging.getLogger("audit")
+    audit.propagate = False
+    audit_handler = logging.StreamHandler()
+    audit_handler.setFormatter(logging.Formatter("%(message)s"))
+    audit.addHandler(audit_handler)
+    audit.setLevel(logging.INFO)
+
+
+def audit_log(event: str, user_id: str, account_id: str | None = None, **kwargs) -> None:
+    """보안 감사 로그 기록."""
+    from datetime import datetime, timezone
+    data = {
+        "event": event,
+        "user_id": user_id,
+        "ts": datetime.now(timezone.utc).isoformat(),
+    }
+    if account_id:
+        data["account_id"] = account_id
+    data.update(kwargs)
+    logging.getLogger("audit").info(json.dumps(data, ensure_ascii=False))

@@ -2,11 +2,13 @@ from __future__ import annotations
 from fastapi import APIRouter, Request, Depends, HTTPException
 from fastapi.responses import RedirectResponse
 from app.schemas.auth import UserResponse, LoginUrlResponse
+from app.dependencies import limiter
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 @router.get("/google", response_model=LoginUrlResponse)
+@limiter.limit("10/minute")
 async def google_login(request: Request):
     """Get Google OAuth login URL"""
     auth_service = request.app.state.auth_service
@@ -16,6 +18,7 @@ async def google_login(request: Request):
 
 
 @router.get("/callback", name="auth_callback")
+@limiter.limit("10/minute")
 async def auth_callback(request: Request, code: str = ""):
     """OAuth callback - exchange code for session"""
     if not code:
@@ -51,6 +54,7 @@ async def auth_callback(request: Request, code: str = ""):
 
 
 @router.post("/logout")
+@limiter.limit("10/minute")
 async def logout(request: Request):
     """Clear session cookie"""
     session_mgr = request.app.state.session_manager
@@ -60,6 +64,7 @@ async def logout(request: Request):
 
 
 @router.get("/me", response_model=UserResponse)
+@limiter.limit("10/minute")
 async def me(request: Request):
     """Get current authenticated user"""
     user = getattr(request.state, "user", None)

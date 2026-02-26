@@ -60,6 +60,11 @@ class AccountTrader:
             account = await repo.get_by_id(self.account_id)
             if not account:
                 raise RuntimeError(f"Account {self.account_id} not found")
+            # Phase 3-C: DB에서 서킷 브레이커 상태 복원
+            self._consecutive_failures = account.circuit_breaker_failures or 0
+            if self._consecutive_failures >= 5:
+                logger.warning(f"[{self.account_id}] Circuit breaker already tripped ({self._consecutive_failures} failures), not starting")
+                raise RuntimeError(f"Circuit breaker active: {self._consecutive_failures} failures")
             api_key = self._encryption.decrypt(account.api_key_encrypted)
             api_secret = self._encryption.decrypt(account.api_secret_encrypted)
             self._client = BinanceClient(api_key, api_secret, account.symbol)
@@ -194,12 +199,32 @@ class AccountTrader:
 
     async def run_forever(self):
         """Main trading loop with circuit breaker and exponential backoff"""
-        await self._init_client()
+        # Phase 3-A: _init_client() 실패 시 서킷 브레이커 발동
+        try:
+            await self._init_client()
+        except Exception as e:
+            logger.error(f"[{self.account_id}] _init_client() failed: {e}")
+            self._consecutive_failures = 5
+            await self._disable_with_circuit_breaker()
+            return
+
         logger.info(f"[{self.account_id}] Trading loop started")
 
         while self._running:
             try:
-                await self.step()
+                # Phase 3-B: step() 타임아웃 (180초)
+                await asyncio.wait_for(self.step(), timeout=180)
+            except asyncio.TimeoutError:
+                self._consecutive_failures += 1
+                logger.error(f"[{self.account_id}] step() timed out (180s), failures: {self._consecutive_failures}")
+
+                if self._consecutive_failures >= 5:
+                    await self._disable_with_circuit_breaker()
+                    return
+
+                backoff = min(60, 2 ** (self._consecutive_failures - 1))
+                await asyncio.sleep(backoff)
+                continue
             except Exception as e:
                 self._consecutive_failures += 1
                 logger.error(f"[{self.account_id}] Loop error ({self._consecutive_failures}x): {e}")

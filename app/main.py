@@ -9,8 +9,12 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette_csrf import CSRFMiddleware
 
+from starlette.responses import JSONResponse
+
 from app.config import GlobalConfig
 from app.utils.logging import setup_logging
+from app.dependencies import limiter
+from slowapi.errors import RateLimitExceeded
 from app.services.trading_engine import TradingEngine
 from app.services.rate_limiter import GlobalRateLimiter
 from app.services.auth_service import AuthService
@@ -103,6 +107,20 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+# Rate limiting (slowapi)
+app.state.limiter = limiter
+
+
+def _rate_limit_handler(request, exc: RateLimitExceeded):
+    return JSONResponse(
+        {"detail": f"Rate limit exceeded: {exc.detail}"},
+        status_code=429,
+        headers={"Retry-After": "60"},
+    )
+
+
+app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
 
 # Mount static files
 import os

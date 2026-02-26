@@ -22,8 +22,8 @@ class AccountUpdate(BaseModel):
     symbol: str | None = None
     base_asset: str | None = None
     quote_asset: str | None = None
-    loop_interval_sec: int | None = None
-    order_cooldown_sec: int | None = None
+    loop_interval_sec: int | None = Field(None, ge=10, le=3600)
+    order_cooldown_sec: int | None = Field(None, ge=1, le=300)
     is_active: bool | None = None
 
 

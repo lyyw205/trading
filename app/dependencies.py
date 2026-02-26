@@ -1,6 +1,13 @@
+from uuid import UUID
+
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
 from app.db.session import get_trading_session
+
+limiter = Limiter(key_func=get_remote_address)
 
 
 def get_trading_engine(request: Request):
@@ -26,6 +33,22 @@ async def require_admin(user: dict = Depends(get_current_user)) -> dict:
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
     return user
+
+
+async def get_owned_account(
+    account_id: UUID,
+    user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_trading_session),
+):
+    """계정 조회 + 소유권 검증을 한번에 수행. 통과하면 TradingAccount 반환."""
+    from app.db.account_repo import AccountRepository
+    repo = AccountRepository(session)
+    account = await repo.get_by_id(account_id)
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+    if str(account.owner_id) != user["id"] and user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Access denied")
+    return account
 
 
 def get_auth_service(request: Request):

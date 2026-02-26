@@ -24,33 +24,3 @@ class GlobalRateLimiter:
     @property
     def max_rate(self) -> int:
         return self._max_rate
-
-
-class CircuitBreaker:
-    """
-    계정별 서킷 브레이커.
-    - CLOSED: 정상 동작
-    - OPEN: MAX_FAILURES회 연속 실패 -> 계정 비활성화
-    - 수동 리셋 필요 (관리자 대시보드에서)
-    """
-    MAX_FAILURES = 5
-
-    def __init__(self):
-        self._consecutive_failures = 0
-
-    def record_success(self):
-        self._consecutive_failures = 0
-
-    def record_failure(self):
-        self._consecutive_failures += 1
-
-    @property
-    def is_open(self) -> bool:
-        return self._consecutive_failures >= self.MAX_FAILURES
-
-    @property
-    def failures(self) -> int:
-        return self._consecutive_failures
-
-    def reset(self):
-        self._consecutive_failures = 0

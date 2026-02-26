@@ -7,24 +7,18 @@ from app.schemas.account import AccountCreate, AccountUpdate, AccountResponse, A
 from app.services.account_service import AccountService
 from app.db.account_repo import AccountRepository
 from app.utils.encryption import EncryptionManager
+from app.dependencies import get_current_user, get_owned_account, limiter
+from app.utils.logging import audit_log
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
 
 
-def _get_user(request: Request) -> dict:
-    user = getattr(request.state, "user", None)
-    if not user:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    return user
-
-
 @router.get("", response_model=AccountListResponse)
-async def list_accounts(request: Request, session: AsyncSession = Depends(get_trading_session)):
-    user = _get_user(request)
+@limiter.limit("120/minute")
+async def list_accounts(request: Request, user: dict = Depends(get_current_user), session: AsyncSession = Depends(get_trading_session)):
     encryption: EncryptionManager = request.app.state.encryption
     svc = AccountService(session, encryption)
     if user.get("role") == "admin":
-        from app.db.account_repo import AccountRepository
         repo = AccountRepository(session)
         accounts = await repo.get_active_accounts()
     else:
@@ -33,8 +27,8 @@ async def list_accounts(request: Request, session: AsyncSession = Depends(get_tr
 
 
 @router.post("", response_model=AccountResponse, status_code=201)
-async def create_account(body: AccountCreate, request: Request, session: AsyncSession = Depends(get_trading_session)):
-    user = _get_user(request)
+@limiter.limit("30/minute")
+async def create_account(body: AccountCreate, request: Request, user: dict = Depends(get_current_user), session: AsyncSession = Depends(get_trading_session)):
     encryption: EncryptionManager = request.app.state.encryption
     svc = AccountService(session, encryption)
     account = await svc.create_account(
@@ -44,33 +38,27 @@ async def create_account(body: AccountCreate, request: Request, session: AsyncSe
         loop_interval_sec=body.loop_interval_sec, order_cooldown_sec=body.order_cooldown_sec,
     )
     await session.commit()
+
+    audit_log("account_created", user_id=user["id"], account_id=str(account.id), name=body.name)
     return AccountResponse.model_validate(account)
 
 
 @router.get("/{account_id}", response_model=AccountResponse)
-async def get_account(account_id: UUID, request: Request, session: AsyncSession = Depends(get_trading_session)):
-    user = _get_user(request)
-    encryption: EncryptionManager = request.app.state.encryption
-    svc = AccountService(session, encryption)
-    account = await svc.get_account(account_id)
-    if not account:
-        raise HTTPException(status_code=404, detail="Account not found")
-    if str(account.owner_id) != user["id"] and user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Access denied")
+@limiter.limit("120/minute")
+async def get_account(request: Request, account=Depends(get_owned_account)):
     return AccountResponse.model_validate(account)
 
 
 @router.put("/{account_id}", response_model=AccountResponse)
-async def update_account(account_id: UUID, body: AccountUpdate, request: Request, session: AsyncSession = Depends(get_trading_session)):
-    user = _get_user(request)
+@limiter.limit("30/minute")
+async def update_account(
+    body: AccountUpdate,
+    request: Request,
+    account=Depends(get_owned_account),
+    user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_trading_session),
+):
     encryption: EncryptionManager = request.app.state.encryption
-    svc = AccountService(session, encryption)
-    account = await svc.get_account(account_id)
-    if not account:
-        raise HTTPException(status_code=404, detail="Account not found")
-    if str(account.owner_id) != user["id"] and user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Access denied")
-    # Update fields
     for field, val in body.model_dump(exclude_unset=True).items():
         if field == "api_key" and val:
             account.api_key_encrypted = encryption.encrypt(val)
@@ -79,59 +67,70 @@ async def update_account(account_id: UUID, body: AccountUpdate, request: Request
         elif hasattr(account, field):
             setattr(account, field, val)
     await session.commit()
+
+    audit_log("account_updated", user_id=user["id"], account_id=str(account.id), changed_fields=list(body.model_dump(exclude_unset=True).keys()))
     return AccountResponse.model_validate(account)
 
 
 @router.delete("/{account_id}", status_code=204)
-async def delete_account(account_id: UUID, request: Request, session: AsyncSession = Depends(get_trading_session)):
-    user = _get_user(request)
-    from app.db.account_repo import AccountRepository
-    repo = AccountRepository(session)
-    account = await repo.get_by_id(account_id)
-    if not account:
-        raise HTTPException(status_code=404, detail="Account not found")
-    if str(account.owner_id) != user["id"] and user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Access denied")
-    # Stop trader first
+@limiter.limit("30/minute")
+async def delete_account(
+    request: Request,
+    account=Depends(get_owned_account),
+    user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_trading_session),
+):
     engine = request.app.state.trading_engine
-    await engine.stop_account(account_id)
+    await engine.stop_account(account.id)
     await session.delete(account)
     await session.commit()
 
+    audit_log("account_deleted", user_id=user["id"], account_id=str(account.id))
+
 
 @router.post("/{account_id}/start", status_code=200)
-async def start_account(account_id: UUID, request: Request, session: AsyncSession = Depends(get_trading_session)):
-    user = _get_user(request)
-    repo = AccountRepository(session)
-    account = await repo.get_by_id(account_id)
-    if not account:
-        raise HTTPException(status_code=404, detail="Account not found")
-    if str(account.owner_id) != user["id"] and user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Access denied")
+@limiter.limit("30/minute")
+async def start_account(
+    request: Request,
+    account=Depends(get_owned_account),
+    user: dict = Depends(get_current_user),
+):
     engine = request.app.state.trading_engine
-    await engine.start_account(account_id)
-    return {"status": "started", "account_id": str(account_id)}
+    await engine.start_account(account.id)
+
+    audit_log("account_started", user_id=user["id"], account_id=str(account.id))
+    return {"status": "started", "account_id": str(account.id)}
 
 
 @router.post("/{account_id}/stop", status_code=200)
-async def stop_account(account_id: UUID, request: Request, session: AsyncSession = Depends(get_trading_session)):
-    user = _get_user(request)
+@limiter.limit("30/minute")
+async def stop_account(
+    request: Request,
+    account=Depends(get_owned_account),
+    user: dict = Depends(get_current_user),
+):
+    engine = request.app.state.trading_engine
+    await engine.stop_account(account.id)
+
+    audit_log("account_stopped", user_id=user["id"], account_id=str(account.id))
+    return {"status": "stopped", "account_id": str(account.id)}
+
+
+@router.post("/{account_id}/reset-circuit-breaker", status_code=200)
+@limiter.limit("30/minute")
+async def reset_circuit_breaker(
+    account_id: UUID,
+    request: Request,
+    user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_trading_session),
+):
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    # 계정 존재 확인
     repo = AccountRepository(session)
     account = await repo.get_by_id(account_id)
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
-    if str(account.owner_id) != user["id"] and user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Access denied")
-    engine = request.app.state.trading_engine
-    await engine.stop_account(account_id)
-    return {"status": "stopped", "account_id": str(account_id)}
-
-
-@router.post("/{account_id}/reset-circuit-breaker", status_code=200)
-async def reset_circuit_breaker(account_id: UUID, request: Request, session: AsyncSession = Depends(get_trading_session)):
-    user = _get_user(request)
-    if user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Admin only")
     encryption: EncryptionManager = request.app.state.encryption
     svc = AccountService(session, encryption)
     await svc.reset_circuit_breaker(account_id)
@@ -139,4 +138,6 @@ async def reset_circuit_breaker(account_id: UUID, request: Request, session: Asy
     # Restart trader
     engine = request.app.state.trading_engine
     await engine.reload_account(account_id)
+
+    audit_log("circuit_breaker_reset", user_id=user["id"], account_id=str(account_id))
     return {"status": "reset", "account_id": str(account_id)}

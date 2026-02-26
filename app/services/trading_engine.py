@@ -42,11 +42,21 @@ class TradingEngine:
         for i, account in enumerate(accounts):
             jitter = random.uniform(0, 3.0) + (i * 0.5)
             await asyncio.sleep(jitter)
-            await self.start_account(account.id)
+            try:
+                await self.start_account(account.id)
+            except Exception as e:
+                logger.error(f"Failed to start account {account.id}: {e}")
 
     async def start_account(self, account_id: UUID):
         if account_id in self._tasks:
             return
+        # Phase 3-C: 서킷 브레이커 상태 확인 후 시작 차단
+        async with TradingSessionLocal() as session:
+            repo = AccountRepository(session)
+            account = await repo.get_by_id(account_id)
+            if account and (account.circuit_breaker_failures or 0) >= 5:
+                logger.warning(f"Account {account_id} has active circuit breaker ({account.circuit_breaker_failures} failures), skipping start")
+                return
         trader = AccountTrader(
             account_id=account_id,
             price_collector=self._price_collector,
