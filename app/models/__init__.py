@@ -11,6 +11,7 @@ from app.models.core_btc_history import CoreBtcHistory
 from app.models.price_snapshot import PriceSnapshot
 from app.models.price_candle import PriceCandle5m
 from app.models.backtest_run import BacktestRun
+from app.models.trading_combo import TradingCombo
 
 __all__ = [
     "Base",
@@ -26,4 +27,5 @@ __all__ = [
     "PriceSnapshot",
     "PriceCandle5m",
     "BacktestRun",
+    "TradingCombo",
 ]

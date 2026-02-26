@@ -10,6 +10,7 @@ class LotResponse(BaseModel):
     account_id: UUID
     symbol: str
     strategy_name: str
+    combo_id: UUID | None = None
     buy_price: float
     buy_qty: float
     buy_time: datetime | None

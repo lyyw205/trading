@@ -1,9 +1,19 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, Field
+
+
+class BacktestComboConfig(BaseModel):
+    name: str
+    buy_logic_name: str
+    buy_params: dict[str, Any] = {}
+    sell_logic_name: str
+    sell_params: dict[str, Any] = {}
+    reference_combo_name: str | None = None
 
 
 class BacktestRunRequest(BaseModel):
@@ -11,8 +21,7 @@ class BacktestRunRequest(BaseModel):
     start_ts_ms: int
     end_ts_ms: int
     initial_usdt: float = 10000.0
-    strategies: list[str] = Field(default=["lot_stacking"])
-    strategy_params: dict[str, dict] = Field(default_factory=dict)
+    combos: list[BacktestComboConfig] = Field(default_factory=list)
 
 
 class BacktestRunResponse(BaseModel):
@@ -34,8 +43,10 @@ class BacktestStatusResponse(BaseModel):
 
 class BacktestConfigOut(BaseModel):
     symbol: str
-    strategies: list[str]
-    strategy_params: dict
+    combos: list[dict] | None = None
+    # legacy fields for old backtest records
+    strategies: list[str] | None = None
+    strategy_params: dict | None = None
     initial_usdt: float
     start_ts_ms: int
     end_ts_ms: int
@@ -65,7 +76,9 @@ class BacktestReportResponse(BaseModel):
 class BacktestListItem(BaseModel):
     id: UUID
     symbol: str
-    strategies: list[str]
+    combos: list[dict] | None = None
+    # legacy fields for old backtest records
+    strategies: list[str] | None = None
     initial_usdt: float
     start_ts_ms: int
     end_ts_ms: int

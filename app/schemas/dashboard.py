@@ -29,11 +29,3 @@ class AssetStatus(BaseModel):
     free_usdt: float
 
 
-class TuneValues(BaseModel):
-    strategy_name: str
-    params: dict[str, Any]
-
-
-class TuneUpdate(BaseModel):
-    strategy_name: str
-    params: dict[str, Any]

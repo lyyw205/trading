@@ -13,7 +13,7 @@ from app.models.backtest_run import BacktestRun
 from app.models.user import UserProfile
 from app.models.account import TradingAccount
 from app.exchange.backtest_client import BacktestClient
-from app.strategies.registry import StrategyRegistry
+from app.strategies.registry import BuyLogicRegistry, SellLogicRegistry
 from app.strategies.state_store import StrategyStateStore
 from app.services.account_state_manager import AccountStateManager
 
@@ -49,12 +49,15 @@ class IsolatedBacktestRunner:
                 raise ValueError(f"BacktestRun {run_id} not found")
 
             symbol = row.symbol
-            strategy_names = list(row.strategies)
-            strategy_params = dict(row.strategy_params) if row.strategy_params else {}
+            combo_configs = list(row.combos) if row.combos else []
             initial_usdt = float(row.initial_usdt)
             start_ts_ms = row.start_ts_ms
             end_ts_ms = row.end_ts_ms
             user_id = row.user_id
+
+        if not combo_configs:
+            await self._save_failure(run_id, "No combo configurations provided")
+            return {"error": "No combo configurations"}
 
         # Mark as RUNNING
         await self._update_status(run_id, "RUNNING", started_at=datetime.now(timezone.utc))
@@ -76,23 +79,45 @@ class IsolatedBacktestRunner:
                 return {"error": f"Exceeds {MAX_CANDLES} candle limit"}
 
             logger.info(
-                "Backtest %s: %d candles for %s [%d – %d]",
-                run_id, len(candles), symbol, start_ts_ms, end_ts_ms,
+                "Backtest %s: %d candles for %s [%d – %d], %d combos",
+                run_id, len(candles), symbol, start_ts_ms, end_ts_ms, len(combo_configs),
             )
 
             # ----------------------------------------------------------------
-            # 3. Create strategy instances
+            # 3. Create buy/sell logic instances for each combo
             # ----------------------------------------------------------------
-            strategies: dict[str, object] = {}
-            for name in strategy_names:
+            combos = []
+            name_to_idx = {}
+            for idx, cfg in enumerate(combo_configs):
+                name = cfg["name"]
                 try:
-                    strategies[name] = StrategyRegistry.create_instance(name)
-                except KeyError:
-                    logger.warning("Backtest: unknown strategy '%s', skipping", name)
+                    buy_logic = BuyLogicRegistry.create_instance(cfg["buy_logic_name"])
+                    sell_logic = SellLogicRegistry.create_instance(cfg["sell_logic_name"])
+                except KeyError as e:
+                    logger.warning("Backtest: unknown logic '%s', skipping combo '%s'", e, name)
+                    continue
+                combos.append({
+                    "name": name,
+                    "buy_logic": buy_logic,
+                    "sell_logic": sell_logic,
+                    "buy_params": cfg.get("buy_params", {}),
+                    "sell_params": cfg.get("sell_params", {}),
+                    "reference_combo_name": cfg.get("reference_combo_name"),
+                    "combo_id": uuid4(),
+                })
+                name_to_idx[name] = len(combos) - 1
 
-            if not strategies:
-                await self._save_failure(run_id, "No valid strategies found")
-                return {"error": "No valid strategies found"}
+            if not combos:
+                await self._save_failure(run_id, "No valid combos found")
+                return {"error": "No valid combos found"}
+
+            # Resolve reference_combo_id from name
+            for combo in combos:
+                ref_name = combo.pop("reference_combo_name", None)
+                if ref_name and ref_name in name_to_idx:
+                    combo["reference_combo_id"] = combos[name_to_idx[ref_name]]["combo_id"]
+                else:
+                    combo["reference_combo_id"] = None
 
             # ----------------------------------------------------------------
             # 4. Isolated transaction: replay candles
@@ -128,10 +153,14 @@ class IsolatedBacktestRunner:
                         ts_ms = candle["ts_ms"]
                         client.set_price(price)
 
-                        for name, strategy in strategies.items():
-                            state = StrategyStateStore(account_id, name, session)
+                        for combo in combos:
+                            combo_id = combo["combo_id"]
+                            buy_logic = combo["buy_logic"]
+                            sell_logic = combo["sell_logic"]
+
+                            state = StrategyStateStore(account_id, str(combo_id), session)
                             shared = AccountStateManager(account_id, session)
-                            params = strategy_params.get(name, {})
+                            prefix = f"bt_{combo['name'][:8]}_"
 
                             repos = RepositoryBundle(
                                 lot=LotRepository(session),
@@ -140,22 +169,59 @@ class IsolatedBacktestRunner:
                                 price=None,
                             )
 
-                            ctx = StrategyContext(
+                            # Build buy params (inject reference_combo_id)
+                            buy_params = {**buy_logic.default_params, **combo["buy_params"]}
+                            if combo["reference_combo_id"]:
+                                buy_params["_reference_combo_id"] = str(combo["reference_combo_id"])
+
+                            buy_ctx = StrategyContext(
                                 account_id=account_id,
                                 symbol=symbol,
                                 base_asset=base_asset,
                                 quote_asset="USDT",
                                 current_price=price,
-                                params={**strategy.default_params, **params},
-                                client_order_prefix=f"bt_{name[:4]}_",
+                                params=buy_params,
+                                client_order_prefix=prefix,
                             )
 
+                            # 0. pre_tick
                             try:
-                                await strategy.tick(ctx, state, client, shared, repos)
+                                await buy_logic.pre_tick(buy_ctx, state, client, repos, combo_id)
                             except Exception as exc:
                                 logger.warning(
-                                    "Backtest tick error (strategy=%s, price=%.2f): %s",
-                                    name, price, exc,
+                                    "Backtest pre_tick error (combo=%s, price=%.2f): %s",
+                                    combo["name"], price, exc,
+                                )
+
+                            # 1. sell
+                            sell_params = {**sell_logic.default_params, **combo["sell_params"]}
+                            sell_ctx = StrategyContext(
+                                account_id=account_id,
+                                symbol=symbol,
+                                base_asset=base_asset,
+                                quote_asset="USDT",
+                                current_price=price,
+                                params=sell_params,
+                                client_order_prefix=prefix,
+                            )
+                            open_lots = await LotRepository(session).get_open_lots_by_combo(
+                                account_id, symbol, combo_id,
+                            )
+                            try:
+                                await sell_logic.tick(sell_ctx, state, client, shared, repos, open_lots)
+                            except Exception as exc:
+                                logger.warning(
+                                    "Backtest sell tick error (combo=%s, price=%.2f): %s",
+                                    combo["name"], price, exc,
+                                )
+
+                            # 2. buy
+                            try:
+                                await buy_logic.tick(buy_ctx, state, client, shared, repos, combo_id)
+                            except Exception as exc:
+                                logger.warning(
+                                    "Backtest buy tick error (combo=%s, price=%.2f): %s",
+                                    combo["name"], price, exc,
                                 )
 
                         await session.flush()
@@ -288,7 +354,6 @@ class IsolatedBacktestRunner:
                 "price": t.get("price", "0"),
                 "qty": t.get("qty", "0"),
                 "quote_qty": t.get("quoteQty", "0"),
-                "strategy": "",
             })
 
         # Win/loss stats

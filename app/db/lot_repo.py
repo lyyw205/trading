@@ -33,6 +33,26 @@ class LotRepository:
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
+    async def get_open_lots_by_combo(
+        self,
+        account_id: UUID,
+        symbol: str,
+        combo_id: UUID,
+    ) -> list[Lot]:
+        """특정 조합의 미결 로트 조회."""
+        stmt = (
+            select(Lot)
+            .where(
+                Lot.account_id == account_id,
+                Lot.symbol == symbol,
+                Lot.combo_id == combo_id,
+                Lot.status == "OPEN",
+            )
+            .order_by(Lot.buy_time_ms.asc())
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
     async def insert_lot(
         self,
         *,
@@ -43,6 +63,7 @@ class LotRepository:
         buy_price: float,
         buy_qty: float,
         buy_time_ms: int,
+        combo_id: UUID | None = None,
     ) -> Lot:
         """Insert a new lot."""
         lot = Lot(
@@ -53,6 +74,7 @@ class LotRepository:
             buy_price=buy_price,
             buy_qty=buy_qty,
             buy_time_ms=buy_time_ms,
+            combo_id=combo_id,
             status="OPEN",
         )
         self._session.add(lot)

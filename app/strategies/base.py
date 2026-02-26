@@ -1,6 +1,7 @@
 from __future__ import annotations
+import time
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, TYPE_CHECKING
 from uuid import UUID
 
@@ -35,10 +36,54 @@ class RepositoryBundle:
     price: "PriceRepository"
 
 
-class BaseStrategy(ABC):
-    """
-    전략 플러그인 베이스 클래스. tick() 패턴.
-    """
+class BaseBuyLogic(ABC):
+    """매수 전용 플러그인 기본 클래스."""
+    name: str = ""
+    display_name: str = ""
+    description: str = ""
+    version: str = "1.0.0"
+    default_params: Dict[str, Any] = {}
+    tunable_params: Dict[str, Dict[str, Any]] = {}
+
+    def __init__(self):
+        self._last_order_ts: float = 0.0
+
+    async def pre_tick(
+        self,
+        ctx: StrategyContext,
+        state: "StrategyStateStore",
+        exchange: "ExchangeClient",
+        repos: RepositoryBundle,
+        combo_id: UUID,
+    ) -> None:
+        """매도 실행 이전에 호출 (기본: no-op). recenter 등 base_price 순서 보호용."""
+        pass
+
+    @abstractmethod
+    async def tick(
+        self,
+        ctx: StrategyContext,
+        state: "StrategyStateStore",
+        exchange: "ExchangeClient",
+        account_state: "AccountStateManager",
+        repos: RepositoryBundle,
+        combo_id: UUID,
+    ) -> None:
+        """매수 로직 1 사이클 (매도 실행 이후에 호출)."""
+        ...
+
+    def validate_params(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        return {**self.default_params, **params}
+
+    def _cooldown_ok(self, cooldown_sec: float) -> bool:
+        return (time.time() - self._last_order_ts) >= cooldown_sec
+
+    def _touch_order(self) -> None:
+        self._last_order_ts = time.time()
+
+
+class BaseSellLogic(ABC):
+    """매도 전용 플러그인 기본 클래스."""
     name: str = ""
     display_name: str = ""
     description: str = ""
@@ -57,22 +102,16 @@ class BaseStrategy(ABC):
         exchange: "ExchangeClient",
         account_state: "AccountStateManager",
         repos: RepositoryBundle,
+        open_lots: list,
     ) -> None:
-        """매매 사이클 1회 실행."""
-        ...
-
-    @abstractmethod
-    async def on_fill(
-        self,
-        ctx: StrategyContext,
-        state: "StrategyStateStore",
-        fill_data: dict,
-        account_state: "AccountStateManager",
-        repos: RepositoryBundle,
-    ) -> None:
-        """주문 체결 후처리."""
+        """매도 로직 1 사이클. open_lots는 이 조합의 미결 로트들."""
         ...
 
     def validate_params(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """파라미터 유효성 검증 + 기본값 병합"""
         return {**self.default_params, **params}
+
+    def _cooldown_ok(self, cooldown_sec: float) -> bool:
+        return (time.time() - self._last_order_ts) >= cooldown_sec
+
+    def _touch_order(self) -> None:
+        self._last_order_ts = time.time()

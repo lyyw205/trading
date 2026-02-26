@@ -9,6 +9,5 @@ from __future__ import annotations
 # API endpoints using Bearer tokens are exempt from CSRF
 
 CSRF_EXEMPT_PATHS = [
-    "/api/auth/callback",
     "/health",
 ]

@@ -2,13 +2,12 @@ from pydantic_settings import BaseSettings
 
 
 class GlobalConfig(BaseSettings):
-    # Supabase
-    supabase_url: str = ""
-    supabase_anon_key: str = ""
-    supabase_service_role_key: str = ""
-
     # Database (트레이딩 엔진용 직접 연결)
     database_url: str = ""
+
+    # Initial Admin Bootstrap (최초 실행 시에만 사용)
+    initial_admin_email: str = ""
+    initial_admin_password: str = ""
 
     # Encryption (쉼표 구분 다중 키)
     encryption_keys: str = ""  # "key1,key2,key3"

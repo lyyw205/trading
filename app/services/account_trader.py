@@ -13,9 +13,9 @@ from app.db.order_repo import OrderRepository
 from app.db.position_repo import PositionRepository
 from app.db.account_repo import AccountRepository
 from app.exchange.binance_client import BinanceClient
-from app.strategies.registry import StrategyRegistry
+from app.strategies.registry import BuyLogicRegistry, SellLogicRegistry
 from app.strategies.state_store import StrategyStateStore
-from app.strategies.base import BaseStrategy, StrategyContext, RepositoryBundle
+from app.strategies.base import BaseBuyLogic, BaseSellLogic, StrategyContext, RepositoryBundle
 from app.services.account_state_manager import AccountStateManager
 from app.utils.logging import current_account_id
 
@@ -46,7 +46,8 @@ class AccountTrader:
         self.account_id = account_id
         self._running = True
         self._client: BinanceClient | None = None
-        self._strategy_instances: dict[str, BaseStrategy] = {}
+        self._buy_instances: dict[UUID, BaseBuyLogic] = {}
+        self._sell_instances: dict[UUID, BaseSellLogic] = {}
         self._price_collector = price_collector
         self._rate_limiter = rate_limiter
         self._encryption = encryption
@@ -70,10 +71,15 @@ class AccountTrader:
             self._client = BinanceClient(api_key, api_secret, account.symbol)
             self._price_collector.register_client(account.symbol, self._client)
 
-    def _get_or_create_strategy(self, name: str) -> BaseStrategy:
-        if name not in self._strategy_instances:
-            self._strategy_instances[name] = StrategyRegistry.create_instance(name)
-        return self._strategy_instances[name]
+    def _get_or_create_buy(self, combo_id: UUID, name: str) -> BaseBuyLogic:
+        if combo_id not in self._buy_instances:
+            self._buy_instances[combo_id] = BuyLogicRegistry.create_instance(name)
+        return self._buy_instances[combo_id]
+
+    def _get_or_create_sell(self, combo_id: UUID, name: str) -> BaseSellLogic:
+        if combo_id not in self._sell_instances:
+            self._sell_instances[combo_id] = SellLogicRegistry.create_instance(name)
+        return self._sell_instances[combo_id]
 
     async def step(self):
         """Single trading cycle (corresponds to btc_trader.py step())"""
@@ -116,30 +122,65 @@ class AccountTrader:
                     price=None,  # price_repo is module-level functions
                 )
 
-                # Load strategy configs for this account
-                from app.models.strategy_config import StrategyConfig
                 from sqlalchemy import select
-                stmt = select(StrategyConfig).where(
-                    StrategyConfig.account_id == self.account_id,
-                    StrategyConfig.is_enabled == True,
-                )
-                result = await session.execute(stmt)
-                strategy_configs = list(result.scalars().all())
 
-                for sc in strategy_configs:
-                    strategy = self._get_or_create_strategy(sc.strategy_name)
-                    ctx = StrategyContext(
-                        account_id=self.account_id,
-                        symbol=account.symbol,
-                        base_asset=account.base_asset,
-                        quote_asset=account.quote_asset,
-                        current_price=cur_price,
-                        params=strategy.validate_params(sc.params or {}),
-                        client_order_prefix=f"CMT_{str(self.account_id)[:8]}_",
-                    )
-                    state = StrategyStateStore(self.account_id, sc.strategy_name, session)
-                    account_state = AccountStateManager(self.account_id, session)
-                    await strategy.tick(ctx, state, self._client, account_state, repos)
+                # --- Combo-based execution (Phase 3) ---
+                from app.models.trading_combo import TradingCombo
+                combo_stmt = select(TradingCombo).where(
+                    TradingCombo.account_id == self.account_id,
+                    TradingCombo.is_enabled == True,
+                )
+                combo_result = await session.execute(combo_stmt)
+                combos = list(combo_result.scalars().all())
+
+                if not combos:
+                    logger.debug("[%s] No active combos, skipping cycle", self.account_id)
+                    return
+
+                for combo in combos:
+                        buy_logic = self._get_or_create_buy(combo.id, combo.buy_logic_name)
+                        sell_logic = self._get_or_create_sell(combo.id, combo.sell_logic_name)
+
+                        combo_state = StrategyStateStore(self.account_id, str(combo.id), session)
+                        account_state = AccountStateManager(self.account_id, session)
+                        prefix = f"CMT_{str(self.account_id)[:8]}_{str(combo.id)[:8]}_"
+
+                        # Buy params (inject reference_combo_id if set)
+                        buy_params = buy_logic.validate_params(combo.buy_params or {})
+                        if combo.reference_combo_id:
+                            buy_params["_reference_combo_id"] = str(combo.reference_combo_id)
+
+                        buy_ctx = StrategyContext(
+                            account_id=self.account_id,
+                            symbol=account.symbol,
+                            base_asset=account.base_asset,
+                            quote_asset=account.quote_asset,
+                            current_price=cur_price,
+                            params=buy_params,
+                            client_order_prefix=prefix,
+                        )
+
+                        # 0. pre_tick: recenter (base_price 순서 보호)
+                        await buy_logic.pre_tick(buy_ctx, combo_state, self._client, repos, combo.id)
+
+                        # 1. 매도 (기존 로트 관리, TP 체결 시 core_bucket 적립)
+                        sell_params = sell_logic.validate_params(combo.sell_params or {})
+                        sell_ctx = StrategyContext(
+                            account_id=self.account_id,
+                            symbol=account.symbol,
+                            base_asset=account.base_asset,
+                            quote_asset=account.quote_asset,
+                            current_price=cur_price,
+                            params=sell_params,
+                            client_order_prefix=prefix,
+                        )
+                        open_lots = await lot_repo.get_open_lots_by_combo(
+                            self.account_id, account.symbol, combo.id,
+                        )
+                        await sell_logic.tick(sell_ctx, combo_state, self._client, account_state, repos, open_lots)
+
+                        # 2. 매수 (pending 처리 + 신규 매수)
+                        await buy_logic.tick(buy_ctx, combo_state, self._client, account_state, repos, combo.id)
 
                 # Record success
                 self._consecutive_failures = 0

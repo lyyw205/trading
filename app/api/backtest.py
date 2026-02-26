@@ -34,12 +34,16 @@ async def run_backtest(
     session: AsyncSession = Depends(get_trading_session),
 ):
     """Start a backtest asynchronously. Returns run_id for polling."""
-    # Create backtest_runs row
+    if not req.combos:
+        raise HTTPException(status_code=400, detail="At least one combo is required")
+
+    # Serialize combo configs for storage
+    combos_data = [c.model_dump() for c in req.combos]
+
     run = BacktestRun(
         user_id=UUID(user["id"]),
         symbol=req.symbol,
-        strategies=req.strategies,
-        strategy_params=req.strategy_params,
+        combos=combos_data,
         initial_usdt=req.initial_usdt,
         start_ts_ms=req.start_ts_ms,
         end_ts_ms=req.end_ts_ms,
@@ -128,8 +132,9 @@ async def get_backtest_report(
 
     config = BacktestConfigOut(
         symbol=run.symbol,
-        strategies=list(run.strategies),
-        strategy_params=run.strategy_params or {},
+        combos=run.combos,
+        strategies=list(run.strategies) if run.strategies else None,
+        strategy_params=run.strategy_params,
         initial_usdt=float(run.initial_usdt),
         start_ts_ms=run.start_ts_ms,
         end_ts_ms=run.end_ts_ms,
@@ -168,7 +173,8 @@ async def list_backtests(
             BacktestListItem(
                 id=r.id,
                 symbol=r.symbol,
-                strategies=list(r.strategies),
+                combos=r.combos,
+                strategies=list(r.strategies) if r.strategies else None,
                 initial_usdt=float(r.initial_usdt),
                 start_ts_ms=r.start_ts_ms,
                 end_ts_ms=r.end_ts_ms,

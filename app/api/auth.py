@@ -1,48 +1,35 @@
 from __future__ import annotations
-from fastapi import APIRouter, Request, Depends, HTTPException
-from fastapi.responses import RedirectResponse
-from app.schemas.auth import UserResponse, LoginUrlResponse
+from fastapi import APIRouter, Request, HTTPException
+from app.schemas.auth import LoginRequest, LoginResponse, UserResponse
 from app.dependencies import limiter
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
-@router.get("/google", response_model=LoginUrlResponse)
+@router.post("/login", response_model=LoginResponse)
 @limiter.limit("10/minute")
-async def google_login(request: Request):
-    """Get Google OAuth login URL"""
-    auth_service = request.app.state.auth_service
-    callback_url = str(request.url_for("auth_callback"))
-    url = auth_service.get_google_oauth_url(callback_url)
-    return LoginUrlResponse(url=url)
-
-
-@router.get("/callback", name="auth_callback")
-@limiter.limit("10/minute")
-async def auth_callback(request: Request, code: str = ""):
-    """OAuth callback - exchange code for session"""
-    if not code:
-        raise HTTPException(status_code=400, detail="Missing auth code")
+async def login(request: Request):
+    """이메일+비밀번호 로그인"""
+    body = await request.json()
+    login_req = LoginRequest(**body)
 
     auth_service = request.app.state.auth_service
     session_mgr = request.app.state.session_manager
 
-    result = await auth_service.exchange_code_for_session(code)
-    if not result:
-        raise HTTPException(status_code=401, detail="Authentication failed")
+    user = await auth_service.authenticate(login_req.email, login_req.password)
+    if not user:
+        raise HTTPException(status_code=401, detail="이메일 또는 비밀번호가 올바르지 않습니다.")
 
-    # Ensure user profile exists
-    user = result["user"]
-    await auth_service.ensure_user_profile(user["id"], user["email"])
-
-    # Create session cookie
     cookie_value = session_mgr.create_session_cookie(
-        result["access_token"], result["refresh_token"]
+        user_id=user["id"], email=user["email"], role=user["role"]
     )
 
-    response = RedirectResponse(url="/accounts", status_code=302)
+    response = LoginResponse(success=True, user=UserResponse(**user))
+    from fastapi.responses import JSONResponse
+    json_resp = JSONResponse(content=response.model_dump())
+
     is_secure = not request.app.state.settings_debug
-    response.set_cookie(
+    json_resp.set_cookie(
         key=session_mgr.cookie_name,
         value=cookie_value,
         max_age=session_mgr.max_age,
@@ -50,7 +37,7 @@ async def auth_callback(request: Request, code: str = ""):
         secure=is_secure,
         samesite="lax",
     )
-    return response
+    return json_resp
 
 
 @router.post("/logout")
@@ -58,6 +45,7 @@ async def auth_callback(request: Request, code: str = ""):
 async def logout(request: Request):
     """Clear session cookie"""
     session_mgr = request.app.state.session_manager
+    from fastapi.responses import RedirectResponse
     response = RedirectResponse(url="/login", status_code=302)
     response.delete_cookie(key=session_mgr.cookie_name)
     return response

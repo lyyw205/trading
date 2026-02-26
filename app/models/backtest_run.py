@@ -14,8 +14,9 @@ class BacktestRun(Base):
         ForeignKey("user_profiles.id", ondelete="CASCADE"), nullable=False
     )
     symbol: Mapped[str] = mapped_column(String, nullable=False)
-    strategies: Mapped[dict] = mapped_column(JSONB, nullable=False)
-    strategy_params: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    combos: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    strategies: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    strategy_params: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     initial_usdt: Mapped[float] = mapped_column(Numeric, nullable=False)
     start_ts_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
     end_ts_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)

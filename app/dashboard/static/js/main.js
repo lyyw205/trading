@@ -1,97 +1,109 @@
 /**
  * main.js - Core JavaScript for Crypto Multi-Trader Dashboard
+ * 전략 tune 패널과 lot 필터 탭은 tunable_params 메타데이터 기반 동적 렌더링
  */
 
 /* ============================================================
    Core Helpers
    ============================================================ */
 
-/**
- * Wrapper around fetch that includes credentials and handles 401 redirects.
- * @param {string} url
- * @param {RequestInit} options
- * @returns {Promise<Response>}
- */
 async function apiFetch(url, options = {}) {
   const defaults = { credentials: 'include' };
   const merged = { ...defaults, ...options };
-  // Merge headers
   if (options.headers) {
     merged.headers = { ...options.headers };
   }
-
   const response = await fetch(url, merged);
-
   if (response.status === 401) {
-    // Not authenticated - redirect to login
     window.location.href = '/login';
     throw new Error('Redirecting to login');
   }
-
   return response;
 }
 
-/**
- * Read CSRF token from meta tag or cookie.
- * @returns {string}
- */
 function getCsrfToken() {
-  // Try meta tag first
   const meta = document.querySelector('meta[name="csrf-token"]');
   if (meta && meta.content) return meta.content;
-
-  // Fall back to cookie
-  const name = 'csrftoken';
   const cookies = document.cookie.split(';');
   for (const c of cookies) {
     const [k, v] = c.trim().split('=');
-    if (k === name) return decodeURIComponent(v);
+    if (k === 'csrftoken') return decodeURIComponent(v);
   }
   return '';
 }
 
-/**
- * Logout: POST to /api/auth/logout then redirect to /login.
- */
 async function logout() {
   try {
     await apiFetch('/api/auth/logout', {
       method: 'POST',
       headers: { 'X-CSRFToken': getCsrfToken() },
     });
-  } catch (_) {
-    // ignore errors, redirect anyway
-  }
+  } catch (_) {}
   window.location.href = '/login';
+}
+
+async function handleLogin() {
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  const errorEl = document.getElementById('login-error');
+  const btn = document.getElementById('login-btn');
+
+  if (!email || !password) {
+    errorEl.textContent = 'Please enter email and password.';
+    errorEl.style.display = 'block';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Signing in...';
+  errorEl.style.display = 'none';
+
+  try {
+    const resp = await fetch('/api/auth/login', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCsrfToken(),
+      },
+      body: JSON.stringify({ email, password }),
+    });
+    if (resp.ok) {
+      window.location.href = '/accounts';
+      return;
+    }
+    const err = await resp.json().catch(() => ({}));
+    errorEl.textContent = err.detail || 'Login failed. Please check your credentials.';
+    errorEl.style.display = 'block';
+  } catch (e) {
+    errorEl.textContent = 'Network error. Please try again.';
+    errorEl.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Sign In';
+  }
 }
 
 /* ============================================================
    Accounts Page
    ============================================================ */
 
-/**
- * Fetch and render account cards on the /accounts page.
- */
 async function loadAccounts() {
   const grid = document.getElementById('accounts-grid');
   if (!grid) return;
-
   try {
     const resp = await apiFetch('/api/accounts');
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const accounts = await resp.json();
-
     if (!accounts.length) {
       grid.innerHTML = '<p class="loading-spinner">No accounts found. Add your first account.</p>';
       return;
     }
-
     grid.innerHTML = accounts.map(acct => {
       const isActive = acct.is_active;
       const badgeClass = isActive ? 'badge-success' : 'badge-danger';
       const badgeText = isActive ? 'Active' : 'Inactive';
       const cbTripped = acct.circuit_breaker_tripped;
-
       return `
         <div class="account-card" onclick="window.location.href='/accounts/${acct.id}'">
           <div class="account-card-label">${escapeHtml(acct.label || acct.id)}</div>
@@ -112,40 +124,47 @@ async function loadAccounts() {
    Account Detail / Dashboard Page
    ============================================================ */
 
+
 /**
- * Orchestrate loading all dashboard sections for an account.
- * @param {string} accountId
+ * 계정 대시보드 전체 로드 (account_detail.html에서 호출)
  */
-async function loadDashboard(accountId) {
+async function loadAccountDashboard(accountId) {
+  // 헤더 설정
+  try {
+    const resp = await apiFetch('/api/accounts/' + accountId);
+    if (resp.ok) {
+      const acct = await resp.json();
+      const label = document.getElementById('account-label');
+      if (label) label.textContent = acct.name || accountId;
+      const badge = document.getElementById('account-status-badge');
+      if (badge) {
+        badge.textContent = acct.is_active ? 'Active' : 'Inactive';
+        badge.className = 'status-badge ' + (acct.is_active ? 'badge-success' : 'badge-danger');
+      }
+      const sym = document.getElementById('chart-symbol');
+      if (sym) sym.textContent = acct.symbol || '';
+    }
+  } catch (e) {
+    console.error('Failed to load account info', e);
+  }
+
+  // 모든 섹션 병렬 로드
   await Promise.allSettled([
     loadPriceChart(accountId, 'price-chart'),
     loadAssetStatus(accountId),
-    loadLots(accountId),
-    loadTuneValues(accountId),
+    loadCombosAndLots(accountId),
     loadCircuitBreaker(accountId),
   ]);
 }
 
-/**
- * Load price candles and trade event markers using LightweightCharts.
- * @param {string} accountId
- * @param {string} containerId
- */
 async function loadPriceChart(accountId, containerId) {
   const container = document.getElementById(containerId);
   if (!container || typeof LightweightCharts === 'undefined') return;
-
   container.innerHTML = '';
 
   const chart = LightweightCharts.createChart(container, {
-    layout: {
-      background: { color: '#1e293b' },
-      textColor: '#e2e8f0',
-    },
-    grid: {
-      vertLines: { color: '#334155' },
-      horzLines: { color: '#334155' },
-    },
+    layout: { background: { color: '#1e293b' }, textColor: '#e2e8f0' },
+    grid: { vertLines: { color: '#334155' }, horzLines: { color: '#334155' } },
     crosshair: { mode: 1 },
     rightPriceScale: { borderColor: '#334155' },
     timeScale: { borderColor: '#334155', timeVisible: true, secondsVisible: false },
@@ -154,12 +173,9 @@ async function loadPriceChart(accountId, containerId) {
   });
 
   const candleSeries = chart.addCandlestickSeries({
-    upColor: '#16a34a',
-    downColor: '#dc2626',
-    borderUpColor: '#16a34a',
-    borderDownColor: '#dc2626',
-    wickUpColor: '#16a34a',
-    wickDownColor: '#dc2626',
+    upColor: '#16a34a', downColor: '#dc2626',
+    borderUpColor: '#16a34a', borderDownColor: '#dc2626',
+    wickUpColor: '#16a34a', wickDownColor: '#dc2626',
   });
 
   try {
@@ -169,40 +185,29 @@ async function loadPriceChart(accountId, containerId) {
       candleSeries.setData(candles);
       chart.timeScale().fitContent();
     }
-  } catch (e) {
-    console.error('Failed to load candles', e);
-  }
+  } catch (e) { console.error('Failed to load candles', e); }
 
   try {
     const resp = await apiFetch('/api/dashboard/' + accountId + '/trade_events');
     if (resp.ok) {
       const events = await resp.json();
-      const markers = events
-        .filter(e => e.time)
-        .map(e => ({
-          time: e.time,
-          position: e.side === 'buy' ? 'belowBar' : 'aboveBar',
-          color: e.side === 'buy' ? '#16a34a' : '#dc2626',
-          shape: e.side === 'buy' ? 'arrowUp' : 'arrowDown',
-          text: e.side === 'buy' ? ('B ' + (e.price || '')) : ('S ' + (e.price || '')),
-        }));
+      const markers = events.filter(e => e.time).map(e => ({
+        time: e.time,
+        position: e.side === 'buy' ? 'belowBar' : 'aboveBar',
+        color: e.side === 'buy' ? '#16a34a' : '#dc2626',
+        shape: e.side === 'buy' ? 'arrowUp' : 'arrowDown',
+        text: e.side === 'buy' ? ('B ' + (e.price || '')) : ('S ' + (e.price || '')),
+      }));
       if (markers.length) candleSeries.setMarkers(markers);
     }
-  } catch (e) {
-    console.error('Failed to load trade events', e);
-  }
+  } catch (e) { console.error('Failed to load trade events', e); }
 
-  // Responsive resize
   const resizeObs = new ResizeObserver(() => {
     chart.applyOptions({ width: container.clientWidth });
   });
   resizeObs.observe(container);
 }
 
-/**
- * Fetch and render asset status panel.
- * @param {string} accountId
- */
 async function loadAssetStatus(accountId) {
   const el = document.getElementById('asset-status');
   if (!el) return;
@@ -235,17 +240,12 @@ async function loadAssetStatus(accountId) {
 }
 
 /* ============================================================
-   LOT Table
+   LOT Table (동적 필터 탭)
    ============================================================ */
 
-/** @type {Array} */
 let _allLots = [];
 let _currentLotFilter = 'all';
 
-/**
- * Fetch lots and render lot table.
- * @param {string} accountId
- */
 async function loadLots(accountId) {
   try {
     const resp = await apiFetch('/api/dashboard/' + accountId + '/lots');
@@ -258,30 +258,22 @@ async function loadLots(accountId) {
   }
 }
 
-/**
- * Filter and re-render the lot table.
- * @param {string} filter - 'all' | 'lot_stacking' | 'trend_buy'
- */
 function filterLots(filter) {
   _currentLotFilter = filter;
   _renderLots(filter);
 }
 
 function _renderLots(filter) {
-  // Update active tab UI
   document.querySelectorAll('.filter-tab').forEach(tab => {
     tab.classList.toggle('active', tab.dataset.filter === filter);
   });
-
-  const filtered = filter === 'all' ? _allLots : _allLots.filter(l => l.strategy === filter);
+  const filtered = filter === 'all' ? _allLots : _allLots.filter(l => l.combo_id === filter);
   const tbody = document.getElementById('lots-tbody');
   if (!tbody) return;
-
   if (!filtered.length) {
     tbody.innerHTML = '<tr><td colspan="8" class="table-empty">No lots found</td></tr>';
     return;
   }
-
   tbody.innerHTML = filtered.map((lot, i) => {
     const pnl = lot.pnl_pct;
     const pnlClass = pnl == null ? '' : (pnl >= 0 ? 'pnl-positive' : 'pnl-negative');
@@ -299,84 +291,222 @@ function _renderLots(filter) {
 }
 
 /* ============================================================
-   Tune Controls
+   Trading Combos (CRUD + 동적 파라미터 렌더링)
    ============================================================ */
 
-/**
- * Populate tune form with current values from API.
- * @param {string} accountId
- */
-async function loadTuneValues(accountId) {
+let _combos = [];
+let _buyLogics = [];
+let _sellLogics = [];
+
+async function loadCombosAndLots(accountId) {
   try {
-    const resp = await apiFetch('/api/dashboard/' + accountId + '/tune');
-    if (!resp.ok) return;
-    const data = await resp.json();
-    const ls = data.lot_stacking || {};
-    const tb = data.trend_buy || {};
+    const [combosResp, buyResp, sellResp] = await Promise.all([
+      apiFetch('/api/accounts/' + accountId + '/combos'),
+      apiFetch('/api/buy-logics'),
+      apiFetch('/api/sell-logics'),
+    ]);
+    if (combosResp.ok) _combos = await combosResp.json();
+    if (buyResp.ok) _buyLogics = await buyResp.json();
+    if (sellResp.ok) _sellLogics = await sellResp.json();
 
-    _setVal('ls-drop-pct', ls.drop_pct);
-    _setVal('ls-tp-pct', ls.tp_pct);
-    _setVal('ls-buy-usdt', ls.buy_usdt);
-    _setVal('ls-prebuy-pct', ls.prebuy_pct);
-    _setVal('ls-cancel-rebound-pct', ls.cancel_rebound_pct);
-    _setVal('ls-recenter-pct', ls.recenter_pct);
-    _setVal('ls-recenter-ema-n', ls.recenter_ema_n);
-    const reEl = document.getElementById('ls-recenter-enabled');
-    if (reEl && ls.recenter_enabled != null) reEl.value = ls.recenter_enabled ? 'true' : 'false';
-
-    _setVal('tb-drop-pct', tb.drop_pct);
-    _setVal('tb-tp-pct', tb.tp_pct);
-    _setVal('tb-buy-usdt', tb.buy_usdt);
-    _setVal('tb-step-pct', tb.step_pct);
-    _setVal('tb-step-count', tb.step_count);
-    _setVal('tb-above-base-pct', tb.above_base_pct);
+    _renderCombosPanel(accountId);
+    _buildComboLotFilterTabs();
+    await loadLots(accountId);
   } catch (e) {
-    console.error('Failed to load tune values', e);
+    const el = document.getElementById('combos-panel');
+    if (el) el.innerHTML = '<p class="error-text">Failed to load combos: ' + escapeHtml(e.message) + '</p>';
   }
 }
 
-/**
- * Submit tune values for a strategy.
- * @param {string} accountId
- * @param {string} strategy - 'lot_stacking' | 'trend_buy'
- */
-async function saveTuneValues(accountId, strategy) {
-  let payload;
-  if (strategy === 'lot_stacking') {
-    payload = {
-      strategy: 'lot_stacking',
-      drop_pct: _getFloat('ls-drop-pct'),
-      tp_pct: _getFloat('ls-tp-pct'),
-      buy_usdt: _getFloat('ls-buy-usdt'),
-      prebuy_pct: _getFloat('ls-prebuy-pct'),
-      cancel_rebound_pct: _getFloat('ls-cancel-rebound-pct'),
-      recenter_pct: _getFloat('ls-recenter-pct'),
-      recenter_ema_n: _getInt('ls-recenter-ema-n'),
-      recenter_enabled: (document.getElementById('ls-recenter-enabled') || {}).value === 'true',
-    };
-  } else {
-    payload = {
-      strategy: 'trend_buy',
-      drop_pct: _getFloat('tb-drop-pct'),
-      tp_pct: _getFloat('tb-tp-pct'),
-      buy_usdt: _getFloat('tb-buy-usdt'),
-      step_pct: _getFloat('tb-step-pct'),
-      step_count: _getInt('tb-step-count'),
-      above_base_pct: _getFloat('tb-above-base-pct'),
-    };
+function _renderCombosPanel(accountId) {
+  const container = document.getElementById('combos-panel');
+  if (!container) return;
+
+  if (!_combos.length) {
+    container.innerHTML = '<p style="color:#94a3b8;">No combos configured. Click "+ New Combo" to create one.</p>';
+    return;
   }
 
+  container.innerHTML = _combos.map(combo => {
+    const buyMeta = _buyLogics.find(b => b.name === combo.buy_logic_name) || {};
+    const sellMeta = _sellLogics.find(s => s.name === combo.sell_logic_name) || {};
+    const enabledClass = combo.is_enabled ? 'badge-success' : 'badge-neutral';
+    const enabledText = combo.is_enabled ? 'ON' : 'OFF';
+
+    let paramsHtml = '';
+    const bpKeys = Object.keys(combo.buy_params || {}).filter(k => !k.startsWith('_'));
+    const spKeys = Object.keys(combo.sell_params || {});
+    if (bpKeys.length) paramsHtml += '<span class="combo-params">' + bpKeys.map(k => escapeHtml(k) + '=' + escapeHtml(String(combo.buy_params[k]))).join(', ') + '</span>';
+    if (spKeys.length) paramsHtml += ' | <span class="combo-params">' + spKeys.map(k => escapeHtml(k) + '=' + escapeHtml(String(combo.sell_params[k]))).join(', ') + '</span>';
+
+    return `<div class="tune-panel" style="margin-bottom:0.75rem;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <h3 class="tune-panel-title" style="margin:0;">${escapeHtml(combo.name)}</h3>
+        <div style="display:flex;gap:0.5rem;align-items:center;">
+          <span class="status-badge ${enabledClass}">${enabledText}</span>
+          <button class="btn btn-outline btn-sm" onclick="editCombo('${combo.id}')">Edit</button>
+          <button class="btn btn-outline btn-sm" onclick="toggleCombo('${accountId}','${combo.id}',${combo.is_enabled})">${combo.is_enabled ? 'Disable' : 'Enable'}</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteCombo('${accountId}','${combo.id}')">Delete</button>
+        </div>
+      </div>
+      <div style="color:#94a3b8;font-size:0.85rem;margin-top:0.25rem;">
+        Buy: ${escapeHtml(buyMeta.display_name || combo.buy_logic_name)} | Sell: ${escapeHtml(sellMeta.display_name || combo.sell_logic_name)}
+      </div>
+      ${paramsHtml ? '<div style="color:#64748b;font-size:0.8rem;margin-top:0.25rem;">' + paramsHtml + '</div>' : ''}
+    </div>`;
+  }).join('');
+}
+
+function _buildComboLotFilterTabs() {
+  const container = document.getElementById('lot-filter-tabs');
+  if (!container) return;
+  let html = '<button class="filter-tab active" data-filter="all" onclick="filterLots(\'all\')">All</button>';
+  for (const combo of _combos) {
+    html += `<button class="filter-tab" data-filter="${combo.id}" onclick="filterLots('${combo.id}')">${escapeHtml(combo.name)}</button>`;
+  }
+  container.innerHTML = html;
+}
+
+function showCreateComboModal() {
+  document.getElementById('combo-modal-title').textContent = 'New Combo';
+  document.getElementById('combo-edit-id').value = '';
+  document.getElementById('combo-name').value = '';
+  _populateLogicSelects();
+  _populateReferenceSelect('');
+  renderComboParams('buy');
+  renderComboParams('sell');
+  document.getElementById('combo-buy-logic-group').style.display = '';
+  document.getElementById('combo-sell-logic-group').style.display = '';
+  document.getElementById('combo-modal').style.display = 'flex';
+}
+
+function editCombo(comboId) {
+  const combo = _combos.find(c => c.id === comboId);
+  if (!combo) return;
+  document.getElementById('combo-modal-title').textContent = 'Edit Combo';
+  document.getElementById('combo-edit-id').value = comboId;
+  document.getElementById('combo-name').value = combo.name;
+  _populateLogicSelects(combo.buy_logic_name, combo.sell_logic_name);
+  _populateReferenceSelect(combo.reference_combo_id || '', comboId);
+  // Logic type cannot be changed on edit
+  document.getElementById('combo-buy-logic-group').style.display = 'none';
+  document.getElementById('combo-sell-logic-group').style.display = 'none';
+  renderComboParams('buy', combo.buy_params);
+  renderComboParams('sell', combo.sell_params);
+  document.getElementById('combo-modal').style.display = 'flex';
+}
+
+function closeComboModal() {
+  document.getElementById('combo-modal').style.display = 'none';
+}
+
+function _populateLogicSelects(buyVal, sellVal) {
+  const buySelect = document.getElementById('combo-buy-logic');
+  const sellSelect = document.getElementById('combo-sell-logic');
+  buySelect.innerHTML = _buyLogics.map(b => `<option value="${b.name}" ${b.name === buyVal ? 'selected' : ''}>${escapeHtml(b.display_name)}</option>`).join('');
+  sellSelect.innerHTML = _sellLogics.map(s => `<option value="${s.name}" ${s.name === sellVal ? 'selected' : ''}>${escapeHtml(s.display_name)}</option>`).join('');
+}
+
+function _populateReferenceSelect(currentRef, excludeId) {
+  const select = document.getElementById('combo-reference');
+  let html = '<option value="">None</option>';
+  for (const c of _combos) {
+    if (c.id === excludeId) continue;
+    html += `<option value="${c.id}" ${c.id === currentRef ? 'selected' : ''}>${escapeHtml(c.name)}</option>`;
+  }
+  select.innerHTML = html;
+}
+
+function renderComboParams(side, existingParams) {
+  const logicName = document.getElementById(side === 'buy' ? 'combo-buy-logic' : 'combo-sell-logic').value;
+  const logics = side === 'buy' ? _buyLogics : _sellLogics;
+  const meta = logics.find(l => l.name === logicName);
+  const container = document.getElementById(side === 'buy' ? 'combo-buy-params' : 'combo-sell-params');
+  if (!container || !meta) { if (container) container.innerHTML = ''; return; }
+
+  const tunableParams = meta.tunable_params || {};
+  const defaults = meta.default_params || {};
+  const current = existingParams || {};
+
+  let html = '<div class="tune-grid">';
+  for (const [key, pm] of Object.entries(tunableParams)) {
+    const val = current[key] ?? defaults[key] ?? '';
+    const title = pm.title || key;
+    const unit = pm.unit ? ` <span class="form-hint">(${escapeHtml(pm.unit)})</span>` : '';
+    const inputId = `combo-${side}-${key}`;
+
+    html += '<div class="form-group">';
+    html += `<label class="form-label">${escapeHtml(title)}${unit}</label>`;
+
+    if (pm.type === 'bool') {
+      const isTrue = val === true || val === 'true';
+      html += `<select id="${inputId}" class="form-input" data-combo-side="${side}" data-param="${key}" data-type="bool">
+        <option value="true" ${isTrue ? 'selected' : ''}>Yes</option>
+        <option value="false" ${!isTrue ? 'selected' : ''}>No</option>
+      </select>`;
+    } else if (pm.type === 'select') {
+      html += `<select id="${inputId}" class="form-input" data-combo-side="${side}" data-param="${key}" data-type="select">`;
+      for (const opt of (pm.options || [])) {
+        const ov = typeof opt === 'object' ? opt.value : opt;
+        const ol = typeof opt === 'object' ? opt.label : opt;
+        html += `<option value="${escapeHtml(String(ov))}" ${val === ov ? 'selected' : ''}>${escapeHtml(String(ol))}</option>`;
+      }
+      html += '</select>';
+    } else {
+      const step = pm.step || (pm.type === 'int' ? 1 : 0.001);
+      html += `<input type="number" step="${step}" id="${inputId}" class="form-input" value="${val}" data-combo-side="${side}" data-param="${key}" data-type="${pm.type || 'float'}">`;
+    }
+    html += '</div>';
+  }
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+function _collectComboParams(side) {
+  const params = {};
+  document.querySelectorAll(`[data-combo-side="${side}"]`).forEach(input => {
+    const key = input.dataset.param;
+    const type = input.dataset.type;
+    if (type === 'bool') params[key] = input.value === 'true';
+    else if (type === 'int') { if (input.value !== '') params[key] = parseInt(input.value, 10); }
+    else if (type === 'select') params[key] = input.value;
+    else { if (input.value !== '') params[key] = parseFloat(input.value); }
+  });
+  return params;
+}
+
+async function saveCombo() {
+  const editId = document.getElementById('combo-edit-id').value;
+  const name = document.getElementById('combo-name').value.trim();
+  if (!name) { showToast('Name is required', 'error'); return; }
+
+  const buyParams = _collectComboParams('buy');
+  const sellParams = _collectComboParams('sell');
+  const refComboId = document.getElementById('combo-reference').value || null;
+
+  const isEdit = !!editId;
+  const url = isEdit
+    ? '/api/accounts/' + ACCOUNT_ID + '/combos/' + editId
+    : '/api/accounts/' + ACCOUNT_ID + '/combos';
+  const method = isEdit ? 'PUT' : 'POST';
+
+  const body = { name, buy_params: buyParams, sell_params: sellParams };
+  if (!isEdit) {
+    body.buy_logic_name = document.getElementById('combo-buy-logic').value;
+    body.sell_logic_name = document.getElementById('combo-sell-logic').value;
+  }
+  if (refComboId) body.reference_combo_id = refComboId;
+
   try {
-    const resp = await apiFetch('/api/dashboard/' + accountId + '/tune', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRFToken': getCsrfToken(),
-      },
-      body: JSON.stringify(payload),
+    const resp = await apiFetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+      body: JSON.stringify(body),
     });
     if (resp.ok) {
-      showToast('Settings saved', 'success');
+      showToast(isEdit ? 'Combo updated' : 'Combo created', 'success');
+      closeComboModal();
+      await loadCombosAndLots(ACCOUNT_ID);
     } else {
       const err = await resp.json().catch(() => ({}));
       showToast('Error: ' + (err.detail || 'Save failed'), 'error');
@@ -386,14 +516,44 @@ async function saveTuneValues(accountId, strategy) {
   }
 }
 
+async function toggleCombo(accountId, comboId, isEnabled) {
+  const action = isEnabled ? 'disable' : 'enable';
+  try {
+    const resp = await apiFetch('/api/accounts/' + accountId + '/combos/' + comboId + '/' + action, {
+      method: 'POST',
+      headers: { 'X-CSRFToken': getCsrfToken() },
+    });
+    if (resp.ok) {
+      showToast('Combo ' + action + 'd', 'success');
+      await loadCombosAndLots(accountId);
+    } else {
+      const err = await resp.json().catch(() => ({}));
+      showToast('Error: ' + (err.detail || 'Toggle failed'), 'error');
+    }
+  } catch (e) { showToast('Network error: ' + e.message, 'error'); }
+}
+
+async function deleteCombo(accountId, comboId) {
+  if (!confirm('Delete this combo? This cannot be undone.')) return;
+  try {
+    const resp = await apiFetch('/api/accounts/' + accountId + '/combos/' + comboId, {
+      method: 'DELETE',
+      headers: { 'X-CSRFToken': getCsrfToken() },
+    });
+    if (resp.ok) {
+      showToast('Combo deleted', 'success');
+      await loadCombosAndLots(accountId);
+    } else {
+      const err = await resp.json().catch(() => ({}));
+      showToast('Error: ' + (err.detail || 'Delete failed'), 'error');
+    }
+  } catch (e) { showToast('Network error: ' + e.message, 'error'); }
+}
+
 /* ============================================================
    Circuit Breaker
    ============================================================ */
 
-/**
- * Load circuit breaker status and render.
- * @param {string} accountId
- */
 async function loadCircuitBreaker(accountId) {
   const el = document.getElementById('circuit-breaker-panel');
   if (!el) return;
@@ -414,10 +574,6 @@ async function loadCircuitBreaker(accountId) {
   }
 }
 
-/**
- * POST reset circuit breaker for an account.
- * @param {string} accountId
- */
 async function resetCircuitBreaker(accountId) {
   if (!confirm('Reset circuit breaker? This will resume trading.')) return;
   try {
@@ -441,9 +597,6 @@ async function resetCircuitBreaker(accountId) {
    Admin Page
    ============================================================ */
 
-/**
- * Load admin overview (system health summary).
- */
 async function loadAdminOverview() {
   const el = document.getElementById('admin-health');
   if (!el) return;
@@ -462,9 +615,6 @@ async function loadAdminOverview() {
   }
 }
 
-/**
- * Load all accounts for admin table.
- */
 async function loadAdminAccounts() {
   const tbody = document.getElementById('admin-accounts-tbody');
   if (!tbody) return;
@@ -495,9 +645,6 @@ async function loadAdminAccounts() {
   }
 }
 
-/**
- * Load users for admin table.
- */
 async function loadAdminUsers() {
   const tbody = document.getElementById('admin-users-tbody');
   if (!tbody) return;
@@ -506,11 +653,12 @@ async function loadAdminUsers() {
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const users = await resp.json();
     if (!users.length) {
-      tbody.innerHTML = '<tr><td colspan="3" class="table-empty">No users</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="5" class="table-empty">No users</td></tr>';
       return;
     }
-    tbody.innerHTML = users.map(u => `
-      <tr>
+    tbody.innerHTML = users.map(u => {
+      const isActive = u.is_active !== false;
+      return `<tr>
         <td>${escapeHtml(u.email || '-')}</td>
         <td>
           <select class="form-input" style="width:auto;" onchange="changeUserRole('${u.id}', this.value)">
@@ -518,21 +666,18 @@ async function loadAdminUsers() {
             <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Admin</option>
           </select>
         </td>
+        <td><span class="status-badge ${isActive ? 'badge-success' : 'badge-danger'}">${isActive ? 'Active' : 'Inactive'}</span></td>
         <td>
-          <span class="status-badge ${u.role === 'admin' ? 'badge-warning' : 'badge-neutral'}">${escapeHtml(u.role || 'user')}</span>
+          <button class="btn btn-outline btn-sm" onclick="resetUserPassword('${u.id}')">Reset PW</button>
+          <button class="btn ${isActive ? 'btn-danger' : 'btn-primary'} btn-sm" onclick="toggleUserActive('${u.id}', ${isActive})">${isActive ? 'Deactivate' : 'Activate'}</button>
         </td>
-      </tr>
-    `).join('');
+      </tr>`;
+    }).join('');
   } catch (e) {
-    tbody.innerHTML = '<tr><td colspan="3" class="table-empty error-text">Failed to load users</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" class="table-empty error-text">Failed to load users</td></tr>';
   }
 }
 
-/**
- * Change a user's role.
- * @param {string} userId
- * @param {string} role
- */
 async function changeUserRole(userId, role) {
   try {
     const resp = await apiFetch('/api/admin/users/' + userId + '/role', {
@@ -551,103 +696,256 @@ async function changeUserRole(userId, role) {
   }
 }
 
+async function createUser() {
+  const email = document.getElementById('new-user-email').value.trim();
+  const password = document.getElementById('new-user-password').value;
+  const role = document.getElementById('new-user-role').value;
+
+  if (!email || !password) { showToast('Email and password required', 'error'); return; }
+  if (password.length < 8) { showToast('Password must be at least 8 characters', 'error'); return; }
+
+  try {
+    const resp = await apiFetch('/api/admin/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+      body: JSON.stringify({ email, password, role }),
+    });
+    if (resp.ok) {
+      showToast('User created', 'success');
+      document.getElementById('new-user-email').value = '';
+      document.getElementById('new-user-password').value = '';
+      loadAdminUsers();
+    } else {
+      const err = await resp.json().catch(() => ({}));
+      showToast('Error: ' + (err.detail || 'Create failed'), 'error');
+    }
+  } catch (e) {
+    showToast('Network error: ' + e.message, 'error');
+  }
+}
+
+async function resetUserPassword(userId) {
+  const newPassword = prompt('Enter new password (min 8 chars):');
+  if (!newPassword) return;
+  if (newPassword.length < 8) { showToast('Password must be at least 8 characters', 'error'); return; }
+
+  try {
+    const resp = await apiFetch('/api/admin/users/' + userId + '/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+      body: JSON.stringify({ new_password: newPassword }),
+    });
+    if (resp.ok) {
+      showToast('Password reset', 'success');
+    } else {
+      const err = await resp.json().catch(() => ({}));
+      showToast('Error: ' + (err.detail || 'Reset failed'), 'error');
+    }
+  } catch (e) {
+    showToast('Network error: ' + e.message, 'error');
+  }
+}
+
+async function toggleUserActive(userId, currentActive) {
+  const action = currentActive ? 'deactivate' : 'activate';
+  if (!confirm(`Are you sure you want to ${action} this user?`)) return;
+
+  try {
+    const resp = await apiFetch('/api/admin/users/' + userId + '/active', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+      body: JSON.stringify({ is_active: !currentActive }),
+    });
+    if (resp.ok) {
+      showToast('User ' + action + 'd', 'success');
+      loadAdminUsers();
+    } else {
+      const err = await resp.json().catch(() => ({}));
+      showToast('Error: ' + (err.detail || 'Update failed'), 'error');
+    }
+  } catch (e) {
+    showToast('Network error: ' + e.message, 'error');
+  }
+}
+
 /* ============================================================
-   Backtest
+   Backtest (combo 기반 설정 UI)
    ============================================================ */
 
 let _backtestPollTimer = null;
+let _btBuyLogics = [];
+let _btSellLogics = [];
+let _btComboCount = 0;
 
 /**
- * Show/hide tune panels based on strategy checkbox state.
- * @param {string} which - 'lot' or 'trend'
+ * 백테스트 buy/sell 로직 메타데이터 로드 + 기본 combo 1개 생성
  */
-function toggleBtTunePanel(which) {
-  if (which === 'lot') {
-    const panel = document.getElementById('bt-tune-lot');
-    if (panel) panel.style.display = document.getElementById('bt-strat-lot').checked ? '' : 'none';
-  } else if (which === 'trend') {
-    const panel = document.getElementById('bt-tune-trend');
-    if (panel) panel.style.display = document.getElementById('bt-strat-trend').checked ? '' : 'none';
+async function loadBtLogics() {
+  try {
+    const [buyResp, sellResp] = await Promise.all([
+      apiFetch('/api/buy-logics'),
+      apiFetch('/api/sell-logics'),
+    ]);
+    if (buyResp.ok) _btBuyLogics = await buyResp.json();
+    if (sellResp.ok) _btSellLogics = await sellResp.json();
+
+    const container = document.getElementById('bt-combos-container');
+    if (container) {
+      container.innerHTML = '';
+      _btComboCount = 0;
+      addBtCombo();
+    }
+  } catch (e) {
+    console.error('Failed to load logics for backtest', e);
   }
 }
 
-/**
- * Collect strategy params from tune panels.
- * @returns {Object} e.g. { "lot_stacking": { ... }, "trend_buy": { ... } }
- */
-function _collectBtStrategyParams() {
-  const params = {};
+function addBtCombo() {
+  const container = document.getElementById('bt-combos-container');
+  if (!container) return;
+  const idx = _btComboCount++;
+  const div = document.createElement('div');
+  div.className = 'tune-panel';
+  div.id = 'bt-combo-' + idx;
+  div.style.marginBottom = '0.75rem';
 
-  if (document.getElementById('bt-strat-lot').checked) {
-    params.lot_stacking = {};
-    const fields = {
-      'bt-ls-drop-pct': 'drop_pct',
-      'bt-ls-tp-pct': 'tp_pct',
-      'bt-ls-buy-usdt': 'buy_usdt',
-      'bt-ls-prebuy-pct': 'prebuy_pct',
-      'bt-ls-cancel-rebound-pct': 'cancel_rebound_pct',
-      'bt-ls-recenter-pct': 'recenter_pct',
-      'bt-ls-recenter-ema-n': 'recenter_ema_n',
-    };
-    for (const [elId, key] of Object.entries(fields)) {
-      const el = document.getElementById(elId);
-      if (el && el.value !== '') params.lot_stacking[key] = parseFloat(el.value);
-    }
-    const reEl = document.getElementById('bt-ls-recenter-enabled');
-    if (reEl) params.lot_stacking.recenter_enabled = reEl.value === 'true';
-  }
+  let buyOpts = _btBuyLogics.map(b => `<option value="${b.name}">${escapeHtml(b.display_name)}</option>`).join('');
+  let sellOpts = _btSellLogics.map(s => `<option value="${s.name}">${escapeHtml(s.display_name)}</option>`).join('');
 
-  if (document.getElementById('bt-strat-trend').checked) {
-    params.trend_buy = {};
-    const fields = {
-      'bt-tb-drop-pct': 'drop_pct',
-      'bt-tb-tp-pct': 'tp_pct',
-      'bt-tb-buy-usdt': 'buy_usdt',
-      'bt-tb-enable-pct': 'enable_pct',
-      'bt-tb-recenter-pct': 'recenter_pct',
-      'bt-tb-step-pct': 'step_pct',
-    };
-    for (const [elId, key] of Object.entries(fields)) {
-      const el = document.getElementById(elId);
-      if (el && el.value !== '') params.trend_buy[key] = parseFloat(el.value);
-    }
-  }
-
-  return params;
+  div.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+      <h3 class="tune-panel-title" style="margin:0;">Combo ${idx + 1}</h3>
+      <button type="button" class="btn btn-danger btn-sm" onclick="removeBtCombo(${idx})">Remove</button>
+    </div>
+    <div class="tune-grid" style="margin-top:0.5rem;">
+      <div class="form-group">
+        <label class="form-label">Name</label>
+        <input type="text" class="form-input" id="bt-combo-name-${idx}" value="combo_${idx + 1}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Buy Logic</label>
+        <select class="form-input" id="bt-combo-buy-${idx}" onchange="renderBtComboParams(${idx},'buy')">${buyOpts}</select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Sell Logic</label>
+        <select class="form-input" id="bt-combo-sell-${idx}" onchange="renderBtComboParams(${idx},'sell')">${sellOpts}</select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Reference Combo</label>
+        <input type="text" class="form-input" id="bt-combo-ref-${idx}" placeholder="(none)">
+      </div>
+    </div>
+    <div id="bt-combo-buy-params-${idx}" style="margin-top:0.5rem;"></div>
+    <div id="bt-combo-sell-params-${idx}" style="margin-top:0.5rem;"></div>
+  `;
+  container.appendChild(div);
+  renderBtComboParams(idx, 'buy');
+  renderBtComboParams(idx, 'sell');
 }
 
-/**
- * Start a new backtest run.
- */
+function removeBtCombo(idx) {
+  const el = document.getElementById('bt-combo-' + idx);
+  if (el) el.remove();
+}
+
+function renderBtComboParams(idx, side) {
+  const selectId = side === 'buy' ? 'bt-combo-buy-' + idx : 'bt-combo-sell-' + idx;
+  const containerId = side === 'buy' ? 'bt-combo-buy-params-' + idx : 'bt-combo-sell-params-' + idx;
+  const logicName = document.getElementById(selectId).value;
+  const logics = side === 'buy' ? _btBuyLogics : _btSellLogics;
+  const meta = logics.find(l => l.name === logicName);
+  const container = document.getElementById(containerId);
+  if (!container || !meta) { if (container) container.innerHTML = ''; return; }
+
+  const tunableParams = meta.tunable_params || {};
+  const defaults = meta.default_params || {};
+  let html = '<div class="tune-grid">';
+  for (const [key, pm] of Object.entries(tunableParams)) {
+    const val = defaults[key] ?? '';
+    const title = pm.title || key;
+    const inputId = `bt-c${idx}-${side}-${key}`;
+    html += '<div class="form-group">';
+    html += `<label class="form-label">${escapeHtml(title)}</label>`;
+    if (pm.type === 'bool') {
+      const isTrue = val === true || val === 'true';
+      html += `<select id="${inputId}" class="form-input" data-bt-combo="${idx}" data-bt-side="${side}" data-param="${key}" data-type="bool">
+        <option value="true" ${isTrue ? 'selected' : ''}>Yes</option>
+        <option value="false" ${!isTrue ? 'selected' : ''}>No</option>
+      </select>`;
+    } else if (pm.type === 'select') {
+      html += `<select id="${inputId}" class="form-input" data-bt-combo="${idx}" data-bt-side="${side}" data-param="${key}" data-type="select">`;
+      for (const opt of (pm.options || [])) {
+        const ov = typeof opt === 'object' ? opt.value : opt;
+        const ol = typeof opt === 'object' ? opt.label : opt;
+        html += `<option value="${escapeHtml(String(ov))}" ${val === ov ? 'selected' : ''}>${escapeHtml(String(ol))}</option>`;
+      }
+      html += '</select>';
+    } else {
+      const step = pm.step || (pm.type === 'int' ? 1 : 0.001);
+      html += `<input type="number" step="${step}" id="${inputId}" class="form-input" value="${val}" data-bt-combo="${idx}" data-bt-side="${side}" data-param="${key}" data-type="${pm.type || 'float'}">`;
+    }
+    html += '</div>';
+  }
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+function _collectBtCombos() {
+  const combos = [];
+  document.querySelectorAll('[id^="bt-combo-"][id$="-0"], [id^="bt-combo-"]').forEach(el => {
+    const match = el.id.match(/^bt-combo-(\d+)$/);
+    if (!match) return;
+    const idx = parseInt(match[1], 10);
+    const nameEl = document.getElementById('bt-combo-name-' + idx);
+    if (!nameEl) return;
+    const name = nameEl.value.trim() || 'combo_' + (idx + 1);
+    const buyLogic = document.getElementById('bt-combo-buy-' + idx).value;
+    const sellLogic = document.getElementById('bt-combo-sell-' + idx).value;
+    const refName = document.getElementById('bt-combo-ref-' + idx).value.trim() || null;
+
+    const buyParams = {};
+    const sellParams = {};
+    document.querySelectorAll(`[data-bt-combo="${idx}"]`).forEach(input => {
+      const side = input.dataset.btSide;
+      const key = input.dataset.param;
+      const type = input.dataset.type;
+      let val;
+      if (type === 'bool') val = input.value === 'true';
+      else if (type === 'int') val = input.value !== '' ? parseInt(input.value, 10) : undefined;
+      else if (type === 'select') val = input.value;
+      else val = input.value !== '' ? parseFloat(input.value) : undefined;
+      if (val !== undefined) {
+        if (side === 'buy') buyParams[key] = val;
+        else sellParams[key] = val;
+      }
+    });
+
+    combos.push({
+      name,
+      buy_logic_name: buyLogic,
+      buy_params: buyParams,
+      sell_logic_name: sellLogic,
+      sell_params: sellParams,
+      reference_combo_name: refName,
+    });
+  });
+  return combos;
+}
+
 async function startBacktest() {
   const symbol = document.getElementById('bt-symbol').value;
   const initialUsdt = parseFloat(document.getElementById('bt-initial-usdt').value) || 10000;
   const startDate = document.getElementById('bt-start-date').value;
   const endDate = document.getElementById('bt-end-date').value;
 
-  if (!startDate || !endDate) {
-    showToast('Please select start and end dates', 'error');
-    return;
-  }
+  if (!startDate || !endDate) { showToast('Please select start and end dates', 'error'); return; }
 
   const startTsMs = new Date(startDate).getTime();
   const endTsMs = new Date(endDate + 'T23:59:59').getTime();
+  if (startTsMs >= endTsMs) { showToast('Start date must be before end date', 'error'); return; }
 
-  if (startTsMs >= endTsMs) {
-    showToast('Start date must be before end date', 'error');
-    return;
-  }
-
-  const strategies = [];
-  if (document.getElementById('bt-strat-lot').checked) strategies.push('lot_stacking');
-  if (document.getElementById('bt-strat-trend').checked) strategies.push('trend_buy');
-
-  if (!strategies.length) {
-    showToast('Select at least one strategy', 'error');
-    return;
-  }
-
-  const strategyParams = _collectBtStrategyParams();
+  const combos = _collectBtCombos();
+  if (!combos.length) { showToast('Add at least one combo', 'error'); return; }
 
   const btn = document.getElementById('bt-run-btn');
   btn.disabled = true;
@@ -657,25 +955,11 @@ async function startBacktest() {
     const resp = await apiFetch('/api/backtest/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
-      body: JSON.stringify({
-        symbol,
-        start_ts_ms: startTsMs,
-        end_ts_ms: endTsMs,
-        initial_usdt: initialUsdt,
-        strategies,
-        strategy_params: strategyParams,
-      }),
+      body: JSON.stringify({ symbol, start_ts_ms: startTsMs, end_ts_ms: endTsMs, initial_usdt: initialUsdt, combos }),
     });
-
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({}));
-      throw new Error(err.detail || 'Failed to start backtest');
-    }
-
+    if (!resp.ok) { const err = await resp.json().catch(() => ({})); throw new Error(err.detail || 'Failed to start backtest'); }
     const data = await resp.json();
     showToast('Backtest started', 'success');
-
-    // Start polling
     _startBacktestPolling(data.id);
     loadBacktestHistory();
   } catch (e) {
@@ -686,86 +970,55 @@ async function startBacktest() {
   }
 }
 
-/**
- * Poll backtest status until completed/failed.
- * @param {string} runId
- */
 function _startBacktestPolling(runId) {
   if (_backtestPollTimer) clearInterval(_backtestPollTimer);
-
   _backtestPollTimer = setInterval(async () => {
     try {
       const resp = await apiFetch('/api/backtest/' + runId + '/status');
       if (!resp.ok) return;
       const data = await resp.json();
-
       if (data.status === 'COMPLETED' || data.status === 'FAILED') {
         clearInterval(_backtestPollTimer);
         _backtestPollTimer = null;
         loadBacktestHistory();
-        if (data.status === 'COMPLETED') {
-          showToast('Backtest completed!', 'success');
-        } else {
-          showToast('Backtest failed: ' + (data.error_message || 'Unknown error'), 'error');
-        }
+        showToast(data.status === 'COMPLETED' ? 'Backtest completed!' : 'Backtest failed: ' + (data.error_message || 'Unknown error'),
+          data.status === 'COMPLETED' ? 'success' : 'error');
       }
-    } catch (e) {
-      // ignore polling errors
-    }
+    } catch (e) {}
   }, 2000);
 }
 
-/**
- * Load backtest history table.
- */
 async function loadBacktestHistory() {
   const tbody = document.getElementById('backtest-history-tbody');
   if (!tbody) return;
-
   try {
     const resp = await apiFetch('/api/backtest/list');
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const runs = await resp.json();
-
-    if (!runs.length) {
-      tbody.innerHTML = '<tr><td colspan="7" class="table-empty">No backtests yet</td></tr>';
-      return;
-    }
+    if (!runs.length) { tbody.innerHTML = '<tr><td colspan="7" class="table-empty">No backtests yet</td></tr>'; return; }
 
     tbody.innerHTML = runs.map(r => {
       const created = new Date(r.created_at).toLocaleString();
       const startD = new Date(r.start_ts_ms).toLocaleDateString();
       const endD = new Date(r.end_ts_ms).toLocaleDateString();
-      const strats = r.strategies.join(', ');
+      const strats = r.combos ? r.combos.map(c => c.name).join(', ') : (r.strategies ? r.strategies.join(', ') : '-');
       const pnlClass = r.pnl_pct != null ? (r.pnl_pct >= 0 ? 'pnl-positive' : 'pnl-negative') : '';
       const pnlText = r.pnl_pct != null ? r.pnl_pct.toFixed(2) + '%' : '-';
-
       let statusBadge = '';
       if (r.status === 'COMPLETED') statusBadge = '<span class="status-badge badge-success">Completed</span>';
       else if (r.status === 'RUNNING') statusBadge = '<span class="status-badge badge-warning">Running</span>';
       else if (r.status === 'PENDING') statusBadge = '<span class="status-badge badge-neutral">Pending</span>';
       else statusBadge = '<span class="status-badge badge-danger">Failed</span>';
-
       let actions = '';
-      if (r.status === 'COMPLETED') {
-        actions = `<a href="/admin/backtest/${r.id}" class="btn btn-outline btn-sm">View Report</a>`;
-      }
-      if (r.status !== 'RUNNING' && r.status !== 'PENDING') {
-        actions += ` <button class="btn btn-danger btn-sm" onclick="deleteBacktest('${r.id}')">Delete</button>`;
-      }
-
+      if (r.status === 'COMPLETED') actions = `<a href="/admin/backtest/${r.id}" class="btn btn-outline btn-sm">View Report</a>`;
+      if (r.status !== 'RUNNING' && r.status !== 'PENDING') actions += ` <button class="btn btn-danger btn-sm" onclick="deleteBacktest('${r.id}')">Delete</button>`;
       return `<tr>
-        <td>${escapeHtml(created)}</td>
-        <td>${escapeHtml(r.symbol)}</td>
-        <td>${escapeHtml(strats)}</td>
-        <td>${escapeHtml(startD)} ~ ${escapeHtml(endD)}</td>
-        <td class="${pnlClass}">${pnlText}</td>
-        <td>${statusBadge}</td>
-        <td>${actions}</td>
+        <td>${escapeHtml(created)}</td><td>${escapeHtml(r.symbol)}</td><td>${escapeHtml(strats)}</td>
+        <td>${escapeHtml(startD)} ~ ${escapeHtml(endD)}</td><td class="${pnlClass}">${pnlText}</td>
+        <td>${statusBadge}</td><td>${actions}</td>
       </tr>`;
     }).join('');
 
-    // Auto-poll if any are still running/pending
     const hasActive = runs.some(r => r.status === 'RUNNING' || r.status === 'PENDING');
     if (hasActive && !_backtestPollTimer) {
       const activeRun = runs.find(r => r.status === 'RUNNING' || r.status === 'PENDING');
@@ -776,10 +1029,6 @@ async function loadBacktestHistory() {
   }
 }
 
-/**
- * Delete a backtest run.
- * @param {string} runId
- */
 async function deleteBacktest(runId) {
   if (!confirm('Delete this backtest?')) return;
   try {
@@ -787,40 +1036,25 @@ async function deleteBacktest(runId) {
       method: 'DELETE',
       headers: { 'X-CSRFToken': getCsrfToken() },
     });
-    if (resp.ok) {
-      showToast('Backtest deleted', 'success');
-      loadBacktestHistory();
-    } else {
-      const err = await resp.json().catch(() => ({}));
-      showToast('Error: ' + (err.detail || 'Delete failed'), 'error');
-    }
-  } catch (e) {
-    showToast('Network error: ' + e.message, 'error');
-  }
+    if (resp.ok) { showToast('Backtest deleted', 'success'); loadBacktestHistory(); }
+    else { const err = await resp.json().catch(() => ({})); showToast('Error: ' + (err.detail || 'Delete failed'), 'error'); }
+  } catch (e) { showToast('Network error: ' + e.message, 'error'); }
 }
 
 /* ============================================================
    Utility Functions
    ============================================================ */
 
-/** Format a number with fixed decimal places, returns '-' for null/undefined */
 function fmt(val, decimals) {
   if (val == null) return '-';
   return Number(val).toFixed(decimals);
 }
 
-/** Escape HTML to prevent XSS */
 function escapeHtml(str) {
   if (str == null) return '';
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-/** Show a toast notification */
 function showToast(msg, type) {
   const toast = document.createElement('div');
   toast.className = 'toast toast-' + (type || 'success');
@@ -833,21 +1067,6 @@ function showToast(msg, type) {
   }, 2700);
 }
 
-function _setVal(id, val) {
-  const el = document.getElementById(id);
-  if (el && val != null) el.value = val;
-}
-function _getFloat(id) {
-  const el = document.getElementById(id);
-  if (!el || el.value === '') return null;
-  return parseFloat(el.value);
-}
-function _getInt(id) {
-  const el = document.getElementById(id);
-  if (!el || el.value === '') return null;
-  return parseInt(el.value, 10);
-}
-
 /* ============================================================
    Auto-initialize on page load
    ============================================================ */
@@ -857,11 +1076,12 @@ document.addEventListener('DOMContentLoaded', () => {
   if (path === '/accounts') {
     loadAccounts();
   } else if (path.startsWith('/accounts/')) {
-    // Dashboard page initializes via inline script in account_detail.html
+    // account_detail.html의 인라인 스크립트에서 loadAccountDashboard() 호출
   } else if (path === '/admin') {
     loadAdminOverview();
     loadAdminAccounts();
     loadAdminUsers();
+    loadBtLogics();
     loadBacktestHistory();
   }
 });

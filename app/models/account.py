@@ -38,3 +38,4 @@ class TradingAccount(Base):
     fills = relationship("Fill", back_populates="account", cascade="all, delete-orphan")
     lots = relationship("Lot", back_populates="account", cascade="all, delete-orphan")
     positions = relationship("Position", back_populates="account", cascade="all, delete-orphan")
+    trading_combos = relationship("TradingCombo", back_populates="account", cascade="all, delete-orphan")
