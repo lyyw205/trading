@@ -95,6 +95,18 @@ class TradingEngine:
         await self.stop_account(account_id)
         await self.start_account(account_id)
 
+    async def resume_buying(self, account_id: UUID):
+        """Resume buying for a paused account and wake the trading loop."""
+        from app.services.buy_pause_manager import BuyPauseManager
+        async with TradingSessionLocal() as session:
+            mgr = BuyPauseManager(account_id, session)
+            await mgr.resume()
+            await session.commit()
+        # Wake the trader loop from interruptible sleep
+        trader = self._traders.get(account_id)
+        if trader:
+            trader.wake()
+
     def get_account_health(self) -> dict[str, dict]:
         return {
             str(aid): trader.health_status()

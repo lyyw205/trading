@@ -15,6 +15,7 @@ from app.models.core_btc_history import CoreBtcHistory
 from app.services.account_state_manager import AccountStateManager
 from app.schemas.dashboard import (
     DashboardSummary,
+    BuyPauseInfo,
     ApproveEarningsRequest,
     ApproveEarningsResponse,
 )
@@ -80,6 +81,12 @@ async def get_dashboard(
         pending_earnings_usdt=pending_earnings,
         is_active=account.is_active,
         health=health,
+        buy_pause=BuyPauseInfo(
+            state=account.buy_pause_state or "ACTIVE",
+            reason=account.buy_pause_reason,
+            since=account.buy_pause_since.isoformat() if account.buy_pause_since else None,
+            consecutive_low_balance=account.consecutive_low_balance or 0,
+        ),
     )
 
 

@@ -116,6 +116,20 @@ async def stop_account(
     return {"status": "stopped", "account_id": str(account.id)}
 
 
+@router.post("/{account_id}/buy-pause/resume", status_code=200)
+@limiter.limit("30/minute")
+async def resume_buying(
+    request: Request,
+    account=Depends(get_owned_account),
+    user: dict = Depends(get_current_user),
+):
+    engine = request.app.state.trading_engine
+    await engine.resume_buying(account.id)
+
+    audit_log("buy_pause_resumed", user_id=user["id"], account_id=str(account.id))
+    return {"status": "resumed", "account_id": str(account.id)}
+
+
 @router.post("/{account_id}/reset-circuit-breaker", status_code=200)
 @limiter.limit("30/minute")
 async def reset_circuit_breaker(

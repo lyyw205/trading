@@ -40,6 +40,10 @@ class AccountResponse(BaseModel):
     last_success_at: datetime | None
     loop_interval_sec: int
     order_cooldown_sec: int
+    buy_pause_state: str = "ACTIVE"
+    buy_pause_reason: str | None = None
+    buy_pause_since: datetime | None = None
+    consecutive_low_balance: int = 0
     created_at: datetime
     updated_at: datetime
 

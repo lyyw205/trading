@@ -104,6 +104,12 @@ async function loadAccounts() {
       const badgeClass = isActive ? 'badge-success' : 'badge-danger';
       const badgeText = isActive ? 'Active' : 'Inactive';
       const cbTripped = acct.circuit_breaker_tripped;
+      const buyPaused = acct.buy_pause_state && acct.buy_pause_state !== 'ACTIVE';
+      const buyPauseBadge = acct.buy_pause_state === 'PAUSED'
+        ? '<span class="status-badge badge-buy-paused">Buy Paused</span>'
+        : acct.buy_pause_state === 'THROTTLED'
+        ? '<span class="status-badge badge-buy-throttled">Buy Throttled</span>'
+        : '';
       return `
         <div class="account-card" onclick="window.location.href='/accounts/${acct.id}'">
           <div class="account-card-label">${escapeHtml(acct.label || acct.id)}</div>
@@ -111,6 +117,7 @@ async function loadAccounts() {
           <div class="account-card-footer">
             <span class="status-badge ${badgeClass}">${badgeText}</span>
             ${cbTripped ? '<span class="status-badge badge-danger">CB Tripped</span>' : ''}
+            ${buyPauseBadge}
           </div>
         </div>
       `;
@@ -154,6 +161,7 @@ async function loadAccountDashboard(accountId) {
     loadAssetStatus(accountId),
     loadCombosAndLots(accountId),
     loadCircuitBreaker(accountId),
+    loadBuyPauseStatus(accountId),
   ]);
 }
 
@@ -732,6 +740,73 @@ async function resetCircuitBreaker(accountId) {
     } else {
       const err = await resp.json().catch(() => ({}));
       showToast('Error: ' + (err.detail || 'Reset failed'), 'error');
+    }
+  } catch (e) {
+    showToast('Network error: ' + e.message, 'error');
+  }
+}
+
+/* ============================================================
+   Buy Pause Status
+   ============================================================ */
+
+async function loadBuyPauseStatus(accountId) {
+  const el = document.getElementById('buy-pause-panel');
+  if (!el) return;
+  try {
+    const resp = await apiFetch('/api/dashboard/' + accountId);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    const bp = data.buy_pause || { state: 'ACTIVE', reason: null, since: null, consecutive_low_balance: 0 };
+
+    if (bp.state === 'ACTIVE') {
+      el.innerHTML = `
+        <div class="bp-status bp-ok">
+          <span class="bp-indicator"></span>
+          <span class="bp-label">Normal - Buying Active</span>
+        </div>
+      `;
+      return;
+    }
+
+    const isPaused = bp.state === 'PAUSED';
+    const stateLabel = isPaused ? 'PAUSED' : 'THROTTLED';
+    const stateClass = isPaused ? 'bp-paused' : 'bp-throttled';
+    const reasonText = bp.reason === 'LOW_BALANCE' ? 'Insufficient Balance' : (bp.reason || 'Unknown');
+    const sinceText = bp.since ? new Date(bp.since).toLocaleString() : '-';
+    const countText = bp.consecutive_low_balance || 0;
+
+    el.innerHTML = `
+      <div class="bp-status ${stateClass}">
+        <span class="bp-indicator"></span>
+        <span class="bp-label">${stateLabel} - ${reasonText}</span>
+      </div>
+      <div class="bp-details">
+        <div class="bp-detail-row"><span class="bp-detail-label">Since</span><span>${sinceText}</span></div>
+        <div class="bp-detail-row"><span class="bp-detail-label">Consecutive Low Balance</span><span>${countText}x</span></div>
+        ${isPaused ? '<div class="bp-detail-row"><span class="bp-detail-label">Sell Monitoring</span><span>Active (auto-resume on sell)</span></div>' : ''}
+        ${bp.state === 'THROTTLED' ? '<div class="bp-detail-row"><span class="bp-detail-label">Buy Frequency</span><span>1 per 5 cycles</span></div>' : ''}
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="resumeBuying('${accountId}')">Resume Buying</button>
+    `;
+  } catch (e) {
+    el.innerHTML = '<p class="error-text">Failed to load buy pause status</p>';
+  }
+}
+
+async function resumeBuying(accountId) {
+  if (!confirm('Resume buying? This will clear the pause state.')) return;
+  try {
+    const resp = await apiFetch('/api/accounts/' + accountId + '/buy-pause/resume', {
+      method: 'POST',
+      headers: { 'X-CSRFToken': getCsrfToken() },
+    });
+    if (resp.ok) {
+      showToast('Buying resumed', 'success');
+      loadBuyPauseStatus(accountId);
+    } else {
+      const err = await resp.json().catch(() => ({}));
+      showToast('Error: ' + (err.detail || 'Resume failed'), 'error');
     }
   } catch (e) {
     showToast('Network error: ' + e.message, 'error');

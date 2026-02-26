@@ -17,6 +17,8 @@ from app.strategies.registry import BuyLogicRegistry, SellLogicRegistry
 from app.strategies.state_store import StrategyStateStore
 from app.strategies.base import BaseBuyLogic, BaseSellLogic, StrategyContext, RepositoryBundle
 from app.services.account_state_manager import AccountStateManager
+from app.services.buy_pause_manager import BuyPauseManager, MIN_TRADE_USDT
+from app.models.account import BuyPauseState
 from app.utils.logging import current_account_id
 
 if TYPE_CHECKING:
@@ -34,6 +36,7 @@ class AccountTrader:
     - StrategyStateStore + AccountStateManager for state
     - Circuit breaker: 5 consecutive failures -> auto-disable
     - Exponential backoff: 1s, 2s, 4s, 8s, max 60s
+    - Buy pause: 잔고 부족 시 매수만 일시정지, 매도 계속
     """
 
     def __init__(
@@ -53,6 +56,14 @@ class AccountTrader:
         self._encryption = encryption
         self._consecutive_failures = 0
         self._last_success_at: float | None = None
+        # Buy pause state (in-memory, synced from DB each step)
+        self._buy_pause_state: str = BuyPauseState.ACTIVE
+        self._consecutive_low_balance: int = 0
+        self._has_open_positions: bool = False
+        self._buy_pause_mgr: BuyPauseManager | None = None
+        self._throttle_cycle: int = 0
+        # Wake event for interruptible sleep (manual resume)
+        self._wake_event = asyncio.Event()
 
     async def _init_client(self):
         """Initialize the BinanceClient with decrypted API keys"""
@@ -93,6 +104,10 @@ class AccountTrader:
                 if not account or not account.is_active:
                     return
 
+                # Sync buy-pause state from DB
+                self._buy_pause_state = account.buy_pause_state or BuyPauseState.ACTIVE
+                self._consecutive_low_balance = account.consecutive_low_balance or 0
+
                 # Rate limiter
                 await self._rate_limiter.acquire(weight=1)
 
@@ -113,6 +128,16 @@ class AccountTrader:
                 await self._price_collector.maybe_store_snapshot(account.symbol, cur_price, session)
                 await self._price_collector.maybe_store_candle(account.symbol, cur_price, session)
 
+                # --- Balance pre-check (account-level, single API call) ---
+                balance_ok = True
+                try:
+                    free_balance = await self._client.get_free_balance(account.quote_asset)
+                    balance_ok = free_balance >= MIN_TRADE_USDT
+                except Exception as e:
+                    logger.warning("[%s] Balance check failed: %s, skipping buy evaluation", self.account_id, e)
+                    # 잔고 API 실패 → 상태 변경 없이 이번 사이클 매수 스킵
+                    balance_ok = False
+
                 # Run active strategies
                 lot_repo = LotRepository(session)
                 repos = RepositoryBundle(
@@ -122,10 +147,11 @@ class AccountTrader:
                     price=None,  # price_repo is module-level functions
                 )
 
-                from sqlalchemy import select
+                from sqlalchemy import select, func
 
                 # --- Combo-based execution (Phase 3) ---
                 from app.models.trading_combo import TradingCombo
+                from app.models.lot import Lot
                 combo_stmt = select(TradingCombo).where(
                     TradingCombo.account_id == self.account_id,
                     TradingCombo.is_enabled == True,
@@ -136,6 +162,16 @@ class AccountTrader:
                 if not combos:
                     logger.debug("[%s] No active combos, skipping cycle", self.account_id)
                     return
+
+                # --- Open lots snapshot (for sell detection) ---
+                open_lots_before_stmt = select(func.count()).select_from(Lot).where(
+                    Lot.account_id == self.account_id, Lot.status == "OPEN",
+                )
+                open_lots_before = (await session.execute(open_lots_before_stmt)).scalar_one()
+
+                # Buy pause manager (shares step session)
+                pause_mgr = BuyPauseManager(self.account_id, session)
+                self._buy_pause_mgr = pause_mgr
 
                 for combo in combos:
                         buy_logic = self._get_or_create_buy(combo.id, combo.buy_logic_name)
@@ -160,10 +196,10 @@ class AccountTrader:
                             client_order_prefix=prefix,
                         )
 
-                        # 0. pre_tick: recenter (base_price 순서 보호)
+                        # 0. pre_tick: recenter (항상 실행 — PAUSED에서도 base_price 유지)
                         await buy_logic.pre_tick(buy_ctx, combo_state, self._client, repos, combo.id)
 
-                        # 1. 매도 (기존 로트 관리, TP 체결 시 core_bucket 적립)
+                        # 1. 매도 (항상 실행 — 기존 로트 관리, TP 체결 시 적립)
                         sell_params = sell_logic.validate_params(combo.sell_params or {})
                         sell_ctx = StrategyContext(
                             account_id=self.account_id,
@@ -179,8 +215,35 @@ class AccountTrader:
                         )
                         await sell_logic.tick(sell_ctx, combo_state, self._client, account_state, repos, open_lots)
 
-                        # 2. 매수 (pending 처리 + 신규 매수)
-                        await buy_logic.tick(buy_ctx, combo_state, self._client, account_state, repos, combo.id)
+                        # 2. 매수 (buy-pause 가드 적용)
+                        should_buy, self._throttle_cycle = BuyPauseManager.should_attempt_buy(
+                            self._buy_pause_state, balance_ok, self._throttle_cycle,
+                        )
+                        if should_buy:
+                            await buy_logic.tick(buy_ctx, combo_state, self._client, account_state, repos, combo.id)
+
+                # --- Sell detection: 로트 수 비교 ---
+                open_lots_after = (await session.execute(open_lots_before_stmt)).scalar_one()
+                sell_occurred = open_lots_after < open_lots_before
+                self._has_open_positions = open_lots_after > 0
+
+                # 매도 발생 + PAUSED → 잔고 재체크
+                if sell_occurred and self._buy_pause_state == BuyPauseState.PAUSED:
+                    try:
+                        fresh_balance = await self._client.get_free_balance(account.quote_asset)
+                        balance_ok = fresh_balance >= MIN_TRADE_USDT
+                        if balance_ok:
+                            logger.info("[%s] Sell detected + balance recovered → will resume", self.account_id)
+                    except Exception:
+                        pass  # 재체크 실패 시 기존 balance_ok 유지
+
+                # --- Buy pause state transition ---
+                new_state, new_count = await pause_mgr.update_state(
+                    self._buy_pause_state, self._consecutive_low_balance,
+                    balance_ok, sell_occurred,
+                )
+                self._buy_pause_state = new_state
+                self._consecutive_low_balance = new_count
 
                 # Record success
                 self._consecutive_failures = 0
@@ -278,9 +341,20 @@ class AccountTrader:
                 await asyncio.sleep(backoff)
                 continue
 
-            # Normal interval
-            interval = await self._get_loop_interval()
-            await asyncio.sleep(interval)
+            # Dynamic interval (buy-pause aware)
+            base_interval = await self._get_loop_interval()
+            interval = BuyPauseManager.compute_interval(
+                base_interval, self._buy_pause_state, self._has_open_positions,
+            )
+            await self._interruptible_sleep(interval)
+
+    async def _interruptible_sleep(self, seconds: float):
+        """Sleep that can be interrupted by _wake_event (manual resume)."""
+        self._wake_event.clear()
+        try:
+            await asyncio.wait_for(self._wake_event.wait(), timeout=seconds)
+        except asyncio.TimeoutError:
+            pass
 
     async def _get_loop_interval(self) -> int:
         async with TradingSessionLocal() as session:
@@ -303,9 +377,14 @@ class AccountTrader:
     def stop(self):
         self._running = False
 
+    def wake(self):
+        """Wake the trading loop from interruptible sleep (for manual resume)."""
+        self._wake_event.set()
+
     def health_status(self) -> dict:
         return {
             "running": self._running,
             "consecutive_failures": self._consecutive_failures,
             "last_success_at": self._last_success_at,
+            "buy_pause_state": self._buy_pause_state,
         }

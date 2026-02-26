@@ -1,8 +1,15 @@
+import enum
 import uuid
 from datetime import datetime
 from sqlalchemy import String, Boolean, Integer, Numeric, ForeignKey, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
+
+
+class BuyPauseState(str, enum.Enum):
+    ACTIVE = "ACTIVE"
+    THROTTLED = "THROTTLED"
+    PAUSED = "PAUSED"
 
 
 class TradingAccount(Base):
@@ -24,6 +31,12 @@ class TradingAccount(Base):
     circuit_breaker_failures: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     circuit_breaker_disabled_at: Mapped[datetime | None] = mapped_column(nullable=True)
     last_success_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    buy_pause_state: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=BuyPauseState.ACTIVE.value
+    )
+    buy_pause_reason: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    buy_pause_since: Mapped[datetime | None] = mapped_column(nullable=True)
+    consecutive_low_balance: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     pending_earnings_usdt: Mapped[float] = mapped_column(
         Numeric, nullable=False, server_default="0"
     )

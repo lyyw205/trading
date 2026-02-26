@@ -3,6 +3,13 @@ from pydantic import BaseModel, Field
 from typing import Any
 
 
+class BuyPauseInfo(BaseModel):
+    state: str  # ACTIVE, THROTTLED, PAUSED
+    reason: str | None = None
+    since: str | None = None  # ISO datetime string
+    consecutive_low_balance: int = 0
+
+
 class DashboardSummary(BaseModel):
     account_id: str
     account_name: str
@@ -16,6 +23,7 @@ class DashboardSummary(BaseModel):
     pending_earnings_usdt: float
     is_active: bool
     health: dict[str, Any]
+    buy_pause: BuyPauseInfo
 
 
 class AssetStatus(BaseModel):

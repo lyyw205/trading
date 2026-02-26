@@ -1,42 +1,49 @@
 # HANDOFF
 
-## Current [1772093483]
-- **Task**: Reserve Pool 리디자인 - 수동 승인 기반 적립 시스템
+## Current [1772099400]
+- **Task**: Buy Pause 기능 - 잔고 부족 시 매수만 일시정지, 매도 계속
 - **Completed**:
-  - Architect + Critic consensus planning (ralplan) 완료
-  - Step 1: 매도 수익 → `pending_earnings_usdt` 전환, 매수 시 `core_bucket→reserve` 자동 변환 제거
-  - Step 2: `AccountStateManager` 확장 (원자적 SQL UPDATE, SELECT FOR UPDATE), 승인 API 2개 추가
-  - Step 3: 대시보드 UI — 적립금 카드 + 승인 모달 (슬라이더, 100%/50%/0% 퀵버튼, book-value 고지)
-  - Step 4: Alembic 006 마이그레이션 (컬럼 추가 + combo별 core_bucket SUM 합산 이관)
-  - `python3 -c "from app.main import app"` import 검증 통과
-  - Supabase MCP 설치 (`.mcp.json` 생성)
+  - Ralplan 합의 (Architect APPROVE + Critic REJECT → 수정 계획 합의)
+  - `BuyPauseState` enum (ACTIVE/THROTTLED/PAUSED) + 4개 DB 컬럼 추가
+  - `BuyPauseManager` 서비스 신규 생성 (상태 전이, throttle 판정, 동적 주기)
+  - `AccountTrader.step()` 잔고 프리체크 + 매수 가드 + 매도 감지 (로트 수 비교)
+  - `pre_tick()` 항상 실행 (PAUSED에서도 base_price 유지)
+  - 매도 발생 시 잔고 재체크 → 자동 ACTIVE 복귀
+  - `_interruptible_sleep` + `asyncio.Event`로 수동 재개 즉시 반응
+  - PAUSED+포지션 없음 → 7200s deep sleep, 그 외 정상 주기
+  - THROTTLED: 루프 주기 유지, 5사이클 중 1회만 매수 (throttle_cycle 카운터 AccountTrader에 보존)
+  - `TradingEngine.resume_buying()` + `POST /buy-pause/resume` API
+  - Dashboard에 BuyPauseInfo (state/reason/since/count) 노출
+  - 대시보드 UI: Buy Pause Status 카드 + 배지 (PAUSED=노랑, THROTTLED=주황) + 수동 재시작 버튼
+  - Alembic 007 마이그레이션
+  - Architect 검증 → throttle counter 버그 발견 → 수정 완료
+  - 전체 Python 파일 syntax check 통과
 - **Next Steps**:
-  - Claude Code 재시작 후 Supabase MCP 인증
-  - `alembic upgrade head` 실행 (005 + 006 마이그레이션 적용)
-  - 대시보드에서 적립금 카드 및 승인 모달 E2E 검증
-  - strategy_configs, strategy_states 테이블 향후 DROP 마이그레이션 (데이터 보존 기간 결정 후)
-  - reserve_qty/reserve_cost_usdt도 정식 컬럼 이전 검토 (strategy_states DROP 연관)
+  - `alembic upgrade head` 실행 (005 + 006 + 007 마이그레이션 적용)
+  - Docker 빌드 후 통합 테스트 (THROTTLED/PAUSED 상태 전이, 수동 재개)
+  - 대시보드 E2E 검증 (Buy Pause 카드, 수동 재시작 버튼)
+  - strategy_configs, strategy_states 테이블 향후 DROP 마이그레이션
 - **Blockers**: None
 - **Related Files**:
-  - `app/models/account.py` - `pending_earnings_usdt` NUMERIC 컬럼 추가
-  - `app/services/account_state_manager.py` - pending_earnings 원자적 SQL + approve_earnings_to_reserve
-  - `app/api/dashboard.py` - GET pending_earnings, POST approve_earnings 엔드포인트 추가
-  - `app/schemas/dashboard.py` - ApproveEarningsRequest/Response 스키마 추가
-  - `app/strategies/sells/fixed_tp.py` - account_state 전달 + pending_earnings 누적 (음수 방어)
-  - `app/strategies/buys/lot_stacking.py` - core_bucket→reserve 자동 변환 제거
-  - `app/strategies/buys/trend.py` - 동일 변환 제거 + CoreBtcHistory import 제거
-  - `app/dashboard/static/js/main.js` - 적립금 카드 + 승인 모달
-  - `app/dashboard/static/css/style.css` - earnings 카드/모달 스타일
-  - `alembic/versions/006_reserve_pool_redesign.py` - 컬럼 추가 + 데이터 이관
-  - `.mcp.json` - Supabase MCP 설정
-  - `.omc/plans/reserve-pool-redesign.md` - 상세 계획서
+  - `app/models/account.py` - BuyPauseState enum + 4개 컬럼
+  - `app/services/buy_pause_manager.py` - **신규** 상태 전이/판정/주기 계산
+  - `app/services/account_trader.py` - step() 매수 가드 + interruptible sleep
+  - `app/services/trading_engine.py` - resume_buying() 메서드
+  - `app/api/accounts.py` - POST buy-pause/resume 엔드포인트
+  - `app/schemas/dashboard.py` - BuyPauseInfo 스키마
+  - `app/schemas/account.py` - AccountResponse에 buy_pause 필드
+  - `app/api/dashboard.py` - BuyPauseInfo 응답 포함
+  - `app/dashboard/static/js/main.js` - loadBuyPauseStatus, resumeBuying, 배지
+  - `app/dashboard/static/css/style.css` - buy-pause 스타일
+  - `app/dashboard/templates/account_detail.html` - buy-pause-panel 섹션
+  - `alembic/versions/007_buy_pause.py` - 4개 컬럼 마이그레이션
 
-## Past 1 [1772084598]
+## Past 1 [1772093483]
+- **Task**: Reserve Pool 리디자인 - 수동 승인 기반 적립 시스템
+- **Completed**: Step 1~4 전체 (pending_earnings 전환, AccountStateManager 확장, 대시보드 UI, Alembic 006)
+- **Note**: Supabase MCP 설치 완료, alembic 005+006 미적용 상태
+
+## Past 2 [1772084598]
 - **Task**: Phase 5 - 레거시 정리 + 백테스트 combo 전환
-- **Completed**: 마이그레이션 스크립트, account_trader 레거시 fallback 제거, 레거시 API/모델/레지스트리 정리, 백테스트 combo 전환, JS/UI 정리, import 검증 통과
+- **Completed**: 마이그레이션 스크립트, account_trader 레거시 fallback 제거, 레거시 API/모델/레지스트리 정리, 백테스트 combo 전환
 - **Note**: alembic 005 미적용 상태, strategy_configs/strategy_states DROP은 보류
-
-## Past 2 [1772082642]
-- **Task**: 매수/매도 로직 분리 및 조합 시스템 구현 (Phase 1~4)
-- **Completed**: Phase 1 기반 인프라, Phase 2 로직 분리, Phase 3 실행 엔진 전환, Phase 4 대시보드 UI + combo CRUD API 전체 완료
-- **Note**: combo 기반 실행 루프 동작, legacy fallback 유지 상태에서 Phase 5로 진행
