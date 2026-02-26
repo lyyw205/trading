@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import String, Boolean, Integer, ForeignKey, func
+from sqlalchemy import String, Boolean, Integer, Numeric, ForeignKey, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
 
@@ -24,6 +24,9 @@ class TradingAccount(Base):
     circuit_breaker_failures: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     circuit_breaker_disabled_at: Mapped[datetime | None] = mapped_column(nullable=True)
     last_success_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    pending_earnings_usdt: Mapped[float] = mapped_column(
+        Numeric, nullable=False, server_default="0"
+    )
     loop_interval_sec: Mapped[int] = mapped_column(Integer, nullable=False, server_default="60")
     order_cooldown_sec: Mapped[int] = mapped_column(Integer, nullable=False, server_default="7")
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())

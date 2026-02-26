@@ -8,7 +8,6 @@ from uuid import UUID
 from app.strategies.base import BaseBuyLogic, StrategyContext, RepositoryBundle
 from app.strategies.registry import BuyLogicRegistry
 from app.strategies.utils import extract_base_commission_qty
-from app.models.core_btc_history import CoreBtcHistory
 
 if TYPE_CHECKING:
     from app.strategies.state_store import StrategyStateStore
@@ -173,39 +172,17 @@ class TrendBuy(BaseBuyLogic):
 
         avg_price = spent_usdt / bought_qty_net if bought_qty_net > 0 else ctx.current_price
 
-        core_used = min(core_bucket_locked, spent_usdt)
-        core_btc_add = 0.0
-        if core_used > 0 and spent_usdt > 0:
-            core_btc_add = bought_qty_net * (core_used / spent_usdt)
-            await account_state.add_reserve_qty(core_btc_add)
-            await account_state.add_reserve_cost_usdt(core_used)
-
-            history = CoreBtcHistory(
-                account_id=ctx.account_id,
-                symbol=ctx.symbol,
-                btc_qty=core_btc_add,
-                cost_usdt=core_used,
-                source="TREND",
-            )
-            state._session.add(history)
-
-        prev_bucket = await state.get_float("core_bucket_usdt", 0.0)
-        new_bucket = prev_bucket - core_used
-        await state.set("core_bucket_usdt", new_bucket)
-
-        lot_btc_qty = bought_qty_net - core_btc_add
-
-        if lot_btc_qty > 0:
-            await repos.lot.insert_lot(
-                account_id=ctx.account_id,
-                symbol=ctx.symbol,
-                strategy_name=self.name,
-                buy_order_id=order_id,
-                buy_price=avg_price,
-                buy_qty=lot_btc_qty,
-                buy_time_ms=update_time_ms,
-                combo_id=combo_id,
-            )
+        # reserve 자동 변환 제거 - 전체 매수 수량을 lot으로 생성
+        await repos.lot.insert_lot(
+            account_id=ctx.account_id,
+            symbol=ctx.symbol,
+            strategy_name=self.name,
+            buy_order_id=order_id,
+            buy_price=avg_price,
+            buy_qty=bought_qty_net,
+            buy_time_ms=update_time_ms,
+            combo_id=combo_id,
+        )
 
         current_trend_base = await state.get_float("base_price", 0.0)
         if avg_price > current_trend_base:
@@ -214,8 +191,8 @@ class TrendBuy(BaseBuyLogic):
         await state.set("last_buy_price", avg_price)
 
         logger.info(
-            "trend_buy: TREND buy filled qty_net=%.8f core_add=%.8f lot_qty=%.8f avg=%.2f",
-            bought_qty_net, core_btc_add, lot_btc_qty, avg_price,
+            "trend_buy: TREND buy filled qty_net=%.8f avg=%.2f",
+            bought_qty_net, avg_price,
         )
 
     # ------------------------------------------------------------------
@@ -281,8 +258,7 @@ class TrendBuy(BaseBuyLogic):
 
         filters = await exchange.get_symbol_filters(ctx.symbol)
 
-        core_bucket = await state.get_float("core_bucket_usdt", 0.0)
-        total_buy_usdt = buy_usdt + max(0.0, core_bucket)
+        total_buy_usdt = buy_usdt
 
         if total_buy_usdt < min_trade_usdt:
             logger.warning(
@@ -315,11 +291,11 @@ class TrendBuy(BaseBuyLogic):
 
         await state.set("pending_order_id", placed_order_id)
         await state.set("pending_time_ms", placed_time_ms)
-        await state.set("pending_bucket_usdt", max(0.0, core_bucket))
+        await state.set("pending_bucket_usdt", 0)
         await state.set("pending_trigger_price", trigger_adjusted)
         self._touch_order()
 
         logger.info(
-            "trend_buy: placed TREND buy order %s at trigger=%.2f usdt=%.2f (core=%.2f)",
-            placed_order_id, trigger_adjusted, total_buy_usdt, max(0.0, core_bucket),
+            "trend_buy: placed TREND buy order %s at trigger=%.2f usdt=%.2f",
+            placed_order_id, trigger_adjusted, total_buy_usdt,
         )

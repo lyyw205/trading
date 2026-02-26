@@ -229,6 +229,15 @@ async function loadAssetStatus(accountId) {
         <div class="asset-value">${fmt(data.reserve_pool_usdt, 2)} USDT</div>
         <div class="asset-sub">${data.reserve_pool_pct != null ? data.reserve_pool_pct + '%' : ''}</div>
       </div>
+      <div class="asset-card earnings-card ${(data.pending_earnings_usdt || 0) > 0 ? 'has-earnings' : ''}">
+        <div class="asset-label">적립금 (Pending)</div>
+        <div class="asset-value">${fmt(data.pending_earnings_usdt || 0, 2)} USDT</div>
+        <button class="btn btn-sm btn-approve"
+                onclick="openEarningsModal('${accountId}')"
+                ${(data.pending_earnings_usdt || 0) <= 0 ? 'disabled' : ''}>
+          Reserve 추가
+        </button>
+      </div>
       <div class="asset-card">
         <div class="asset-label">Total Invested</div>
         <div class="asset-value">${fmt(data.total_invested_usdt, 2)} USDT</div>
@@ -236,6 +245,105 @@ async function loadAssetStatus(accountId) {
     `;
   } catch (e) {
     el.innerHTML = '<p class="error-text">Failed to load asset status</p>';
+  }
+}
+
+/* ============================================================
+   Earnings Approval Modal
+   ============================================================ */
+
+let _earningsAccountId = null;
+let _earningsTotal = 0;
+
+function openEarningsModal(accountId) {
+  _earningsAccountId = accountId;
+  let modal = document.getElementById('earnings-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'earnings-modal';
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+      <div class="modal-content">
+        <h3>적립금 → Reserve Pool</h3>
+        <div class="earnings-total">
+          적립금: <strong id="earnings-total-display">0</strong> USDT
+        </div>
+        <div class="earnings-slider-wrap">
+          <label>Reserve 비율: <span id="earnings-pct-label">100</span>%</label>
+          <input type="range" id="earnings-slider" min="0" max="100" value="100"
+                 oninput="updateEarningsPreview(this.value)">
+        </div>
+        <div class="earnings-quick-buttons">
+          <button class="btn btn-sm" onclick="updateEarningsPreview(100)">100% Reserve</button>
+          <button class="btn btn-sm" onclick="updateEarningsPreview(50)">50 / 50</button>
+          <button class="btn btn-sm" onclick="updateEarningsPreview(0)">100% 유동</button>
+        </div>
+        <div id="earnings-preview" class="earnings-preview"></div>
+        <p class="book-value-notice">
+          * Reserve BTC 수량은 현재가 기준 장부상 환산값이며, 실제 거래가와 차이가 있을 수 있습니다.
+        </p>
+        <div class="modal-actions">
+          <button class="btn btn-primary" onclick="submitEarningsApproval()">확인</button>
+          <button class="btn" onclick="closeEarningsModal()">취소</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+  }
+  // Fetch latest pending earnings
+  apiFetch('/api/dashboard/' + accountId + '/pending_earnings')
+    .then(r => r.json())
+    .then(data => {
+      _earningsTotal = data.pending_earnings_usdt || 0;
+      document.getElementById('earnings-total-display').textContent = fmt(_earningsTotal, 2);
+      updateEarningsPreview(100);
+    });
+  modal.style.display = 'flex';
+}
+
+function closeEarningsModal() {
+  const modal = document.getElementById('earnings-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+function updateEarningsPreview(pct) {
+  pct = parseFloat(pct);
+  const slider = document.getElementById('earnings-slider');
+  if (slider) slider.value = pct;
+  document.getElementById('earnings-pct-label').textContent = pct;
+
+  const toReserve = _earningsTotal * (pct / 100);
+  const toLiquid = _earningsTotal - toReserve;
+  const preview = document.getElementById('earnings-preview');
+  if (preview) {
+    preview.innerHTML = `
+      <div>Reserve에 추가: <strong>${fmt(toReserve, 2)} USDT</strong></div>
+      <div>유동 전환: <strong>${fmt(toLiquid, 2)} USDT</strong></div>
+    `;
+  }
+}
+
+async function submitEarningsApproval() {
+  const pct = parseFloat(document.getElementById('earnings-slider').value);
+  try {
+    const resp = await apiFetch('/api/dashboard/' + _earningsAccountId + '/approve_earnings', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCsrfToken(),
+      },
+      body: JSON.stringify({ reserve_pct: pct }),
+    });
+    if (!resp.ok) {
+      const err = await resp.json();
+      throw new Error(err.detail || 'HTTP ' + resp.status);
+    }
+    const result = await resp.json();
+    alert('Reserve에 ' + fmt(result.to_reserve_usdt, 2) + ' USDT 추가 완료\n유동 전환: ' + fmt(result.to_liquid_usdt, 2) + ' USDT');
+    closeEarningsModal();
+    loadAssetStatus(_earningsAccountId);
+  } catch (e) {
+    alert('승인 실패: ' + e.message);
   }
 }
 

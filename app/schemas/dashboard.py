@@ -1,5 +1,5 @@
 from __future__ import annotations
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Any
 
 
@@ -13,6 +13,7 @@ class DashboardSummary(BaseModel):
     total_net_profit: float
     reserve_qty: float
     reserve_cost_usdt: float
+    pending_earnings_usdt: float
     is_active: bool
     health: dict[str, Any]
 
@@ -29,3 +30,13 @@ class AssetStatus(BaseModel):
     free_usdt: float
 
 
+class ApproveEarningsRequest(BaseModel):
+    reserve_pct: float = Field(ge=0, le=100)
+
+
+class ApproveEarningsResponse(BaseModel):
+    total_earnings: float
+    to_reserve_usdt: float
+    to_reserve_btc: float
+    to_liquid_usdt: float
+    reserve_pct: float

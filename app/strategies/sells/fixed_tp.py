@@ -82,7 +82,7 @@ class FixedTpSell(BaseSellLogic):
 
             if lot.sell_order_id:
                 await self._check_existing_sell_order(
-                    ctx, state, exchange, repos,
+                    ctx, state, exchange, account_state, repos,
                     lot, target_price, base_mode,
                 )
             else:
@@ -100,6 +100,7 @@ class FixedTpSell(BaseSellLogic):
         ctx: StrategyContext,
         state: "StrategyStateStore",
         exchange: "ExchangeClient",
+        account_state: "AccountStateManager",
         repos: RepositoryBundle,
         lot,
         target_price: float,
@@ -127,8 +128,9 @@ class FixedTpSell(BaseSellLogic):
             cost_usdt = lot.buy_qty * lot.buy_price
             net_profit = sell_revenue - cost_usdt - fee_usdt
 
-            prev_bucket = await state.get_float("core_bucket_usdt", 0.0)
-            await state.set("core_bucket_usdt", prev_bucket + net_profit)
+            # 양수 수익만 적립금에 추가 (음수 방어)
+            if net_profit > 0:
+                await account_state.add_pending_earnings(net_profit)
 
             await repos.lot.close_lot(
                 account_id=ctx.account_id,
@@ -149,8 +151,9 @@ class FixedTpSell(BaseSellLogic):
                     await state.set("base_price", sell_price)
 
             logger.info(
-                "fixed_tp: lot %s TP filled sell=%.2f profit=%.4f bucket=%.4f",
-                lot.lot_id, sell_price, net_profit, prev_bucket + net_profit,
+                "fixed_tp: lot %s TP filled sell=%.2f profit=%.4f pending_earnings+=%.4f",
+                lot.lot_id, sell_price, net_profit,
+                net_profit if net_profit > 0 else 0.0,
             )
 
         elif sell_status in ("CANCELED", "REJECTED", "EXPIRED"):
