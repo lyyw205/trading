@@ -1,0 +1,328 @@
+{% extends "base.html" %}
+
+{% block title %}Backtest Lab - Crypto Multi-Trader{% endblock %}
+
+{% block content %}
+<div class="hero-banner">
+  <h1 class="page-title">Backtest Lab</h1>
+  <p class="hero-subtitle">Configure and run strategy backtests with custom combo parameters.</p>
+</div>
+
+<!-- Config Form -->
+<section class="dashboard-section">
+  <div class="section-header">
+    <h2 class="section-title">Run Backtest</h2>
+  </div>
+  <form id="backtest-form" class="tune-form" onsubmit="return false;">
+    <div class="tune-grid">
+      <div class="form-group">
+        <label class="form-label">Symbol</label>
+        <select id="bt-symbol" class="form-input">
+          <option value="BTCUSDT" selected>BTCUSDT</option>
+          <option value="ETHUSDT">ETHUSDT</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Initial USDT</label>
+        <input type="number" step="100" id="bt-initial-usdt" class="form-input" value="10000">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Start Date</label>
+        <input type="date" id="bt-start-date" class="form-input">
+      </div>
+      <div class="form-group">
+        <label class="form-label">End Date</label>
+        <input type="date" id="bt-end-date" class="form-input">
+      </div>
+    </div>
+
+    <!-- Combo configurations -->
+    <div style="margin-top: 0.75rem;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+        <label class="form-label" style="margin:0;">Combos</label>
+        <button type="button" class="btn btn-outline btn-sm" onclick="addBtCombo()">+ Add Combo</button>
+      </div>
+      <div id="bt-combos-container">
+        <div class="loading-spinner" style="display:inline;">Loading logics...</div>
+      </div>
+    </div>
+  </form>
+
+  <div style="margin-top: 1rem;">
+    <button type="button" class="btn btn-primary" id="bt-run-btn" onclick="startBacktest()">Run Backtest</button>
+  </div>
+</section>
+
+<!-- History Table -->
+<section class="dashboard-section">
+  <div class="section-header">
+    <h2 class="section-title">History</h2>
+    <button class="btn btn-outline btn-sm" onclick="loadBacktestHistory()">Refresh</button>
+  </div>
+  <div class="table-wrapper">
+    <table class="data-table" id="backtest-history-table">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Symbol</th>
+          <th>Combos</th>
+          <th>Period</th>
+          <th>PnL %</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="backtest-history-tbody">
+        <tr><td colspan="7" class="table-empty">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let _backtestPollTimer = null;
+let _btBuyLogics = [];
+let _btSellLogics = [];
+let _btComboCount = 0;
+
+async function loadBtLogics() {
+  try {
+    const [buyResp, sellResp] = await Promise.all([
+      apiFetch('/api/buy-logics'),
+      apiFetch('/api/sell-logics'),
+    ]);
+    if (buyResp.ok) _btBuyLogics = await buyResp.json();
+    if (sellResp.ok) _btSellLogics = await sellResp.json();
+
+    const container = document.getElementById('bt-combos-container');
+    if (container) {
+      container.innerHTML = '';
+      _btComboCount = 0;
+      addBtCombo();
+    }
+  } catch (e) {
+    console.error('Failed to load logics for backtest', e);
+  }
+}
+
+function addBtCombo() {
+  const container = document.getElementById('bt-combos-container');
+  if (!container) return;
+  const idx = _btComboCount++;
+  const div = document.createElement('div');
+  div.className = 'tune-panel';
+  div.id = 'bt-combo-' + idx;
+  div.style.marginBottom = '0.75rem';
+
+  let buyOpts = _btBuyLogics.map(b => `<option value="${b.name}">${escapeHtml(b.display_name)}</option>`).join('');
+  let sellOpts = _btSellLogics.map(s => `<option value="${s.name}">${escapeHtml(s.display_name)}</option>`).join('');
+
+  div.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+      <h3 class="tune-panel-title" style="margin:0;">Combo ${idx + 1}</h3>
+      <button type="button" class="btn btn-danger btn-sm" onclick="removeBtCombo(${idx})">Remove</button>
+    </div>
+    <div class="combo-section combo-section-general">
+      <div class="combo-section-title">General</div>
+      <div class="tune-grid" style="margin-top:0;">
+        <div class="form-group">
+          <label class="form-label">Name</label>
+          <input type="text" class="form-input" id="bt-combo-name-${idx}" value="combo_${idx + 1}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Reference Combo</label>
+          <input type="text" class="form-input" id="bt-combo-ref-${idx}" placeholder="(none)">
+        </div>
+      </div>
+    </div>
+    <div class="combo-section combo-section-buy">
+      <div class="combo-section-title">Buy Logic</div>
+      <select class="form-input" id="bt-combo-buy-${idx}" onchange="renderBtComboParams(${idx},'buy')">${buyOpts}</select>
+      <div id="bt-combo-buy-params-${idx}"></div>
+    </div>
+    <div class="combo-section combo-section-sell">
+      <div class="combo-section-title">Sell Logic</div>
+      <select class="form-input" id="bt-combo-sell-${idx}" onchange="renderBtComboParams(${idx},'sell')">${sellOpts}</select>
+      <div id="bt-combo-sell-params-${idx}"></div>
+    </div>
+  `;
+  container.appendChild(div);
+  renderBtComboParams(idx, 'buy');
+  renderBtComboParams(idx, 'sell');
+}
+
+function removeBtCombo(idx) {
+  const el = document.getElementById('bt-combo-' + idx);
+  if (el) el.remove();
+}
+
+function renderBtComboParams(idx, side) {
+  const selectId = side === 'buy' ? 'bt-combo-buy-' + idx : 'bt-combo-sell-' + idx;
+  const containerId = side === 'buy' ? 'bt-combo-buy-params-' + idx : 'bt-combo-sell-params-' + idx;
+  const logicName = document.getElementById(selectId).value;
+  const logics = side === 'buy' ? _btBuyLogics : _btSellLogics;
+  const meta = logics.find(l => l.name === logicName);
+  const container = document.getElementById(containerId);
+  if (!container || !meta) { if (container) container.innerHTML = ''; return; }
+
+  container.innerHTML = _renderParamsHtml({
+    tunableParams: meta.tunable_params || {},
+    defaults: meta.default_params || {},
+    current: {},
+    side,
+    inputId: (key) => `bt-c${idx}-${side}-${key}`,
+    dataAttrs: (key) => `data-bt-combo="${idx}" data-bt-side="${side}"`,
+    onToggle: () => `toggleBtDependentParams(this,${idx},'${side}')`,
+    showUnit: true,
+  });
+}
+
+function toggleBtDependentParams(selectEl, idx, side) {
+  const containerId = side === 'buy' ? 'bt-combo-buy-params-' + idx : 'bt-combo-sell-params-' + idx;
+  _toggleDeps(document.getElementById(containerId), selectEl.dataset.param, selectEl.value);
+}
+
+function _collectBtCombos() {
+  const combos = [];
+  document.querySelectorAll('[id^="bt-combo-"]').forEach(el => {
+    const match = el.id.match(/^bt-combo-(\d+)$/);
+    if (!match) return;
+    const idx = parseInt(match[1], 10);
+    const nameEl = document.getElementById('bt-combo-name-' + idx);
+    if (!nameEl) return;
+
+    combos.push({
+      name: nameEl.value.trim() || 'combo_' + (idx + 1),
+      buy_logic_name: document.getElementById('bt-combo-buy-' + idx).value,
+      buy_params: _collectParamValues(`[data-bt-combo="${idx}"][data-bt-side="buy"]`),
+      sell_logic_name: document.getElementById('bt-combo-sell-' + idx).value,
+      sell_params: _collectParamValues(`[data-bt-combo="${idx}"][data-bt-side="sell"]`),
+      reference_combo_name: document.getElementById('bt-combo-ref-' + idx).value.trim() || null,
+    });
+  });
+  return combos;
+}
+
+async function startBacktest() {
+  const symbol = document.getElementById('bt-symbol').value;
+  const initialUsdt = parseFloat(document.getElementById('bt-initial-usdt').value) || 10000;
+  const startDate = document.getElementById('bt-start-date').value;
+  const endDate = document.getElementById('bt-end-date').value;
+
+  if (!startDate || !endDate) { showToast('Please select start and end dates', 'error'); return; }
+
+  const startTsMs = new Date(startDate).getTime();
+  const endTsMs = new Date(endDate + 'T23:59:59').getTime();
+  if (startTsMs >= endTsMs) { showToast('Start date must be before end date', 'error'); return; }
+
+  const combos = _collectBtCombos();
+  if (!combos.length) { showToast('Add at least one combo', 'error'); return; }
+
+  const btn = document.getElementById('bt-run-btn');
+  btn.disabled = true;
+  btn.textContent = 'Starting...';
+
+  try {
+    const resp = await apiFetch('/api/backtest/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+      body: JSON.stringify({ symbol, start_ts_ms: startTsMs, end_ts_ms: endTsMs, initial_usdt: initialUsdt, combos }),
+    });
+    if (!resp.ok) { const err = await resp.json().catch(() => ({})); throw new Error(err.detail || 'Failed to start backtest'); }
+    const data = await resp.json();
+    showToast('Backtest started', 'success');
+    _startBacktestPolling(data.id);
+    loadBacktestHistory();
+  } catch (e) {
+    showToast('Error: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Run Backtest';
+  }
+}
+
+function _startBacktestPolling(runId) {
+  if (_backtestPollTimer) clearInterval(_backtestPollTimer);
+  _backtestPollTimer = setInterval(async () => {
+    try {
+      const resp = await apiFetch('/api/backtest/' + runId + '/status');
+      if (!resp.ok) return;
+      const data = await resp.json();
+      if (data.status === 'COMPLETED' || data.status === 'FAILED') {
+        clearInterval(_backtestPollTimer);
+        _backtestPollTimer = null;
+        loadBacktestHistory();
+        showToast(data.status === 'COMPLETED' ? 'Backtest completed!' : 'Backtest failed: ' + (data.error_message || 'Unknown error'),
+          data.status === 'COMPLETED' ? 'success' : 'error');
+      }
+    } catch (e) {}
+  }, 2000);
+}
+
+async function loadBacktestHistory() {
+  const tbody = document.getElementById('backtest-history-tbody');
+  if (!tbody) return;
+  try {
+    const resp = await apiFetch('/api/backtest/list');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const runs = await resp.json();
+    if (!runs.length) { tbody.innerHTML = '<tr><td colspan="7" class="table-empty">No backtests yet</td></tr>'; return; }
+
+    tbody.innerHTML = runs.map(r => {
+      const created = new Date(r.created_at).toLocaleString();
+      const startD = new Date(r.start_ts_ms).toLocaleDateString();
+      const endD = new Date(r.end_ts_ms).toLocaleDateString();
+      const strats = r.combos ? r.combos.map(c => c.name).join(', ') : (r.strategies ? r.strategies.join(', ') : '-');
+      const pnlClass = r.pnl_pct != null ? (r.pnl_pct >= 0 ? 'pnl-positive' : 'pnl-negative') : '';
+      const pnlText = r.pnl_pct != null ? r.pnl_pct.toFixed(2) + '%' : '-';
+      let statusBadge = '';
+      if (r.status === 'COMPLETED') statusBadge = '<span class="status-badge badge-success">Completed</span>';
+      else if (r.status === 'RUNNING') statusBadge = '<span class="status-badge badge-warning">Running</span>';
+      else if (r.status === 'PENDING') statusBadge = '<span class="status-badge badge-neutral">Pending</span>';
+      else statusBadge = '<span class="status-badge badge-danger">Failed</span>';
+      let actions = '';
+      if (r.status === 'COMPLETED') actions = `<a href="/admin/backtest/${r.id}" class="btn btn-outline btn-sm">View Report</a>`;
+      if (r.status !== 'RUNNING' && r.status !== 'PENDING') actions += ` <button class="btn btn-danger btn-sm" onclick="deleteBacktest('${r.id}')">Delete</button>`;
+      return `<tr>
+        <td>${escapeHtml(created)}</td><td>${escapeHtml(r.symbol)}</td><td>${escapeHtml(strats)}</td>
+        <td>${escapeHtml(startD)} ~ ${escapeHtml(endD)}</td><td class="${pnlClass}">${pnlText}</td>
+        <td>${statusBadge}</td><td>${actions}</td>
+      </tr>`;
+    }).join('');
+
+    const hasActive = runs.some(r => r.status === 'RUNNING' || r.status === 'PENDING');
+    if (hasActive && !_backtestPollTimer) {
+      const activeRun = runs.find(r => r.status === 'RUNNING' || r.status === 'PENDING');
+      if (activeRun) _startBacktestPolling(activeRun.id);
+    }
+  } catch (e) {
+    tbody.innerHTML = '<tr><td colspan="7" class="table-empty error-text">Failed to load history</td></tr>';
+  }
+}
+
+async function deleteBacktest(runId) {
+  if (!confirm('Delete this backtest?')) return;
+  try {
+    const resp = await apiFetch('/api/backtest/' + runId, {
+      method: 'DELETE',
+      headers: { 'X-CSRFToken': getCsrfToken() },
+    });
+    if (resp.ok) { showToast('Backtest deleted', 'success'); loadBacktestHistory(); }
+    else { const err = await resp.json().catch(() => ({})); showToast('Error: ' + (err.detail || 'Delete failed'), 'error'); }
+  } catch (e) { showToast('Network error: ' + e.message, 'error'); }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  // Set default dates (last 7 days)
+  const now = new Date();
+  const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  document.getElementById('bt-end-date').value = now.toISOString().split('T')[0];
+  document.getElementById('bt-start-date').value = weekAgo.toISOString().split('T')[0];
+
+  loadBtLogics();
+  loadBacktestHistory();
+});
+</script>
+{% endblock %}

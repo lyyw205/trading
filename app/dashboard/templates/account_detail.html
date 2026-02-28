@@ -70,66 +70,110 @@
   </div>
 </section>
 
-<!-- Combo Create/Edit Modal -->
+<!-- Combo Create/Edit Modal (5-Step Wizard) -->
 <div id="combo-modal" class="modal-overlay" style="display:none;">
-  <div class="modal-content">
+  <div class="modal-content modal-wizard">
     <h3 id="combo-modal-title">New Combo</h3>
     <input type="hidden" id="combo-edit-id">
 
-    <!-- General Settings -->
-    <div class="combo-section combo-section-general">
-      <div class="combo-section-title">General</div>
-      <div class="form-group">
-        <label class="form-label">Name</label>
-        <input type="text" id="combo-name" class="form-input" placeholder="e.g. BTC LOT + Fixed TP">
+    <!-- Stepper -->
+    <div class="wizard-stepper" id="combo-wizard-stepper">
+      <div class="wizard-step active" data-step="1" data-color="primary" onclick="comboWizardGoTo(1)">
+        <div class="wizard-step-circle">1</div>
+        <div class="wizard-step-label">일반</div>
       </div>
-      <div class="form-group" style="margin-top:0.5rem;">
-        <label class="form-label">Reference Combo (optional)</label>
-        <select id="combo-reference" class="form-input">
-          <option value="">None</option>
-        </select>
+      <div class="wizard-connector" data-after="1"></div>
+      <div class="wizard-step" data-step="2" data-color="success" onclick="comboWizardGoTo(2)">
+        <div class="wizard-step-circle">2</div>
+        <div class="wizard-step-label">매수 전략</div>
+      </div>
+      <div class="wizard-connector" data-after="2"></div>
+      <div class="wizard-step" data-step="3" data-color="teal" onclick="comboWizardGoTo(3)">
+        <div class="wizard-step-circle">3</div>
+        <div class="wizard-step-label">매수 금액</div>
+      </div>
+      <div class="wizard-connector" data-after="3"></div>
+      <div class="wizard-step" data-step="4" data-color="danger" onclick="comboWizardGoTo(4)">
+        <div class="wizard-step-circle">4</div>
+        <div class="wizard-step-label">매도 전략</div>
+      </div>
+      <div class="wizard-connector" data-after="4"></div>
+      <div class="wizard-step" data-step="5" data-color="orange" onclick="comboWizardGoTo(5)">
+        <div class="wizard-step-circle">5</div>
+        <div class="wizard-step-label">매도 금액</div>
       </div>
     </div>
 
-    <!-- Buy Strategy (condition) -->
-    <div class="combo-section combo-section-buy">
-      <div class="combo-section-title">매수 전략</div>
-      <div id="combo-buy-logic-group">
-        <select id="combo-buy-logic" class="form-input" onchange="renderComboParams('buy')"></select>
+    <!-- Wizard Panels -->
+    <div class="wizard-body">
+      <!-- Step 1: General -->
+      <div class="wizard-panel active" data-panel="1">
+        <div class="combo-section combo-section-general">
+          <div class="combo-section-title">General</div>
+          <div class="form-group">
+            <label class="form-label">Name</label>
+            <input type="text" id="combo-name" class="form-input" placeholder="e.g. BTC LOT + Fixed TP">
+          </div>
+          <div class="form-group" style="margin-top:0.5rem;">
+            <label class="form-label">Reference Combo (optional)</label>
+            <select id="combo-reference" class="form-input">
+              <option value="">None</option>
+            </select>
+          </div>
+        </div>
       </div>
-      <div id="combo-buy-condition-params"></div>
-    </div>
 
-    <!-- Buy Amount (sizing) -->
-    <div class="combo-section combo-section-buy-sizing" id="combo-buy-sizing-group">
-      <div class="combo-section-title">매수 금액</div>
-      <div id="combo-buy-sizing-params"></div>
-    </div>
-
-    <!-- Sell Strategy (condition) -->
-    <div class="combo-section combo-section-sell">
-      <div class="combo-section-title">매도 전략</div>
-      <div id="combo-sell-logic-group">
-        <select id="combo-sell-logic" class="form-input" onchange="renderComboParams('sell')"></select>
+      <!-- Step 2: Buy Strategy (condition params) -->
+      <div class="wizard-panel" data-panel="2">
+        <div class="combo-section combo-section-buy">
+          <div class="combo-section-title">매수 전략</div>
+          <div id="combo-buy-logic-group">
+            <select id="combo-buy-logic" class="form-input" onchange="renderComboConditionParams('buy')"></select>
+          </div>
+          <div id="combo-buy-condition-params"></div>
+        </div>
       </div>
-      <div id="combo-sell-condition-params"></div>
+
+      <!-- Step 3: Buy Sizing -->
+      <div class="wizard-panel" data-panel="3">
+        <div class="combo-section combo-section-buy-sizing">
+          <div class="combo-section-title">매수 금액</div>
+          <div id="combo-buy-sizing-params"></div>
+        </div>
+      </div>
+
+      <!-- Step 4: Sell Strategy (condition params) -->
+      <div class="wizard-panel" data-panel="4">
+        <div class="combo-section combo-section-sell">
+          <div class="combo-section-title">매도 전략</div>
+          <div id="combo-sell-logic-group">
+            <select id="combo-sell-logic" class="form-input" onchange="renderComboConditionParams('sell')"></select>
+          </div>
+          <div id="combo-sell-condition-params"></div>
+        </div>
+      </div>
+
+      <!-- Step 5: Sell Sizing + Reapply -->
+      <div class="wizard-panel" data-panel="5">
+        <div class="combo-section combo-section-sell-sizing">
+          <div class="combo-section-title">매도 금액</div>
+          <div id="combo-sell-sizing-params"></div>
+        </div>
+        <div id="combo-reapply-group" class="form-group" style="display:none;margin-top:0.75rem;">
+          <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;">
+            <input type="checkbox" id="combo-reapply-orders">
+            <span style="font-size:0.85rem;">미체결 주문 재등록 (기존 미체결 매수/매도 주문을 취소하고 변경된 값으로 재등록)</span>
+          </label>
+        </div>
+      </div>
     </div>
 
-    <!-- Sell Amount (sizing) -->
-    <div class="combo-section combo-section-sell-sizing" id="combo-sell-sizing-group">
-      <div class="combo-section-title">매도 금액</div>
-      <div id="combo-sell-sizing-params"></div>
-    </div>
-
-    <div id="combo-reapply-group" class="form-group" style="display:none;margin-top:0.75rem;">
-      <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;">
-        <input type="checkbox" id="combo-reapply-orders">
-        <span style="font-size:0.85rem;">미체결 주문 재등록 (기존 미체결 매수/매도 주문을 취소하고 변경된 값으로 재등록)</span>
-      </label>
-    </div>
-    <div style="display:flex;gap:0.5rem;margin-top:1rem;">
-      <button class="btn btn-primary" onclick="saveCombo()">Save</button>
-      <button class="btn btn-outline" onclick="closeComboModal()">Cancel</button>
+    <!-- Wizard Navigation -->
+    <div class="wizard-nav">
+      <button class="btn btn-outline btn-sm btn-wizard-prev" onclick="comboWizardPrev()" style="display:none;">이전</button>
+      <button class="btn btn-outline btn-sm" onclick="closeComboModal()">Cancel</button>
+      <button class="btn btn-primary btn-sm btn-wizard-next" onclick="comboWizardNext()">다음</button>
+      <button class="btn btn-primary btn-sm btn-wizard-save" onclick="saveCombo()" style="display:none;">저장</button>
     </div>
   </div>
 </div>
@@ -186,25 +230,26 @@
   </div>
 </div>
 
-<!-- Section 5: Buy Pause Status -->
-<section class="dashboard-section">
-  <div class="section-header">
-    <h2 class="section-title">Buy Pause Status</h2>
-  </div>
-  <div id="buy-pause-panel">
-    <div class="loading-spinner">Loading...</div>
-  </div>
-</section>
+<!-- Sections 5 & 6: Status Row -->
+<div class="status-row">
+  <section class="dashboard-section">
+    <div class="section-header">
+      <h2 class="section-title">Buy Pause Status</h2>
+    </div>
+    <div id="buy-pause-panel">
+      <div class="loading-spinner">Loading...</div>
+    </div>
+  </section>
 
-<!-- Section 6: Circuit Breaker -->
-<section class="dashboard-section">
-  <div class="section-header">
-    <h2 class="section-title">Circuit Breaker</h2>
-  </div>
-  <div id="circuit-breaker-panel" class="cb-panel">
-    <div class="loading-spinner">Loading...</div>
-  </div>
-</section>
+  <section class="dashboard-section">
+    <div class="section-header">
+      <h2 class="section-title">Circuit Breaker</h2>
+    </div>
+    <div id="circuit-breaker-panel" class="cb-panel">
+      <div class="loading-spinner">Loading...</div>
+    </div>
+  </section>
+</div>
 {% endblock %}
 
 {% block scripts %}

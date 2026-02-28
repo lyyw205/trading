@@ -1,12 +1,18 @@
 from __future__ import annotations
+from datetime import datetime, timedelta, timezone
+from typing import Optional
 from uuid import UUID
-from fastapi import APIRouter, Request, HTTPException, Depends
-from sqlalchemy import select
+from fastapi import APIRouter, Query, Request, HTTPException, Depends
+from sqlalchemy import select, func as sa_func
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_trading_session
 from app.db.account_repo import AccountRepository
 from app.models.user import UserProfile
+from app.models.order import Order
+from app.models.lot import Lot
+from app.models.account import TradingAccount
 from app.schemas.account import AccountResponse
+from app.schemas.trade import OrderResponse
 from app.dependencies import require_admin, get_current_user, limiter
 from app.utils.logging import audit_log
 
@@ -132,3 +138,100 @@ async def admin_set_active(user_id: str, request: Request, admin: dict = Depends
 
     audit_log("admin_user_active_changed", user_id=admin["id"], target_user=user_id, is_active=req.is_active)
     return {"status": "updated", "is_active": req.is_active}
+
+
+@router.get("/performance")
+async def admin_performance(
+    request: Request,
+    admin: dict = Depends(require_admin),
+    session: AsyncSession = Depends(get_trading_session),
+):
+    """Aggregate KPIs across all accounts."""
+    # All accounts
+    repo = AccountRepository(session)
+    all_accounts = await repo.get_active_accounts()
+    total_accounts = len(all_accounts)
+    active_accounts = request.app.state.trading_engine.active_account_count
+
+    # Open lots
+    stmt_lots = select(
+        sa_func.count(Lot.lot_id),
+        sa_func.coalesce(sa_func.sum(Lot.buy_price * Lot.buy_qty), 0),
+    ).where(Lot.status == "OPEN")
+    lot_result = await session.execute(stmt_lots)
+    lot_row = lot_result.one()
+    open_lots_count = lot_row[0] or 0
+    total_invested_usdt = float(lot_row[1] or 0)
+
+    # 24h trade volume
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    stmt_trades = select(
+        sa_func.count(Order.order_id),
+        sa_func.coalesce(sa_func.sum(Order.cum_quote_qty), 0),
+    ).where(Order.updated_at >= cutoff)
+    trade_result = await session.execute(stmt_trades)
+    trade_row = trade_result.one()
+    trade_count_24h = trade_row[0] or 0
+    trade_volume_24h = float(trade_row[1] or 0)
+
+    # Circuit breaker
+    cb_tripped = sum(1 for a in all_accounts if a.circuit_breaker_disabled_at is not None)
+
+    # Buy pause
+    bp_active = sum(1 for a in all_accounts if a.buy_pause_state == "ACTIVE")
+    bp_paused = total_accounts - bp_active
+
+    return {
+        "total_accounts": total_accounts,
+        "active_accounts": active_accounts,
+        "open_lots_count": open_lots_count,
+        "total_invested_usdt": round(total_invested_usdt, 2),
+        "trade_volume_24h": round(trade_volume_24h, 2),
+        "trade_count_24h": trade_count_24h,
+        "circuit_breaker_tripped": cb_tripped,
+        "circuit_breaker_total": total_accounts,
+        "buy_pause_active": bp_active,
+        "buy_pause_paused": bp_paused,
+    }
+
+
+@router.get("/trades")
+async def admin_list_trades(
+    request: Request,
+    admin: dict = Depends(require_admin),
+    session: AsyncSession = Depends(get_trading_session),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    account_id: Optional[str] = Query(default=None),
+    side: Optional[str] = Query(default=None),
+):
+    """Cross-account trade history with pagination."""
+    stmt = select(Order).order_by(Order.update_time_ms.desc())
+    count_stmt = select(sa_func.count(Order.order_id))
+
+    if account_id:
+        try:
+            uid = UUID(account_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid account_id")
+        stmt = stmt.where(Order.account_id == uid)
+        count_stmt = count_stmt.where(Order.account_id == uid)
+    if side:
+        stmt = stmt.where(Order.side == side.upper())
+        count_stmt = count_stmt.where(Order.side == side.upper())
+
+    # Total count
+    total_result = await session.execute(count_stmt)
+    total = total_result.scalar() or 0
+
+    # Paginated results
+    stmt = stmt.offset(offset).limit(limit)
+    result = await session.execute(stmt)
+    orders = result.scalars().all()
+
+    return {
+        "trades": [OrderResponse.model_validate(o).model_dump() for o in orders],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }

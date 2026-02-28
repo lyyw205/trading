@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+
+{% block title %}Trade History - Crypto Multi-Trader{% endblock %}
+
+{% block content %}
+<div class="hero-banner">
+  <h1 class="page-title">Trade History</h1>
+  <p class="hero-subtitle">Cross-account trade records with filtering and CSV export.</p>
+</div>
+
+<section class="dashboard-section">
+  <div class="section-header">
+    <h2 class="section-title">Cross-Account Trades</h2>
+    <div style="display:flex;gap:0.5rem;align-items:center;">
+      <button class="btn btn-outline btn-sm" onclick="exportTradesCSV()">Export CSV</button>
+      <button class="btn btn-outline btn-sm" onclick="loadTrades()">Refresh</button>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <div class="tune-grid" style="margin-bottom:1rem;">
+    <div class="form-group">
+      <label class="form-label">Account</label>
+      <select id="trade-filter-account" class="form-input" onchange="loadTrades()">
+        <option value="">All Accounts</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Side</label>
+      <select id="trade-filter-side" class="form-input" onchange="loadTrades()">
+        <option value="">All</option>
+        <option value="BUY">BUY</option>
+        <option value="SELL">SELL</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="table-wrapper">
+    <table class="data-table" id="trades-table">
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Account</th>
+          <th>Symbol</th>
+          <th>Side</th>
+          <th>Price</th>
+          <th>Qty</th>
+          <th>Quote Amount</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody id="trades-tbody">
+        <tr><td colspan="8" class="table-empty">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Pagination -->
+  <div class="pagination" id="trades-pagination" style="display:none;">
+    <button class="btn btn-outline btn-sm" id="trades-prev" onclick="changePage(-1)">Prev</button>
+    <span id="trades-page-info" class="text-muted" style="font-size:0.85rem;"></span>
+    <button class="btn btn-outline btn-sm" id="trades-next" onclick="changePage(1)">Next</button>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let _tradesData = [];
+let _tradesPage = 0;
+const _tradesLimit = 100;
+let _tradesTotal = 0;
+let _accountsMap = {};
+
+async function loadAccountOptions() {
+  try {
+    const resp = await apiFetch('/api/admin/accounts');
+    if (!resp.ok) return;
+    const accounts = await resp.json();
+    const sel = document.getElementById('trade-filter-account');
+    accounts.forEach(a => {
+      _accountsMap[a.id] = a.label || a.id;
+      const opt = document.createElement('option');
+      opt.value = a.id;
+      opt.textContent = a.label || a.id;
+      sel.appendChild(opt);
+    });
+  } catch (e) {}
+}
+
+async function loadTrades() {
+  const tbody = document.getElementById('trades-tbody');
+  if (!tbody) return;
+
+  const accountId = document.getElementById('trade-filter-account').value;
+  const side = document.getElementById('trade-filter-side').value;
+
+  // Reset to first page when called from filter change
+  if (arguments.length === 0) _tradesPage = 0;
+  const offset = _tradesPage * _tradesLimit;
+
+  let url = `/api/admin/trades?limit=${_tradesLimit}&offset=${offset}`;
+  if (accountId) url += `&account_id=${accountId}`;
+  if (side) url += `&side=${side}`;
+
+  try {
+    const resp = await apiFetch(url);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    _tradesData = data.trades || [];
+    _tradesTotal = data.total || 0;
+
+    if (!_tradesData.length) {
+      tbody.innerHTML = '<tr><td colspan="8" class="table-empty">No trades found</td></tr>';
+      document.getElementById('trades-pagination').style.display = 'none';
+      return;
+    }
+
+    tbody.innerHTML = _tradesData.map(t => {
+      const time = t.updated_at ? new Date(t.updated_at).toLocaleString() : '-';
+      const sideClass = t.side === 'BUY' ? 'pnl-positive' : (t.side === 'SELL' ? 'pnl-negative' : '');
+      const label = _accountsMap[t.account_id] || String(t.account_id).slice(0, 8);
+      return `<tr>
+        <td>${escapeHtml(time)}</td>
+        <td><a href="/accounts/${t.account_id}">${escapeHtml(label)}</a></td>
+        <td>${escapeHtml(t.symbol || '')}</td>
+        <td class="${sideClass}">${escapeHtml(t.side || '-')}</td>
+        <td>${t.price != null ? fmt(t.price, 2) : '-'}</td>
+        <td>${t.executed_qty != null ? fmt(t.executed_qty, 6) : '-'}</td>
+        <td>${t.cum_quote_qty != null ? fmt(t.cum_quote_qty, 2) : '-'}</td>
+        <td><span class="status-badge ${t.status === 'FILLED' ? 'badge-success' : 'badge-neutral'}">${escapeHtml(t.status || '-')}</span></td>
+      </tr>`;
+    }).join('');
+
+    // Update pagination
+    const totalPages = Math.ceil(_tradesTotal / _tradesLimit);
+    const pag = document.getElementById('trades-pagination');
+    pag.style.display = totalPages > 1 ? 'flex' : 'none';
+    document.getElementById('trades-page-info').textContent = `Page ${_tradesPage + 1} of ${totalPages} (${_tradesTotal} total)`;
+    document.getElementById('trades-prev').disabled = _tradesPage === 0;
+    document.getElementById('trades-next').disabled = _tradesPage >= totalPages - 1;
+  } catch (e) {
+    tbody.innerHTML = '<tr><td colspan="8" class="table-empty error-text">Failed to load trades</td></tr>';
+  }
+}
+
+function changePage(delta) {
+  _tradesPage += delta;
+  if (_tradesPage < 0) _tradesPage = 0;
+  loadTrades();
+}
+
+function exportTradesCSV() {
+  if (!_tradesData.length) { showToast('No trades to export', 'error'); return; }
+  const headers = ['Time', 'Account', 'Symbol', 'Side', 'Price', 'Qty', 'Quote Amount', 'Status'];
+  const rows = _tradesData.map(t => [
+    t.updated_at || '',
+    _accountsMap[t.account_id] || t.account_id,
+    t.symbol || '',
+    t.side || '',
+    t.price || '',
+    t.executed_qty || '',
+    t.cum_quote_qty || '',
+    t.status || '',
+  ]);
+  const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `trades_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('CSV exported', 'success');
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadAccountOptions();
+  loadTrades();
+});
+</script>
+{% endblock %}

@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Overview - Crypto Multi-Trader{% endblock %}
+
+{% block content %}
+<!-- Hero Banner -->
+<div class="hero-banner">
+  <h1 class="page-title">System Overview</h1>
+  <p class="hero-subtitle">Monitor all trading accounts, performance metrics, and system health at a glance.</p>
+  <div class="hero-actions">
+    <button class="btn btn-hero btn-sm" onclick="loadOverviewData()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+      Refresh
+    </button>
+  </div>
+</div>
+
+<!-- KPI Cards -->
+<div class="kpi-grid" id="kpi-cards">
+  <div class="loading-spinner">Loading...</div>
+</div>
+
+<!-- System Health -->
+<section class="dashboard-section">
+  <div class="section-header">
+    <h2 class="section-title">Account Health</h2>
+  </div>
+  <div id="admin-health" class="health-grid">
+    <div class="loading-spinner">Loading...</div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadOverviewData() {
+  await Promise.all([loadKPIs(), loadHealthTable()]);
+}
+
+async function loadKPIs() {
+  const el = document.getElementById('kpi-cards');
+  if (!el) return;
+  try {
+    const [perfResp, overviewResp] = await Promise.all([
+      apiFetch('/api/admin/performance'),
+      apiFetch('/api/admin/overview'),
+    ]);
+    const perf = perfResp.ok ? await perfResp.json() : {};
+    const overview = overviewResp.ok ? await overviewResp.json() : {};
+
+    const cbTripped = perf.circuit_breaker_tripped || 0;
+    el.innerHTML = `
+      <div class="kpi-card">
+        <div class="kpi-card-header">
+          <div class="kpi-label">Total Accounts</div>
+          <div class="kpi-icon kpi-icon-primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></div>
+        </div>
+        <div class="kpi-value">${overview.active_traders || 0} <span class="kpi-sub">/ ${overview.total_accounts || 0}</span></div>
+        <div class="kpi-desc">active / total</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-card-header">
+          <div class="kpi-label">Open Lots</div>
+          <div class="kpi-icon kpi-icon-success"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></div>
+        </div>
+        <div class="kpi-value">${perf.open_lots_count || 0}</div>
+        <div class="kpi-desc">${fmt(perf.total_invested_usdt || 0, 2)} USDT invested</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-card-header">
+          <div class="kpi-label">24h Trades</div>
+          <div class="kpi-icon kpi-icon-info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
+        </div>
+        <div class="kpi-value">${perf.trade_count_24h || 0}</div>
+        <div class="kpi-desc">${fmt(perf.trade_volume_24h || 0, 2)} USDT volume</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-card-header">
+          <div class="kpi-label">Circuit Breakers</div>
+          <div class="kpi-icon ${cbTripped > 0 ? 'kpi-icon-danger' : 'kpi-icon-success'}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
+        </div>
+        <div class="kpi-value ${cbTripped > 0 ? 'kpi-danger' : ''}">${cbTripped} <span class="kpi-sub">/ ${perf.circuit_breaker_total || 0}</span></div>
+        <div class="kpi-desc">tripped / total</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-card-header">
+          <div class="kpi-label">Buy Pause</div>
+          <div class="kpi-icon kpi-icon-warning"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="10" y1="15" x2="10" y2="9"/><line x1="14" y1="15" x2="14" y2="9"/></svg></div>
+        </div>
+        <div class="kpi-value">${perf.buy_pause_active || 0} <span class="kpi-sub kpi-success">active</span></div>
+        <div class="kpi-desc">${perf.buy_pause_paused || 0} paused</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-card-header">
+          <div class="kpi-label">Users</div>
+          <div class="kpi-icon kpi-icon-orange"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
+        </div>
+        <div class="kpi-value">${overview.total_users || 0}</div>
+        <div class="kpi-desc">registered users</div>
+      </div>
+    `;
+  } catch (e) {
+    el.innerHTML = '<p class="error-text">Failed to load KPIs</p>';
+  }
+}
+
+async function loadHealthTable() {
+  const el = document.getElementById('admin-health');
+  if (!el) return;
+  try {
+    const resp = await apiFetch('/api/admin/overview');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    const health = data.account_health || {};
+    const _hColors = ['var(--primary)', 'var(--success)', 'var(--info)', 'var(--warning)', 'var(--orange)', 'var(--danger)'];
+
+    if (!Object.keys(health).length) {
+      el.innerHTML = '<p class="text-muted">No account health data</p>';
+      return;
+    }
+
+    el.innerHTML = Object.entries(health).map(([accountId, h], idx) => {
+      const bpState = h.buy_pause_state || 'ACTIVE';
+      const bpClass = bpState === 'ACTIVE' ? 'badge-success' : (bpState === 'PAUSED' ? 'badge-danger' : 'badge-warning');
+      const cbOk = !h.circuit_breaker;
+      const lots = h.open_lots || 0;
+      const maxLots = 10;
+      const lotsPct = Math.min(100, Math.round((lots / maxLots) * 100));
+      return `
+      <div class="health-card" style="border-left:3px solid ${_hColors[idx % _hColors.length]}">
+        <div class="health-card-label">${escapeHtml(h.label || accountId)}</div>
+        <div class="health-card-value">${escapeHtml(h.status || 'unknown')}</div>
+        <div style="display:flex;gap:0.5rem;margin-top:0.5rem;flex-wrap:wrap;">
+          <span class="status-badge ${cbOk ? 'badge-success' : 'badge-danger'}">${cbOk ? 'CB OK' : 'CB Tripped'}</span>
+          <span class="status-badge ${bpClass}">BP: ${escapeHtml(bpState)}</span>
+        </div>
+        <div style="margin-top:0.5rem;">
+          <div style="display:flex;justify-content:space-between;font-size:0.7rem;color:var(--text-muted);margin-bottom:0.15rem;">
+            <span>Open Lots</span><span>${lots}</span>
+          </div>
+          <div class="progress-bar-wrap">
+            <div class="progress-bar-fill ${lotsPct > 80 ? 'progress-warning' : ''}" style="width:${lotsPct}%"></div>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    if (el) el.innerHTML = '<p class="error-text">Failed to load health data</p>';
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadOverviewData();
+});
+</script>
+{% endblock %}

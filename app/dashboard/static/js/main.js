@@ -4,6 +4,44 @@
  */
 
 /* ============================================================
+   Theme Toggle
+   ============================================================ */
+
+function getTheme() {
+  return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+}
+
+function toggleTheme() {
+  const html = document.documentElement;
+  html.classList.add('theme-transition');
+  const next = getTheme() === 'dark' ? 'light' : 'dark';
+  if (next === 'light') {
+    html.setAttribute('data-theme', 'light');
+  } else {
+    html.removeAttribute('data-theme');
+  }
+  localStorage.setItem('theme', next);
+  // Remove transition class after animation completes
+  setTimeout(() => html.classList.remove('theme-transition'), 350);
+}
+
+function getChartTheme() {
+  const isLight = getTheme() === 'light';
+  return {
+    layout: {
+      background: { color: isLight ? '#FFFFFF' : '#1e293b' },
+      textColor: isLight ? '#4E5968' : '#e2e8f0',
+    },
+    grid: {
+      vertLines: { color: isLight ? '#F0F1F3' : '#334155' },
+      horzLines: { color: isLight ? '#F0F1F3' : '#334155' },
+    },
+    rightPriceScale: { borderColor: isLight ? '#E5E7EB' : '#334155' },
+    timeScale: { borderColor: isLight ? '#E5E7EB' : '#334155', timeVisible: true, secondsVisible: false },
+  };
+}
+
+/* ============================================================
    Core Helpers
    ============================================================ */
 
@@ -104,16 +142,25 @@ async function loadAccounts() {
       const badgeClass = isActive ? 'badge-success' : 'badge-danger';
       const badgeText = isActive ? 'Active' : 'Inactive';
       const cbTripped = acct.circuit_breaker_tripped;
-      const buyPaused = acct.buy_pause_state && acct.buy_pause_state !== 'ACTIVE';
       const buyPauseBadge = acct.buy_pause_state === 'PAUSED'
         ? '<span class="status-badge badge-buy-paused">Buy Paused</span>'
         : acct.buy_pause_state === 'THROTTLED'
         ? '<span class="status-badge badge-buy-throttled">Buy Throttled</span>'
         : '';
+      const symbolUpper = (acct.symbol || '').toUpperCase();
+      const isBTC = symbolUpper.includes('BTC');
+      const symbolIcon = isBTC
+        ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.5 8H14a2 2 0 0 1 0 4h-4.5m0-4v8m0-4H14a2 2 0 0 1 0 4H9.5m2-10v2m0 8v2"/></svg>'
+        : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>';
       return `
         <div class="account-card" onclick="window.location.href='/accounts/${acct.id}'">
-          <div class="account-card-label">${escapeHtml(acct.label || acct.id)}</div>
-          <div class="account-card-symbol">${escapeHtml(acct.symbol || '')}</div>
+          <div class="account-card-top">
+            <div class="account-card-icon">${symbolIcon}</div>
+            <div>
+              <div class="account-card-label">${escapeHtml(acct.label || acct.id)}</div>
+              <div class="account-card-symbol">${escapeHtml(acct.symbol || '')}</div>
+            </div>
+          </div>
           <div class="account-card-footer">
             <span class="status-badge ${badgeClass}">${badgeText}</span>
             ${cbTripped ? '<span class="status-badge badge-danger">CB Tripped</span>' : ''}
@@ -170,12 +217,10 @@ async function loadPriceChart(accountId, containerId) {
   if (!container || typeof LightweightCharts === 'undefined') return;
   container.innerHTML = '';
 
+  const theme = getChartTheme();
   const chart = LightweightCharts.createChart(container, {
-    layout: { background: { color: '#1e293b' }, textColor: '#e2e8f0' },
-    grid: { vertLines: { color: '#334155' }, horzLines: { color: '#334155' } },
+    ...theme,
     crosshair: { mode: 1 },
-    rightPriceScale: { borderColor: '#334155' },
-    timeScale: { borderColor: '#334155', timeVisible: true, secondsVisible: false },
     width: container.clientWidth,
     height: container.clientHeight || 400,
   });
@@ -225,30 +270,65 @@ async function loadAssetStatus(accountId) {
     const data = await resp.json();
     el.innerHTML = `
       <div class="asset-card">
-        <div class="asset-label">BTC Balance</div>
-        <div class="asset-value">${fmt(data.btc_balance, 6)}</div>
+        <div class="asset-card-row">
+          <div class="asset-icon asset-icon-warning">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.5 8H14a2 2 0 0 1 0 4h-4.5m0-4v8m0-4H14a2 2 0 0 1 0 4H9.5m2-10v2m0 8v2"/></svg>
+          </div>
+          <div>
+            <div class="asset-label">BTC Balance</div>
+            <div class="asset-value">${fmt(data.btc_balance, 6)}</div>
+          </div>
+        </div>
       </div>
       <div class="asset-card">
-        <div class="asset-label">USDT Balance</div>
-        <div class="asset-value">${fmt(data.usdt_balance, 2)}</div>
+        <div class="asset-card-row">
+          <div class="asset-icon asset-icon-success">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+          </div>
+          <div>
+            <div class="asset-label">USDT Balance</div>
+            <div class="asset-value">${fmt(data.usdt_balance, 2)}</div>
+          </div>
+        </div>
       </div>
       <div class="asset-card">
-        <div class="asset-label">Reserve Pool</div>
-        <div class="asset-value">${fmt(data.reserve_pool_usdt, 2)} USDT</div>
-        <div class="asset-sub">${data.reserve_pool_pct != null ? data.reserve_pool_pct + '%' : ''}</div>
+        <div class="asset-card-row">
+          <div class="asset-icon asset-icon-info">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          </div>
+          <div>
+            <div class="asset-label">Reserve Pool</div>
+            <div class="asset-value">${fmt(data.reserve_pool_usdt, 2)} USDT</div>
+            <div class="asset-sub">${data.reserve_pool_pct != null ? data.reserve_pool_pct + '%' : ''}</div>
+          </div>
+        </div>
       </div>
       <div class="asset-card earnings-card ${(data.pending_earnings_usdt || 0) > 0 ? 'has-earnings' : ''}">
-        <div class="asset-label">적립금 (Pending)</div>
-        <div class="asset-value">${fmt(data.pending_earnings_usdt || 0, 2)} USDT</div>
-        <button class="btn btn-sm btn-approve"
+        <div class="asset-card-row">
+          <div class="asset-icon asset-icon-orange">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/></svg>
+          </div>
+          <div>
+            <div class="asset-label">적립금 (Pending)</div>
+            <div class="asset-value">${fmt(data.pending_earnings_usdt || 0, 2)} USDT</div>
+          </div>
+        </div>
+        <button class="btn btn-sm btn-approve" style="margin-top:0.5rem;"
                 onclick="openEarningsModal('${accountId}')"
                 ${(data.pending_earnings_usdt || 0) <= 0 ? 'disabled' : ''}>
           Reserve 추가
         </button>
       </div>
       <div class="asset-card">
-        <div class="asset-label">Total Invested</div>
-        <div class="asset-value">${fmt(data.total_invested_usdt, 2)} USDT</div>
+        <div class="asset-card-row">
+          <div class="asset-icon asset-icon-primary">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+          </div>
+          <div>
+            <div class="asset-label">Total Invested</div>
+            <div class="asset-value">${fmt(data.total_invested_usdt, 2)} USDT</div>
+          </div>
+        </div>
       </div>
     `;
   } catch (e) {
@@ -550,25 +630,28 @@ function _renderCombosPanel(accountId) {
     let paramsHtml = '';
     const bpKeys = Object.keys(combo.buy_params || {}).filter(k => !k.startsWith('_'));
     const spKeys = Object.keys(combo.sell_params || {});
-    if (bpKeys.length) paramsHtml += '<span class="combo-params">' + bpKeys.map(k => escapeHtml(k) + '=' + escapeHtml(String(combo.buy_params[k]))).join(', ') + '</span>';
-    if (spKeys.length) paramsHtml += ' | <span class="combo-params">' + spKeys.map(k => escapeHtml(k) + '=' + escapeHtml(String(combo.sell_params[k]))).join(', ') + '</span>';
+    if (bpKeys.length) paramsHtml += bpKeys.map(k => '<span>' + escapeHtml(k) + ': <strong>' + escapeHtml(String(combo.buy_params[k])) + '</strong></span>').join('');
+    if (spKeys.length) paramsHtml += spKeys.map(k => '<span>' + escapeHtml(k) + ': <strong>' + escapeHtml(String(combo.sell_params[k])) + '</strong></span>').join('');
 
-    return `<div class="tune-panel" style="margin-bottom:0.75rem;">
-      <div style="display:flex;justify-content:space-between;align-items:center;">
-        <h3 class="tune-panel-title" style="margin:0;">${escapeHtml(combo.name)}</h3>
-        <div style="display:flex;gap:0.5rem;align-items:center;">
+    return `<div class="combo-card">
+      <div class="combo-card-header">
+        <div class="combo-card-name">
+          ${escapeHtml(combo.name)}
           <span class="status-badge ${enabledClass}">${enabledText}</span>
+        </div>
+        <div class="combo-card-actions">
           <button class="btn btn-outline btn-sm" onclick="editCombo('${combo.id}')">Edit</button>
           <button class="btn btn-outline btn-sm" onclick="toggleCombo('${accountId}','${combo.id}',${combo.is_enabled})">${combo.is_enabled ? 'Disable' : 'Enable'}</button>
           <button class="btn btn-danger btn-sm" onclick="deleteCombo('${accountId}','${combo.id}')">Delete</button>
         </div>
       </div>
-      <div style="color:#94a3b8;font-size:0.85rem;margin-top:0.25rem;">
-        <span style="color:#4ade80;">Buy:</span> ${escapeHtml(buyMeta.display_name || combo.buy_logic_name)}
-        <span style="margin:0 0.25rem;">|</span>
-        <span style="color:#f87171;">Sell:</span> ${escapeHtml(sellMeta.display_name || combo.sell_logic_name)}
+      <div class="combo-card-body">
+        <div class="combo-card-logic">
+          <span class="combo-logic-pill combo-logic-buy"><span class="combo-logic-dot"></span> Buy: ${escapeHtml(buyMeta.display_name || combo.buy_logic_name)}</span>
+          <span class="combo-logic-pill combo-logic-sell"><span class="combo-logic-dot"></span> Sell: ${escapeHtml(sellMeta.display_name || combo.sell_logic_name)}</span>
+        </div>
+        ${paramsHtml ? '<div class="combo-card-params">' + paramsHtml + '</div>' : ''}
       </div>
-      ${paramsHtml ? '<div style="color:#64748b;font-size:0.8rem;margin-top:0.25rem;">' + paramsHtml + '</div>' : ''}
     </div>`;
   }).join('');
 }
@@ -583,19 +666,118 @@ function _buildComboLotFilterTabs() {
   container.innerHTML = html;
 }
 
+/* ============================================================
+   Combo Wizard — 5-Step Navigation
+   ============================================================ */
+let _comboWizardStep = 1;
+const _WIZARD_STEP_COUNT = 5;
+const _WIZARD_CHECK_SVG = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5L6.5 11.5L12.5 5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+function _comboWizardUpdateUI(direction) {
+  const stepper = document.getElementById('combo-wizard-stepper');
+  const isEdit = !!document.getElementById('combo-edit-id').value;
+
+  // Update step circles & connectors
+  stepper.querySelectorAll('.wizard-step').forEach(el => {
+    const s = parseInt(el.dataset.step);
+    el.classList.remove('active', 'completed');
+    const circle = el.querySelector('.wizard-step-circle');
+    if (s === _comboWizardStep) {
+      el.classList.add('active');
+      circle.innerHTML = s;
+    } else if (s < _comboWizardStep) {
+      el.classList.add('completed');
+      circle.innerHTML = _WIZARD_CHECK_SVG;
+    } else {
+      circle.innerHTML = s;
+    }
+  });
+  stepper.querySelectorAll('.wizard-connector').forEach(el => {
+    const after = parseInt(el.dataset.after);
+    el.classList.toggle('completed', after < _comboWizardStep);
+  });
+
+  // Update panels
+  document.querySelectorAll('.wizard-panel').forEach(el => {
+    const p = parseInt(el.dataset.panel);
+    el.classList.remove('active', 'slide-back');
+    if (p === _comboWizardStep) {
+      el.classList.add('active');
+      if (direction === 'backward') el.classList.add('slide-back');
+    }
+  });
+
+  // Update nav buttons
+  const prevBtn = document.querySelector('.btn-wizard-prev');
+  const nextBtn = document.querySelector('.btn-wizard-next');
+  const saveBtn = document.querySelector('.btn-wizard-save');
+  prevBtn.style.display = _comboWizardStep === 1 ? 'none' : '';
+  nextBtn.style.display = _comboWizardStep === _WIZARD_STEP_COUNT ? 'none' : '';
+  saveBtn.style.display = _comboWizardStep === _WIZARD_STEP_COUNT ? '' : 'none';
+
+  // Edit-mode: hide logic selects in steps 2 & 4, show reapply in step 5
+  if (isEdit) {
+    document.getElementById('combo-buy-logic-group').style.display = 'none';
+    document.getElementById('combo-sell-logic-group').style.display = 'none';
+    document.getElementById('combo-reapply-group').style.display =
+      _comboWizardStep === _WIZARD_STEP_COUNT ? '' : 'none';
+  }
+}
+
+function _validateWizardStep(step) {
+  if (step === 1) {
+    const name = document.getElementById('combo-name').value.trim();
+    if (!name) { showToast('이름을 입력해주세요', 'error'); return false; }
+  }
+  return true;
+}
+
+function comboWizardNext() {
+  if (!_validateWizardStep(_comboWizardStep)) return;
+  if (_comboWizardStep < _WIZARD_STEP_COUNT) {
+    _comboWizardStep++;
+    _comboWizardUpdateUI('forward');
+  }
+}
+
+function comboWizardPrev() {
+  if (_comboWizardStep > 1) {
+    _comboWizardStep--;
+    _comboWizardUpdateUI('backward');
+  }
+}
+
+function comboWizardGoTo(target) {
+  if (target === _comboWizardStep) return;
+  if (target < _comboWizardStep) {
+    // Going backward — always allowed
+    _comboWizardStep = target;
+    _comboWizardUpdateUI('backward');
+  } else {
+    // Going forward — validate each step in between
+    for (let s = _comboWizardStep; s < target; s++) {
+      if (!_validateWizardStep(s)) return;
+    }
+    _comboWizardStep = target;
+    _comboWizardUpdateUI('forward');
+  }
+}
+
 function showCreateComboModal() {
   document.getElementById('combo-modal-title').textContent = 'New Combo';
   document.getElementById('combo-edit-id').value = '';
   document.getElementById('combo-name').value = '';
   _populateLogicSelects();
   _populateReferenceSelect('');
-  renderComboParams('buy');
-  renderComboParams('sell');
+  renderComboConditionParams('buy');
+  renderComboConditionParams('sell');
   document.getElementById('combo-buy-logic-group').style.display = '';
   document.getElementById('combo-sell-logic-group').style.display = '';
   document.getElementById('combo-reapply-group').style.display = 'none';
   document.getElementById('combo-reapply-orders').checked = false;
   document.getElementById('combo-modal').style.display = 'flex';
+  _comboWizardStep = 1;
+  _comboWizardUpdateUI('forward');
 }
 
 function editCombo(comboId) {
@@ -609,11 +791,13 @@ function editCombo(comboId) {
   // Logic type cannot be changed on edit
   document.getElementById('combo-buy-logic-group').style.display = 'none';
   document.getElementById('combo-sell-logic-group').style.display = 'none';
-  renderComboParams('buy', combo.buy_params);
-  renderComboParams('sell', combo.sell_params);
+  renderComboConditionParams('buy', combo.buy_params);
+  renderComboConditionParams('sell', combo.sell_params);
   document.getElementById('combo-reapply-group').style.display = '';
   document.getElementById('combo-reapply-orders').checked = false;
   document.getElementById('combo-modal').style.display = 'flex';
+  _comboWizardStep = 1;
+  _comboWizardUpdateUI('forward');
 }
 
 function closeComboModal() {
@@ -637,43 +821,76 @@ function _populateReferenceSelect(currentRef, excludeId) {
   select.innerHTML = html;
 }
 
-function renderComboParams(side, existingParams) {
+function renderComboConditionParams(side, existingParams) {
   const logicName = document.getElementById(side === 'buy' ? 'combo-buy-logic' : 'combo-sell-logic').value;
   const logics = side === 'buy' ? _buyLogics : _sellLogics;
   const meta = logics.find(l => l.name === logicName);
-  const container = document.getElementById(side === 'buy' ? 'combo-buy-params' : 'combo-sell-params');
-  if (!container || !meta) { if (container) container.innerHTML = ''; return; }
+  const condContainer = document.getElementById(`combo-${side}-condition-params`);
+  const sizingContainer = document.getElementById(`combo-${side}-sizing-params`);
+  if (!meta) {
+    if (condContainer) condContainer.innerHTML = '';
+    if (sizingContainer) sizingContainer.innerHTML = '';
+    return;
+  }
 
   const tunableParams = meta.tunable_params || {};
   const defaults = meta.default_params || {};
   const current = existingParams || {};
 
-  // scaled_plan 계산기 버튼 (buy side만)
-  let extraHtml = '';
-  if (side === 'buy' && tunableParams.sizing_mode) {
-    const smOptions = (tunableParams.sizing_mode.options || []).map(o => typeof o === 'object' ? o.value : o);
-    if (smOptions.includes('scaled_plan')) {
-      const curSm = current.sizing_mode ?? defaults.sizing_mode ?? 'fixed';
-      const btnVisible = curSm === 'scaled_plan' ? '' : 'display:none';
-      extraHtml = `<div data-depends-on="sizing_mode" data-depends-values="scaled_plan" style="${btnVisible};margin-top:4px;">
-        <button type="button" class="btn btn-outline btn-sm" onclick="openBuyPlanCalc()">매수 계획 계산기</button>
-      </div>`;
-    }
+  // Split params by group
+  const condParams = {};
+  const sizingParams = {};
+  for (const [key, spec] of Object.entries(tunableParams)) {
+    if (spec.group === 'sizing') sizingParams[key] = spec;
+    else condParams[key] = spec;
   }
 
-  container.innerHTML = _renderParamsHtml({
-    tunableParams, defaults, current, side,
-    inputId: (key) => `combo-${side}-${key}`,
-    dataAttrs: (key) => `data-combo-side="${side}"`,
-    onToggle: () => `toggleDependentParams(this,'${side}')`,
-    showUnit: true,
-    extraHtml,
-  });
+  // Render condition params
+  if (condContainer) {
+    condContainer.innerHTML = _renderParamsHtml({
+      tunableParams: condParams, defaults, current, side,
+      inputId: (key) => `combo-${side}-${key}`,
+      dataAttrs: (key) => `data-combo-side="${side}"`,
+      onToggle: () => `toggleDependentParams(this,'${side}')`,
+      showUnit: true,
+    });
+  }
+
+  // Render sizing params
+  if (sizingContainer) {
+    if (Object.keys(sizingParams).length === 0) {
+      sizingContainer.innerHTML = '<div class="wizard-empty-state">이 전략은 별도 금액 설정이 없습니다.</div>';
+    } else {
+      // scaled_plan 계산기 버튼 (buy side만)
+      let extraHtml = '';
+      if (side === 'buy' && sizingParams.sizing_mode) {
+        const smOptions = (sizingParams.sizing_mode.options || []).map(o => typeof o === 'object' ? o.value : o);
+        if (smOptions.includes('scaled_plan')) {
+          const curSm = current.sizing_mode ?? defaults.sizing_mode ?? 'fixed';
+          const btnVisible = curSm === 'scaled_plan' ? '' : 'display:none';
+          extraHtml = `<div data-depends-on="sizing_mode" data-depends-values="scaled_plan" style="${btnVisible};margin-top:4px;">
+            <button type="button" class="btn btn-outline btn-sm" onclick="openBuyPlanCalc()">매수 계획 계산기</button>
+          </div>`;
+        }
+      }
+
+      sizingContainer.innerHTML = _renderParamsHtml({
+        tunableParams: sizingParams, defaults, current, side,
+        inputId: (key) => `combo-${side}-${key}`,
+        dataAttrs: (key) => `data-combo-side="${side}"`,
+        onToggle: () => `toggleDependentParams(this,'${side}')`,
+        showUnit: true,
+        extraHtml,
+      });
+    }
+  }
 }
 
 function toggleDependentParams(selectEl, side) {
-  const container = document.getElementById(side === 'buy' ? 'combo-buy-params' : 'combo-sell-params');
-  _toggleDeps(container, selectEl.dataset.param, selectEl.value);
+  const condContainer = document.getElementById(`combo-${side}-condition-params`);
+  const sizingContainer = document.getElementById(`combo-${side}-sizing-params`);
+  if (condContainer) _toggleDeps(condContainer, selectEl.dataset.param, selectEl.value);
+  if (sizingContainer) _toggleDeps(sizingContainer, selectEl.dataset.param, selectEl.value);
 }
 
 function _collectComboParams(side) {
@@ -774,11 +991,18 @@ async function loadCircuitBreaker(accountId) {
     const data = await resp.json();
     const tripped = !!data.circuit_breaker_tripped;
     el.innerHTML = `
-      <div class="cb-status ${tripped ? 'cb-tripped' : 'cb-ok'}">
-        <span class="cb-indicator"></span>
-        <span class="cb-label">${tripped ? 'TRIPPED - Trading Halted' : 'Normal - Trading Active'}</span>
+      <div class="status-card-row">
+        <div class="status-card-icon" style="background:${tripped ? 'var(--danger-light)' : 'var(--success-light)'};color:${tripped ? 'var(--danger)' : 'var(--success)'}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        </div>
+        <div class="status-card-content">
+          <div class="cb-status ${tripped ? 'cb-tripped' : 'cb-ok'}">
+            <span class="cb-indicator"></span>
+            <span class="cb-label">${tripped ? 'TRIPPED - Trading Halted' : 'Normal - Trading Active'}</span>
+          </div>
+          ${tripped ? `<button class="btn btn-danger btn-sm" style="margin-top:0.65rem;" onclick="resetCircuitBreaker('${accountId}')">Reset Circuit Breaker</button>` : ''}
+        </div>
       </div>
-      ${tripped ? `<button class="btn btn-danger" onclick="resetCircuitBreaker('${accountId}')">Reset Circuit Breaker</button>` : ''}
     `;
   } catch (e) {
     el.innerHTML = '<p class="error-text">Failed to load circuit breaker status</p>';
@@ -819,9 +1043,16 @@ async function loadBuyPauseStatus(accountId) {
 
     if (bp.state === 'ACTIVE') {
       el.innerHTML = `
-        <div class="bp-status bp-ok">
-          <span class="bp-indicator"></span>
-          <span class="bp-label">Normal - Buying Active</span>
+        <div class="status-card-row">
+          <div class="status-card-icon" style="background:var(--success-light);color:var(--success)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          </div>
+          <div class="status-card-content">
+            <div class="bp-status bp-ok">
+              <span class="bp-indicator"></span>
+              <span class="bp-label">Normal - Buying Active</span>
+            </div>
+          </div>
         </div>
       `;
       return;
@@ -835,17 +1066,24 @@ async function loadBuyPauseStatus(accountId) {
     const countText = bp.consecutive_low_balance || 0;
 
     el.innerHTML = `
-      <div class="bp-status ${stateClass}">
-        <span class="bp-indicator"></span>
-        <span class="bp-label">${stateLabel} - ${reasonText}</span>
+      <div class="status-card-row">
+        <div class="status-card-icon" style="background:${isPaused ? 'var(--warning-light)' : 'var(--orange-light)'};color:${isPaused ? 'var(--warning)' : 'var(--orange)'}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="10" y1="15" x2="10" y2="9"/><line x1="14" y1="15" x2="14" y2="9"/></svg>
+        </div>
+        <div class="status-card-content">
+          <div class="bp-status ${stateClass}">
+            <span class="bp-indicator"></span>
+            <span class="bp-label">${stateLabel} - ${reasonText}</span>
+          </div>
+          <div class="bp-details">
+            <div class="bp-detail-row"><span class="bp-detail-label">Since</span><span>${sinceText}</span></div>
+            <div class="bp-detail-row"><span class="bp-detail-label">Consecutive Low Balance</span><span>${countText}x</span></div>
+            ${isPaused ? '<div class="bp-detail-row"><span class="bp-detail-label">Sell Monitoring</span><span>Active (auto-resume on sell)</span></div>' : ''}
+            ${bp.state === 'THROTTLED' ? '<div class="bp-detail-row"><span class="bp-detail-label">Buy Frequency</span><span>1 per 5 cycles</span></div>' : ''}
+          </div>
+          <button class="btn btn-primary btn-sm" style="margin-top:0.65rem;" onclick="resumeBuying('${accountId}')">Resume Buying</button>
+        </div>
       </div>
-      <div class="bp-details">
-        <div class="bp-detail-row"><span class="bp-detail-label">Since</span><span>${sinceText}</span></div>
-        <div class="bp-detail-row"><span class="bp-detail-label">Consecutive Low Balance</span><span>${countText}x</span></div>
-        ${isPaused ? '<div class="bp-detail-row"><span class="bp-detail-label">Sell Monitoring</span><span>Active (auto-resume on sell)</span></div>' : ''}
-        ${bp.state === 'THROTTLED' ? '<div class="bp-detail-row"><span class="bp-detail-label">Buy Frequency</span><span>1 per 5 cycles</span></div>' : ''}
-      </div>
-      <button class="btn btn-primary btn-sm" onclick="resumeBuying('${accountId}')">Resume Buying</button>
     `;
   } catch (e) {
     el.innerHTML = '<p class="error-text">Failed to load buy pause status</p>';
@@ -869,420 +1107,6 @@ async function resumeBuying(accountId) {
   } catch (e) {
     showToast('Network error: ' + e.message, 'error');
   }
-}
-
-/* ============================================================
-   Admin Page
-   ============================================================ */
-
-async function loadAdminOverview() {
-  const el = document.getElementById('admin-health');
-  if (!el) return;
-  try {
-    const resp = await apiFetch('/api/admin/overview');
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const data = await resp.json();
-    el.innerHTML = Object.entries(data).map(([key, val]) => `
-      <div class="health-card">
-        <div class="health-card-label">${escapeHtml(key.replace(/_/g, ' '))}</div>
-        <div class="health-card-value">${escapeHtml(String(val))}</div>
-      </div>
-    `).join('');
-  } catch (e) {
-    if (el) el.innerHTML = '<p class="error-text">Failed to load system health</p>';
-  }
-}
-
-async function loadAdminAccounts() {
-  const tbody = document.getElementById('admin-accounts-tbody');
-  if (!tbody) return;
-  try {
-    const resp = await apiFetch('/api/admin/accounts');
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const accounts = await resp.json();
-    if (!accounts.length) {
-      tbody.innerHTML = '<tr><td colspan="7" class="table-empty">No accounts</td></tr>';
-      return;
-    }
-    tbody.innerHTML = accounts.map(acct => {
-      const cbTripped = acct.circuit_breaker_tripped;
-      return `<tr>
-        <td><a href="/accounts/${acct.id}">${escapeHtml(acct.label || acct.id)}</a></td>
-        <td>${escapeHtml(acct.symbol || '')}</td>
-        <td>${escapeHtml(acct.owner_email || acct.user_id || '-')}</td>
-        <td><span class="status-badge ${acct.is_active ? 'badge-success' : 'badge-neutral'}">${acct.is_active ? 'Yes' : 'No'}</span></td>
-        <td>${escapeHtml(acct.health_status || '-')}</td>
-        <td><span class="status-badge ${cbTripped ? 'badge-danger' : 'badge-success'}">${cbTripped ? 'Tripped' : 'OK'}</span></td>
-        <td>
-          ${cbTripped ? `<button class="btn btn-danger btn-sm" onclick="resetCircuitBreaker('${acct.id}')">Reset CB</button>` : ''}
-        </td>
-      </tr>`;
-    }).join('');
-  } catch (e) {
-    tbody.innerHTML = '<tr><td colspan="7" class="table-empty error-text">Failed to load accounts</td></tr>';
-  }
-}
-
-async function loadAdminUsers() {
-  const tbody = document.getElementById('admin-users-tbody');
-  if (!tbody) return;
-  try {
-    const resp = await apiFetch('/api/admin/users');
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const users = await resp.json();
-    if (!users.length) {
-      tbody.innerHTML = '<tr><td colspan="5" class="table-empty">No users</td></tr>';
-      return;
-    }
-    tbody.innerHTML = users.map(u => {
-      const isActive = u.is_active !== false;
-      return `<tr>
-        <td>${escapeHtml(u.email || '-')}</td>
-        <td>
-          <select class="form-input" style="width:auto;" onchange="changeUserRole('${u.id}', this.value)">
-            <option value="user" ${u.role === 'user' ? 'selected' : ''}>User</option>
-            <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Admin</option>
-          </select>
-        </td>
-        <td><span class="status-badge ${isActive ? 'badge-success' : 'badge-danger'}">${isActive ? 'Active' : 'Inactive'}</span></td>
-        <td>
-          <button class="btn btn-outline btn-sm" onclick="resetUserPassword('${u.id}')">Reset PW</button>
-          <button class="btn ${isActive ? 'btn-danger' : 'btn-primary'} btn-sm" onclick="toggleUserActive('${u.id}', ${isActive})">${isActive ? 'Deactivate' : 'Activate'}</button>
-        </td>
-      </tr>`;
-    }).join('');
-  } catch (e) {
-    tbody.innerHTML = '<tr><td colspan="5" class="table-empty error-text">Failed to load users</td></tr>';
-  }
-}
-
-async function changeUserRole(userId, role) {
-  try {
-    const resp = await apiFetch('/api/admin/users/' + userId + '/role', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
-      body: JSON.stringify({ role }),
-    });
-    if (resp.ok) {
-      showToast('Role updated', 'success');
-    } else {
-      const err = await resp.json().catch(() => ({}));
-      showToast('Error: ' + (err.detail || 'Update failed'), 'error');
-    }
-  } catch (e) {
-    showToast('Network error: ' + e.message, 'error');
-  }
-}
-
-async function createUser() {
-  const email = document.getElementById('new-user-email').value.trim();
-  const password = document.getElementById('new-user-password').value;
-  const role = document.getElementById('new-user-role').value;
-
-  if (!email || !password) { showToast('Email and password required', 'error'); return; }
-  if (password.length < 8) { showToast('Password must be at least 8 characters', 'error'); return; }
-
-  try {
-    const resp = await apiFetch('/api/admin/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
-      body: JSON.stringify({ email, password, role }),
-    });
-    if (resp.ok) {
-      showToast('User created', 'success');
-      document.getElementById('new-user-email').value = '';
-      document.getElementById('new-user-password').value = '';
-      loadAdminUsers();
-    } else {
-      const err = await resp.json().catch(() => ({}));
-      showToast('Error: ' + (err.detail || 'Create failed'), 'error');
-    }
-  } catch (e) {
-    showToast('Network error: ' + e.message, 'error');
-  }
-}
-
-async function resetUserPassword(userId) {
-  const newPassword = prompt('Enter new password (min 8 chars):');
-  if (!newPassword) return;
-  if (newPassword.length < 8) { showToast('Password must be at least 8 characters', 'error'); return; }
-
-  try {
-    const resp = await apiFetch('/api/admin/users/' + userId + '/reset-password', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
-      body: JSON.stringify({ new_password: newPassword }),
-    });
-    if (resp.ok) {
-      showToast('Password reset', 'success');
-    } else {
-      const err = await resp.json().catch(() => ({}));
-      showToast('Error: ' + (err.detail || 'Reset failed'), 'error');
-    }
-  } catch (e) {
-    showToast('Network error: ' + e.message, 'error');
-  }
-}
-
-async function toggleUserActive(userId, currentActive) {
-  const action = currentActive ? 'deactivate' : 'activate';
-  if (!confirm(`Are you sure you want to ${action} this user?`)) return;
-
-  try {
-    const resp = await apiFetch('/api/admin/users/' + userId + '/active', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
-      body: JSON.stringify({ is_active: !currentActive }),
-    });
-    if (resp.ok) {
-      showToast('User ' + action + 'd', 'success');
-      loadAdminUsers();
-    } else {
-      const err = await resp.json().catch(() => ({}));
-      showToast('Error: ' + (err.detail || 'Update failed'), 'error');
-    }
-  } catch (e) {
-    showToast('Network error: ' + e.message, 'error');
-  }
-}
-
-/* ============================================================
-   Backtest (combo 기반 설정 UI)
-   ============================================================ */
-
-let _backtestPollTimer = null;
-let _btBuyLogics = [];
-let _btSellLogics = [];
-let _btComboCount = 0;
-
-/**
- * 백테스트 buy/sell 로직 메타데이터 로드 + 기본 combo 1개 생성
- */
-async function loadBtLogics() {
-  try {
-    const [buyResp, sellResp] = await Promise.all([
-      apiFetch('/api/buy-logics'),
-      apiFetch('/api/sell-logics'),
-    ]);
-    if (buyResp.ok) _btBuyLogics = await buyResp.json();
-    if (sellResp.ok) _btSellLogics = await sellResp.json();
-
-    const container = document.getElementById('bt-combos-container');
-    if (container) {
-      container.innerHTML = '';
-      _btComboCount = 0;
-      addBtCombo();
-    }
-  } catch (e) {
-    console.error('Failed to load logics for backtest', e);
-  }
-}
-
-function addBtCombo() {
-  const container = document.getElementById('bt-combos-container');
-  if (!container) return;
-  const idx = _btComboCount++;
-  const div = document.createElement('div');
-  div.className = 'tune-panel';
-  div.id = 'bt-combo-' + idx;
-  div.style.marginBottom = '0.75rem';
-
-  let buyOpts = _btBuyLogics.map(b => `<option value="${b.name}">${escapeHtml(b.display_name)}</option>`).join('');
-  let sellOpts = _btSellLogics.map(s => `<option value="${s.name}">${escapeHtml(s.display_name)}</option>`).join('');
-
-  div.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;">
-      <h3 class="tune-panel-title" style="margin:0;">Combo ${idx + 1}</h3>
-      <button type="button" class="btn btn-danger btn-sm" onclick="removeBtCombo(${idx})">Remove</button>
-    </div>
-    <div class="combo-section combo-section-general">
-      <div class="combo-section-title">General</div>
-      <div class="tune-grid" style="margin-top:0;">
-        <div class="form-group">
-          <label class="form-label">Name</label>
-          <input type="text" class="form-input" id="bt-combo-name-${idx}" value="combo_${idx + 1}">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Reference Combo</label>
-          <input type="text" class="form-input" id="bt-combo-ref-${idx}" placeholder="(none)">
-        </div>
-      </div>
-    </div>
-    <div class="combo-section combo-section-buy">
-      <div class="combo-section-title">Buy Logic</div>
-      <select class="form-input" id="bt-combo-buy-${idx}" onchange="renderBtComboParams(${idx},'buy')">${buyOpts}</select>
-      <div id="bt-combo-buy-params-${idx}"></div>
-    </div>
-    <div class="combo-section combo-section-sell">
-      <div class="combo-section-title">Sell Logic</div>
-      <select class="form-input" id="bt-combo-sell-${idx}" onchange="renderBtComboParams(${idx},'sell')">${sellOpts}</select>
-      <div id="bt-combo-sell-params-${idx}"></div>
-    </div>
-  `;
-  container.appendChild(div);
-  renderBtComboParams(idx, 'buy');
-  renderBtComboParams(idx, 'sell');
-}
-
-function removeBtCombo(idx) {
-  const el = document.getElementById('bt-combo-' + idx);
-  if (el) el.remove();
-}
-
-function renderBtComboParams(idx, side) {
-  const selectId = side === 'buy' ? 'bt-combo-buy-' + idx : 'bt-combo-sell-' + idx;
-  const containerId = side === 'buy' ? 'bt-combo-buy-params-' + idx : 'bt-combo-sell-params-' + idx;
-  const logicName = document.getElementById(selectId).value;
-  const logics = side === 'buy' ? _btBuyLogics : _btSellLogics;
-  const meta = logics.find(l => l.name === logicName);
-  const container = document.getElementById(containerId);
-  if (!container || !meta) { if (container) container.innerHTML = ''; return; }
-
-  container.innerHTML = _renderParamsHtml({
-    tunableParams: meta.tunable_params || {},
-    defaults: meta.default_params || {},
-    current: {},
-    side,
-    inputId: (key) => `bt-c${idx}-${side}-${key}`,
-    dataAttrs: (key) => `data-bt-combo="${idx}" data-bt-side="${side}"`,
-    onToggle: () => `toggleBtDependentParams(this,${idx},'${side}')`,
-    showUnit: true,
-  });
-}
-
-function toggleBtDependentParams(selectEl, idx, side) {
-  const containerId = side === 'buy' ? 'bt-combo-buy-params-' + idx : 'bt-combo-sell-params-' + idx;
-  _toggleDeps(document.getElementById(containerId), selectEl.dataset.param, selectEl.value);
-}
-
-function _collectBtCombos() {
-  const combos = [];
-  document.querySelectorAll('[id^="bt-combo-"]').forEach(el => {
-    const match = el.id.match(/^bt-combo-(\d+)$/);
-    if (!match) return;
-    const idx = parseInt(match[1], 10);
-    const nameEl = document.getElementById('bt-combo-name-' + idx);
-    if (!nameEl) return;
-
-    combos.push({
-      name: nameEl.value.trim() || 'combo_' + (idx + 1),
-      buy_logic_name: document.getElementById('bt-combo-buy-' + idx).value,
-      buy_params: _collectParamValues(`[data-bt-combo="${idx}"][data-bt-side="buy"]`),
-      sell_logic_name: document.getElementById('bt-combo-sell-' + idx).value,
-      sell_params: _collectParamValues(`[data-bt-combo="${idx}"][data-bt-side="sell"]`),
-      reference_combo_name: document.getElementById('bt-combo-ref-' + idx).value.trim() || null,
-    });
-  });
-  return combos;
-}
-
-async function startBacktest() {
-  const symbol = document.getElementById('bt-symbol').value;
-  const initialUsdt = parseFloat(document.getElementById('bt-initial-usdt').value) || 10000;
-  const startDate = document.getElementById('bt-start-date').value;
-  const endDate = document.getElementById('bt-end-date').value;
-
-  if (!startDate || !endDate) { showToast('Please select start and end dates', 'error'); return; }
-
-  const startTsMs = new Date(startDate).getTime();
-  const endTsMs = new Date(endDate + 'T23:59:59').getTime();
-  if (startTsMs >= endTsMs) { showToast('Start date must be before end date', 'error'); return; }
-
-  const combos = _collectBtCombos();
-  if (!combos.length) { showToast('Add at least one combo', 'error'); return; }
-
-  const btn = document.getElementById('bt-run-btn');
-  btn.disabled = true;
-  btn.textContent = 'Starting...';
-
-  try {
-    const resp = await apiFetch('/api/backtest/run', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
-      body: JSON.stringify({ symbol, start_ts_ms: startTsMs, end_ts_ms: endTsMs, initial_usdt: initialUsdt, combos }),
-    });
-    if (!resp.ok) { const err = await resp.json().catch(() => ({})); throw new Error(err.detail || 'Failed to start backtest'); }
-    const data = await resp.json();
-    showToast('Backtest started', 'success');
-    _startBacktestPolling(data.id);
-    loadBacktestHistory();
-  } catch (e) {
-    showToast('Error: ' + e.message, 'error');
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Run Backtest';
-  }
-}
-
-function _startBacktestPolling(runId) {
-  if (_backtestPollTimer) clearInterval(_backtestPollTimer);
-  _backtestPollTimer = setInterval(async () => {
-    try {
-      const resp = await apiFetch('/api/backtest/' + runId + '/status');
-      if (!resp.ok) return;
-      const data = await resp.json();
-      if (data.status === 'COMPLETED' || data.status === 'FAILED') {
-        clearInterval(_backtestPollTimer);
-        _backtestPollTimer = null;
-        loadBacktestHistory();
-        showToast(data.status === 'COMPLETED' ? 'Backtest completed!' : 'Backtest failed: ' + (data.error_message || 'Unknown error'),
-          data.status === 'COMPLETED' ? 'success' : 'error');
-      }
-    } catch (e) {}
-  }, 2000);
-}
-
-async function loadBacktestHistory() {
-  const tbody = document.getElementById('backtest-history-tbody');
-  if (!tbody) return;
-  try {
-    const resp = await apiFetch('/api/backtest/list');
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const runs = await resp.json();
-    if (!runs.length) { tbody.innerHTML = '<tr><td colspan="7" class="table-empty">No backtests yet</td></tr>'; return; }
-
-    tbody.innerHTML = runs.map(r => {
-      const created = new Date(r.created_at).toLocaleString();
-      const startD = new Date(r.start_ts_ms).toLocaleDateString();
-      const endD = new Date(r.end_ts_ms).toLocaleDateString();
-      const strats = r.combos ? r.combos.map(c => c.name).join(', ') : (r.strategies ? r.strategies.join(', ') : '-');
-      const pnlClass = r.pnl_pct != null ? (r.pnl_pct >= 0 ? 'pnl-positive' : 'pnl-negative') : '';
-      const pnlText = r.pnl_pct != null ? r.pnl_pct.toFixed(2) + '%' : '-';
-      let statusBadge = '';
-      if (r.status === 'COMPLETED') statusBadge = '<span class="status-badge badge-success">Completed</span>';
-      else if (r.status === 'RUNNING') statusBadge = '<span class="status-badge badge-warning">Running</span>';
-      else if (r.status === 'PENDING') statusBadge = '<span class="status-badge badge-neutral">Pending</span>';
-      else statusBadge = '<span class="status-badge badge-danger">Failed</span>';
-      let actions = '';
-      if (r.status === 'COMPLETED') actions = `<a href="/admin/backtest/${r.id}" class="btn btn-outline btn-sm">View Report</a>`;
-      if (r.status !== 'RUNNING' && r.status !== 'PENDING') actions += ` <button class="btn btn-danger btn-sm" onclick="deleteBacktest('${r.id}')">Delete</button>`;
-      return `<tr>
-        <td>${escapeHtml(created)}</td><td>${escapeHtml(r.symbol)}</td><td>${escapeHtml(strats)}</td>
-        <td>${escapeHtml(startD)} ~ ${escapeHtml(endD)}</td><td class="${pnlClass}">${pnlText}</td>
-        <td>${statusBadge}</td><td>${actions}</td>
-      </tr>`;
-    }).join('');
-
-    const hasActive = runs.some(r => r.status === 'RUNNING' || r.status === 'PENDING');
-    if (hasActive && !_backtestPollTimer) {
-      const activeRun = runs.find(r => r.status === 'RUNNING' || r.status === 'PENDING');
-      if (activeRun) _startBacktestPolling(activeRun.id);
-    }
-  } catch (e) {
-    tbody.innerHTML = '<tr><td colspan="7" class="table-empty error-text">Failed to load history</td></tr>';
-  }
-}
-
-async function deleteBacktest(runId) {
-  if (!confirm('Delete this backtest?')) return;
-  try {
-    const resp = await apiFetch('/api/backtest/' + runId, {
-      method: 'DELETE',
-      headers: { 'X-CSRFToken': getCsrfToken() },
-    });
-    if (resp.ok) { showToast('Backtest deleted', 'success'); loadBacktestHistory(); }
-    else { const err = await resp.json().catch(() => ({})); showToast('Error: ' + (err.detail || 'Delete failed'), 'error'); }
-  } catch (e) { showToast('Network error: ' + e.message, 'error'); }
 }
 
 /* ============================================================
@@ -1416,13 +1240,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (path === '/accounts') {
     loadAccounts();
-  } else if (path.startsWith('/accounts/')) {
-    // account_detail.html의 인라인 스크립트에서 loadAccountDashboard() 호출
-  } else if (path === '/admin') {
-    loadAdminOverview();
-    loadAdminAccounts();
-    loadAdminUsers();
-    loadBtLogics();
-    loadBacktestHistory();
   }
+  // All other pages (account_detail, admin sub-pages) use inline scripts
 });

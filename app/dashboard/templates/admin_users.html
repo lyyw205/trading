@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Users - Crypto Multi-Trader{% endblock %}
+
+{% block content %}
+<div class="hero-banner">
+  <h1 class="page-title">User Management</h1>
+  <p class="hero-subtitle">Create, manage, and control access for all platform users.</p>
+</div>
+
+<!-- Create User Form -->
+<section class="dashboard-section">
+  <div class="section-header">
+    <h2 class="section-title">Create User</h2>
+  </div>
+  <form class="tune-form" onsubmit="return false;">
+    <div class="tune-grid">
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <input type="email" id="new-user-email" class="form-input" placeholder="user@example.com">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Password</label>
+        <input type="password" id="new-user-password" class="form-input" placeholder="min 8 chars" minlength="8">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Role</label>
+        <select id="new-user-role" class="form-input">
+          <option value="user" selected>User</option>
+          <option value="admin">Admin</option>
+        </select>
+      </div>
+    </div>
+    <button type="button" class="btn btn-primary" onclick="createUser()" style="margin-top: 0.75rem;">Create User</button>
+  </form>
+</section>
+
+<!-- Users Table -->
+<section class="dashboard-section">
+  <div class="section-header">
+    <h2 class="section-title">All Users</h2>
+    <button class="btn btn-outline btn-sm" onclick="loadAdminUsers()">Refresh</button>
+  </div>
+  <div class="table-wrapper">
+    <table class="data-table" id="admin-users-table">
+      <thead>
+        <tr>
+          <th>Email</th>
+          <th>Role</th>
+          <th>Status</th>
+          <th>Created</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="admin-users-tbody">
+        <tr><td colspan="5" class="table-empty">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadAdminUsers() {
+  const tbody = document.getElementById('admin-users-tbody');
+  if (!tbody) return;
+  try {
+    const resp = await apiFetch('/api/admin/users');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const users = await resp.json();
+    if (!users.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="table-empty">No users</td></tr>';
+      return;
+    }
+    tbody.innerHTML = users.map(u => {
+      const isActive = u.is_active !== false;
+      const created = u.created_at ? new Date(u.created_at).toLocaleDateString() : '-';
+      const initial = (u.email || 'U')[0].toUpperCase();
+      return `<tr>
+        <td>
+          <div style="display:flex;align-items:center;gap:0.6rem;">
+            <div class="topbar-avatar" style="width:32px;height:32px;font-size:0.7rem;">${initial}</div>
+            <span style="font-weight:500;">${escapeHtml(u.email || '-')}</span>
+          </div>
+        </td>
+        <td>
+          <select class="form-input" style="width:auto;" onchange="changeUserRole('${u.id}', this.value)">
+            <option value="user" ${u.role === 'user' ? 'selected' : ''}>User</option>
+            <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Admin</option>
+          </select>
+        </td>
+        <td><span class="status-badge ${isActive ? 'badge-success' : 'badge-danger'}">${isActive ? 'Active' : 'Inactive'}</span></td>
+        <td>${escapeHtml(created)}</td>
+        <td>
+          <button class="btn btn-outline btn-sm" onclick="resetUserPassword('${u.id}')">Reset PW</button>
+          <button class="btn ${isActive ? 'btn-danger' : 'btn-primary'} btn-sm" onclick="toggleUserActive('${u.id}', ${isActive})">${isActive ? 'Deactivate' : 'Activate'}</button>
+        </td>
+      </tr>`;
+    }).join('');
+  } catch (e) {
+    tbody.innerHTML = '<tr><td colspan="5" class="table-empty error-text">Failed to load users</td></tr>';
+  }
+}
+
+async function createUser() {
+  const email = document.getElementById('new-user-email').value.trim();
+  const password = document.getElementById('new-user-password').value;
+  const role = document.getElementById('new-user-role').value;
+
+  if (!email || !password) { showToast('Email and password required', 'error'); return; }
+  if (password.length < 8) { showToast('Password must be at least 8 characters', 'error'); return; }
+
+  try {
+    const resp = await apiFetch('/api/admin/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+      body: JSON.stringify({ email, password, role }),
+    });
+    if (resp.ok) {
+      showToast('User created', 'success');
+      document.getElementById('new-user-email').value = '';
+      document.getElementById('new-user-password').value = '';
+      loadAdminUsers();
+    } else {
+      const err = await resp.json().catch(() => ({}));
+      showToast('Error: ' + (err.detail || 'Create failed'), 'error');
+    }
+  } catch (e) {
+    showToast('Network error: ' + e.message, 'error');
+  }
+}
+
+async function changeUserRole(userId, role) {
+  if (!confirm('Change this user\'s role to ' + role + '?')) { loadAdminUsers(); return; }
+  try {
+    const resp = await apiFetch('/api/admin/users/' + userId + '/role', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+      body: JSON.stringify({ role }),
+    });
+    if (resp.ok) {
+      showToast('Role updated', 'success');
+    } else {
+      const err = await resp.json().catch(() => ({}));
+      showToast('Error: ' + (err.detail || 'Update failed'), 'error');
+    }
+  } catch (e) {
+    showToast('Network error: ' + e.message, 'error');
+  }
+}
+
+async function resetUserPassword(userId) {
+  const newPassword = prompt('Enter new password (min 8 chars):');
+  if (!newPassword) return;
+  if (newPassword.length < 8) { showToast('Password must be at least 8 characters', 'error'); return; }
+
+  try {
+    const resp = await apiFetch('/api/admin/users/' + userId + '/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+      body: JSON.stringify({ new_password: newPassword }),
+    });
+    if (resp.ok) {
+      showToast('Password reset', 'success');
+    } else {
+      const err = await resp.json().catch(() => ({}));
+      showToast('Error: ' + (err.detail || 'Reset failed'), 'error');
+    }
+  } catch (e) {
+    showToast('Network error: ' + e.message, 'error');
+  }
+}
+
+async function toggleUserActive(userId, currentActive) {
+  const action = currentActive ? 'deactivate' : 'activate';
+  if (!confirm(`Are you sure you want to ${action} this user?`)) return;
+
+  try {
+    const resp = await apiFetch('/api/admin/users/' + userId + '/active', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+      body: JSON.stringify({ is_active: !currentActive }),
+    });
+    if (resp.ok) {
+      showToast('User ' + action + 'd', 'success');
+      loadAdminUsers();
+    } else {
+      const err = await resp.json().catch(() => ({}));
+      showToast('Error: ' + (err.detail || 'Update failed'), 'error');
+    }
+  } catch (e) {
+    showToast('Network error: ' + e.message, 'error');
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadAdminUsers();
+});
+</script>
+{% endblock %}

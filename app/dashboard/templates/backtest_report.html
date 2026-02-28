@@ -207,11 +207,9 @@ function renderPriceChart(report) {
   const container = document.getElementById('bt-price-chart');
   if (!container || !report.candles || !report.candles.length) return;
 
+  const theme = getChartTheme();
   const chart = LightweightCharts.createChart(container, {
-    layout: { background: { color: '#1e293b' }, textColor: '#e2e8f0' },
-    grid: { vertLines: { color: '#334155' }, horzLines: { color: '#334155' } },
-    rightPriceScale: { borderColor: '#334155' },
-    timeScale: { borderColor: '#334155', timeVisible: true, secondsVisible: false },
+    ...theme,
     width: container.clientWidth,
     height: container.clientHeight || 400,
   });
@@ -250,11 +248,9 @@ function renderEquityCurve(report) {
   const container = document.getElementById('bt-equity-chart');
   if (!container || !report.equity_curve || !report.equity_curve.length) return;
 
+  const theme = getChartTheme();
   const chart = LightweightCharts.createChart(container, {
-    layout: { background: { color: '#1e293b' }, textColor: '#e2e8f0' },
-    grid: { vertLines: { color: '#334155' }, horzLines: { color: '#334155' } },
-    rightPriceScale: { borderColor: '#334155' },
-    timeScale: { borderColor: '#334155', timeVisible: true, secondsVisible: false },
+    ...theme,
     width: container.clientWidth,
     height: container.clientHeight || 300,
   });

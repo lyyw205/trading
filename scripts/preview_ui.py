@@ -17,7 +17,11 @@ Pages:
     /login              - Login page (Google OAuth UI)
     /accounts           - Account list
     /accounts/<id>      - Account detail dashboard (chart, lots, tune, etc.)
-    /admin              - Admin panel (system health, users, all accounts)
+    /admin              - Admin overview (KPIs + health)
+    /admin/accounts     - Admin account management
+    /admin/users        - Admin user management
+    /admin/backtest     - Backtest lab
+    /admin/trades       - Cross-account trade history
 """
 from __future__ import annotations
 
@@ -282,18 +286,21 @@ SAMPLE_USERS = [
         "id": "00000000-0000-0000-0000-000000000001",
         "email": "demo@example.com",
         "role": "admin",
+        "is_active": True,
         "created_at": (datetime.now() - timedelta(days=60)).isoformat(),
     },
     {
         "id": "00000000-0000-0000-0000-000000000002",
         "email": "trader2@example.com",
         "role": "user",
+        "is_active": True,
         "created_at": (datetime.now() - timedelta(days=30)).isoformat(),
     },
     {
         "id": "00000000-0000-0000-0000-000000000003",
         "email": "viewer@example.com",
         "role": "user",
+        "is_active": False,
         "created_at": (datetime.now() - timedelta(days=10)).isoformat(),
     },
 ]
@@ -303,6 +310,29 @@ SAMPLE_ADMIN_OVERVIEW = {
     "total_users": 3,
     "total_accounts": 3,
     "active_traders": 2,
+    "account_health": {
+        "aaaaaaaa-1111-2222-3333-444444444444": {
+            "label": "Main BTC Account",
+            "status": "healthy",
+            "open_lots": 5,
+            "circuit_breaker": False,
+            "buy_pause_state": "ACTIVE",
+        },
+        "bbbbbbbb-1111-2222-3333-444444444444": {
+            "label": "ETH Stacking",
+            "status": "healthy",
+            "open_lots": 3,
+            "circuit_breaker": False,
+            "buy_pause_state": "ACTIVE",
+        },
+        "cccccccc-1111-2222-3333-444444444444": {
+            "label": "Aggressive BTC",
+            "status": "circuit_breaker_tripped",
+            "open_lots": 0,
+            "circuit_breaker": True,
+            "buy_pause_state": "PAUSED",
+        },
+    },
 }
 
 # ============================================================
@@ -361,9 +391,36 @@ async def account_detail_page(request: Request, account_id: str):
 
 
 @app.get("/admin", response_class=HTMLResponse)
-async def admin_page(request: Request):
+async def admin_overview_page(request: Request):
     # [SAMPLE_DATA] Inject mock admin user (no role check)
-    return templates.TemplateResponse("admin.html", {
+    return templates.TemplateResponse("admin_overview.html", {
+        "request": request,
+        "user": SAMPLE_USER,
+    })
+
+
+@app.get("/admin/accounts", response_class=HTMLResponse)
+async def admin_accounts_page(request: Request):
+    # [SAMPLE_DATA] Inject mock admin user (no role check)
+    return templates.TemplateResponse("admin_accounts.html", {
+        "request": request,
+        "user": SAMPLE_USER,
+    })
+
+
+@app.get("/admin/users", response_class=HTMLResponse)
+async def admin_users_page(request: Request):
+    # [SAMPLE_DATA] Inject mock admin user (no role check)
+    return templates.TemplateResponse("admin_users.html", {
+        "request": request,
+        "user": SAMPLE_USER,
+    })
+
+
+@app.get("/admin/backtest", response_class=HTMLResponse)
+async def admin_backtest_page(request: Request):
+    # [SAMPLE_DATA] Inject mock admin user (no role check)
+    return templates.TemplateResponse("admin_backtest.html", {
         "request": request,
         "user": SAMPLE_USER,
     })
@@ -376,6 +433,15 @@ async def backtest_report_page(request: Request, backtest_id: str):
         "request": request,
         "user": SAMPLE_USER,
         "backtest_id": backtest_id,
+    })
+
+
+@app.get("/admin/trades", response_class=HTMLResponse)
+async def admin_trades_page(request: Request):
+    # [SAMPLE_DATA] Inject mock admin user (no role check)
+    return templates.TemplateResponse("admin_trades.html", {
+        "request": request,
+        "user": SAMPLE_USER,
     })
 
 
@@ -463,10 +529,79 @@ async def api_logout():
     return {"status": "logged_out"}
 
 
+@app.get("/api/admin/performance")
+async def api_admin_performance():
+    """[SAMPLE_DATA] Mock admin performance KPIs."""
+    return {
+        "total_accounts": 3,
+        "active_accounts": 2,
+        "open_lots_count": 8,
+        "total_invested_usdt": 1200.00,
+        "trade_volume_24h": 4850.32,
+        "trade_count_24h": 17,
+        "circuit_breaker_tripped": 1,
+        "circuit_breaker_total": 3,
+        "buy_pause_active": 2,
+        "buy_pause_paused": 1,
+    }
+
+
+@app.get("/api/admin/trades")
+async def api_admin_trades(limit: int = 100, offset: int = 0, account_id: str = None, side: str = None):
+    """[SAMPLE_DATA] Mock cross-account trade history with pagination."""
+    all_trades = []
+    for i in range(47):
+        acct = random.choice(SAMPLE_ACCOUNTS)
+        s = random.choice(["BUY", "SELL"])
+        price = round(random.uniform(90000, 100000), 2)
+        qty = round(random.uniform(0.0005, 0.003), 6)
+        all_trades.append({
+            "order_id": str(_uuid.uuid4()),
+            "account_id": acct["id"],
+            "symbol": acct["symbol"],
+            "side": s,
+            "price": price,
+            "executed_qty": qty,
+            "cum_quote_qty": round(price * qty, 2),
+            "status": "FILLED",
+            "updated_at": (datetime.now() - timedelta(hours=random.randint(0, 72))).isoformat(),
+        })
+    all_trades.sort(key=lambda t: t["updated_at"], reverse=True)
+
+    if account_id:
+        all_trades = [t for t in all_trades if t["account_id"] == account_id]
+    if side:
+        all_trades = [t for t in all_trades if t["side"] == side.upper()]
+
+    total = len(all_trades)
+    page = all_trades[offset:offset + limit]
+    return {"trades": page, "total": total, "limit": limit, "offset": offset}
+
+
 @app.put("/api/admin/users/{user_id}/role")
 async def api_change_user_role(user_id: str):
     """[SAMPLE_DATA] Mock role change (no-op)."""
     return {"status": "updated"}
+
+
+@app.post("/api/admin/users")
+async def api_create_user(request: Request):
+    """[SAMPLE_DATA] Mock create user (no-op)."""
+    body = await request.json()
+    return {"status": "created", "id": str(_uuid.uuid4()), "email": body.get("email", "")}
+
+
+@app.post("/api/admin/users/{user_id}/reset-password")
+async def api_reset_password(user_id: str):
+    """[SAMPLE_DATA] Mock password reset (no-op)."""
+    return {"status": "password_reset"}
+
+
+@app.put("/api/admin/users/{user_id}/active")
+async def api_set_user_active(user_id: str, request: Request):
+    """[SAMPLE_DATA] Mock user active toggle (no-op)."""
+    body = await request.json()
+    return {"status": "updated", "is_active": body.get("is_active", True)}
 
 
 # ---- [SAMPLE_DATA] Mock Combo / Logic API endpoints ----
@@ -559,8 +694,6 @@ async def api_disable_combo(account_id: str, combo_id: str):
 
 
 # ---- [SAMPLE_DATA] Mock Backtest API endpoints ----
-
-import uuid as _uuid
 
 # [SAMPLE_DATA] In-memory backtest store
 _mock_backtests: list[dict] = []
@@ -745,7 +878,11 @@ if __name__ == "__main__":
     print("  /login                - Login page")
     print("  /accounts             - Account list (3 accounts)")
     print("  /accounts/<id>        - Account detail dashboard")
-    print("  /admin                - Admin panel")
+    print("  /admin                - Admin overview (KPIs)")
+    print("  /admin/accounts       - Account management")
+    print("  /admin/users          - User management")
+    print("  /admin/backtest       - Backtest lab")
+    print("  /admin/trades         - Trade history")
     print()
     print("  To clean up: delete scripts/preview_ui.py")
     print("=" * 54)

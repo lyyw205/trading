@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Accounts - Crypto Multi-Trader{% endblock %}
+
+{% block content %}
+<div class="hero-banner">
+  <h1 class="page-title">Account Management</h1>
+  <p class="hero-subtitle">View and manage all trading accounts, circuit breakers, and buy pause states.</p>
+</div>
+
+<section class="dashboard-section">
+  <div class="section-header">
+    <h2 class="section-title">All Accounts</h2>
+    <button class="btn btn-outline btn-sm" onclick="loadAdminAccounts()">Refresh</button>
+  </div>
+  <div class="table-wrapper">
+    <table class="data-table" id="admin-accounts-table">
+      <thead>
+        <tr>
+          <th>Label</th>
+          <th>Symbol</th>
+          <th>Owner</th>
+          <th>Active</th>
+          <th>Health</th>
+          <th>Circuit Breaker</th>
+          <th>Buy Pause</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="admin-accounts-tbody">
+        <tr><td colspan="8" class="table-empty">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadAdminAccounts() {
+  const tbody = document.getElementById('admin-accounts-tbody');
+  if (!tbody) return;
+  try {
+    const resp = await apiFetch('/api/admin/accounts');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const accounts = await resp.json();
+    if (!accounts.length) {
+      tbody.innerHTML = '<tr><td colspan="8" class="table-empty">No accounts</td></tr>';
+      return;
+    }
+    tbody.innerHTML = accounts.map(acct => {
+      const cbTripped = acct.circuit_breaker_tripped;
+      const bpState = (acct.health && acct.health.buy_pause_state) || 'ACTIVE';
+      const bpClass = bpState === 'ACTIVE' ? 'badge-success' : (bpState === 'PAUSED' ? 'badge-danger' : 'badge-warning');
+      const initial = (acct.label || acct.id || 'A')[0].toUpperCase();
+      return `<tr>
+        <td>
+          <div style="display:flex;align-items:center;gap:0.6rem;">
+            <div class="topbar-avatar" style="width:32px;height:32px;font-size:0.7rem;">${initial}</div>
+            <a href="/accounts/${acct.id}" style="font-weight:600;color:var(--text);">${escapeHtml(acct.label || acct.id)}</a>
+          </div>
+        </td>
+        <td><span style="font-family:var(--font-mono);font-weight:500;">${escapeHtml(acct.symbol || '')}</span></td>
+        <td>${escapeHtml(acct.owner_email || acct.user_id || '-')}</td>
+        <td><span class="status-badge ${acct.is_active ? 'badge-success' : 'badge-neutral'}">${acct.is_active ? 'Active' : 'Inactive'}</span></td>
+        <td>${escapeHtml(acct.health_status || '-')}</td>
+        <td><span class="status-badge ${cbTripped ? 'badge-danger' : 'badge-success'}">${cbTripped ? 'Tripped' : 'OK'}</span></td>
+        <td><span class="status-badge ${bpClass}">${escapeHtml(bpState)}</span></td>
+        <td>
+          ${cbTripped ? `<button class="btn btn-danger btn-sm" onclick="resetCircuitBreaker('${acct.id}')">Reset CB</button>` : ''}
+          ${bpState !== 'ACTIVE' ? `<button class="btn btn-primary btn-sm" onclick="toggleBuyPause('${acct.id}')">Resume Buy</button>` : ''}
+        </td>
+      </tr>`;
+    }).join('');
+  } catch (e) {
+    tbody.innerHTML = '<tr><td colspan="8" class="table-empty error-text">Failed to load accounts</td></tr>';
+  }
+}
+
+async function toggleBuyPause(accountId) {
+  if (!confirm('Resume buy for this account?')) return;
+  try {
+    const resp = await apiFetch('/api/accounts/' + accountId + '/buy-pause/resume', {
+      method: 'POST',
+      headers: { 'X-CSRFToken': getCsrfToken() },
+    });
+    if (resp.ok) { showToast('Buy resumed', 'success'); loadAdminAccounts(); }
+    else { const err = await resp.json().catch(() => ({})); showToast('Error: ' + (err.detail || 'Failed'), 'error'); }
+  } catch (e) { showToast('Network error: ' + e.message, 'error'); }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadAdminAccounts();
+});
+</script>
+{% endblock %}
