@@ -1,17 +1,17 @@
 from __future__ import annotations
 
-import time
 import logging
+import time
 from typing import TYPE_CHECKING
 
-from app.strategies.base import BaseSellLogic, StrategyContext, RepositoryBundle
+from app.strategies.base import BaseSellLogic, RepositoryBundle, StrategyContext
 from app.strategies.registry import SellLogicRegistry
 from app.strategies.utils import extract_fee_usdt
 
 if TYPE_CHECKING:
-    from app.strategies.state_store import StrategyStateStore
     from app.exchange.base_client import ExchangeClient
     from app.services.account_state_manager import AccountStateManager
+    from app.strategies.state_store import StrategyStateStore
 
 logger = logging.getLogger(__name__)
 
@@ -55,9 +55,9 @@ class FixedTpSell(BaseSellLogic):
     async def tick(
         self,
         ctx: StrategyContext,
-        state: "StrategyStateStore",
-        exchange: "ExchangeClient",
-        account_state: "AccountStateManager",
+        state: StrategyStateStore,
+        exchange: ExchangeClient,
+        account_state: AccountStateManager,
         repos: RepositoryBundle,
         open_lots: list,
     ) -> None:
@@ -100,9 +100,9 @@ class FixedTpSell(BaseSellLogic):
     async def _check_existing_sell_order(
         self,
         ctx: StrategyContext,
-        state: "StrategyStateStore",
-        exchange: "ExchangeClient",
-        account_state: "AccountStateManager",
+        state: StrategyStateStore,
+        exchange: ExchangeClient,
+        account_state: AccountStateManager,
         repos: RepositoryBundle,
         lot,
         target_price: float,
@@ -177,8 +177,8 @@ class FixedTpSell(BaseSellLogic):
     async def _place_new_sell_order(
         self,
         ctx: StrategyContext,
-        state: "StrategyStateStore",
-        exchange: "ExchangeClient",
+        state: StrategyStateStore,
+        exchange: ExchangeClient,
         repos: RepositoryBundle,
         lot,
         target_price: float,

@@ -5,20 +5,20 @@ import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy import select, delete, desc
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_trading_session
 from app.dependencies import require_admin
 from app.models.backtest_run import BacktestRun
 from app.schemas.backtest import (
+    BacktestConfigOut,
+    BacktestListItem,
+    BacktestReportResponse,
     BacktestRunRequest,
     BacktestRunResponse,
     BacktestStatusResponse,
-    BacktestReportResponse,
-    BacktestConfigOut,
     BacktestSummaryOut,
-    BacktestListItem,
 )
 
 logger = logging.getLogger(__name__)
@@ -101,7 +101,7 @@ async def get_backtest_report(
         )
 
     # Load candles for the chart
-    from app.models.price_candle import PriceCandle5m, PriceCandle1m
+    from app.models.price_candle import PriceCandle1m, PriceCandle5m
 
     # Try 1m candles first (higher resolution)
     stmt_1m = (

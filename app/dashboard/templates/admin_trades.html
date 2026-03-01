@@ -79,10 +79,10 @@ async function loadAccountOptions() {
     const accounts = await resp.json();
     const sel = document.getElementById('trade-filter-account');
     accounts.forEach(a => {
-      _accountsMap[a.id] = a.label || a.id;
+      _accountsMap[a.id] = a.name || a.id;
       const opt = document.createElement('option');
       opt.value = a.id;
-      opt.textContent = a.label || a.id;
+      opt.textContent = a.name || a.id;
       sel.appendChild(opt);
     });
   } catch (e) {}

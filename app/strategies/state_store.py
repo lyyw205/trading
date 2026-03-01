@@ -1,9 +1,11 @@
 from __future__ import annotations
-from typing import Optional
+
 from uuid import UUID
-from sqlalchemy import select, delete
+
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.models.strategy_state import StrategyState
 
 
@@ -18,7 +20,7 @@ class StrategyStateStore:
         self.scope = scope
         self._session = session
 
-    async def get(self, key: str, default: Optional[str] = None) -> Optional[str]:
+    async def get(self, key: str, default: str | None = None) -> str | None:
         """strategy_state에서 (account_id, scope, key)로 값 조회"""
         stmt = select(StrategyState.value).where(
             StrategyState.account_id == self.account_id,

@@ -15,7 +15,7 @@ from uuid import UUID
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.account import TradingAccount, BuyPauseState
+from app.models.account import BuyPauseState, TradingAccount
 
 logger = logging.getLogger(__name__)
 

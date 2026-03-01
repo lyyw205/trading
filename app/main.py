@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import asyncio
 import logging
 from concurrent.futures import ThreadPoolExecutor
@@ -7,35 +8,61 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from slowapi.errors import RateLimitExceeded
+from starlette.responses import JSONResponse
 from starlette_csrf import CSRFMiddleware
 
-from starlette.responses import JSONResponse
-
-from app.config import GlobalConfig
-from app.utils.logging import setup_logging
-from app.dependencies import limiter
-from slowapi.errors import RateLimitExceeded
-from app.services.trading_engine import TradingEngine
-from app.services.rate_limiter import GlobalRateLimiter
-from app.services.auth_service import AuthService
-from app.services.session_manager import SessionManager
-from app.utils.encryption import EncryptionManager
-from app.middleware.csrf_middleware import CSRF_EXEMPT_PATHS
-from app.db.session import TradingSessionLocal
-from app.api.health import router as health_router
-from app.api.auth import router as auth_router
 from app.api.accounts import router as accounts_router
-from app.api.dashboard import router as dashboard_router
-from app.api.combos import router as combos_router
 from app.api.admin import router as admin_router
+from app.api.auth import router as auth_router
 from app.api.backtest import router as backtest_router
+from app.api.combos import router as combos_router
+from app.api.dashboard import router as dashboard_router
+from app.api.admin_db import router as admin_db_router
+from app.api.debug import router as debug_router
+from app.api.health import router as health_router
+from app.api.metrics import router as metrics_router
+from app.config import GlobalConfig
 from app.dashboard.routes import router as pages_router
+from app.db.session import TradingSessionLocal
+from app.dependencies import limiter
+from app.middleware.csrf_middleware import CSRF_EXEMPT_PATHS
+from app.middleware.request_id import RequestIdMiddleware
+from app.services.auth_service import AuthService
+from app.services.rate_limiter import GlobalRateLimiter
+from app.services.session_manager import SessionManager
+from app.services.trading_engine import TradingEngine
+from app.utils.encryption import EncryptionManager
+from app.utils.logging import setup_logging
 
 settings = GlobalConfig()
 
 
+def _filter_sensitive_data(event, hint):
+    """Strip sensitive data from Sentry events."""
+    if "request" in event:
+        headers = event["request"].get("headers", {})
+        for key in list(headers.keys()):
+            if key.lower() in ("cookie", "authorization", "x-api-key", "x-csrf-token"):
+                headers[key] = "[FILTERED]"
+    return event
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Initialize Sentry before anything else
+    if settings.sentry_dsn:
+        import sentry_sdk
+        sentry_sdk.init(
+            dsn=settings.sentry_dsn,
+            environment=settings.environment,
+            traces_sample_rate=0.2,
+            profiles_sample_rate=0.1,
+            send_default_pii=False,
+            with_locals=False,  # CRITICAL: prevent API key leakage in stack frames
+            before_send=_filter_sensitive_data,
+        )
+
     # Setup logging
     setup_logging(settings.log_level)
     logger = logging.getLogger(__name__)
@@ -88,6 +115,7 @@ async def lifespan(app: FastAPI):
     # Clean up orphan RUNNING backtests from previous crashes
     try:
         from sqlalchemy import update
+
         from app.models.backtest_run import BacktestRun
 
         async with TradingSessionLocal() as bt_session:
@@ -136,6 +164,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
 
 # Mount static files
 import os
+
 static_dir = os.path.join(os.path.dirname(__file__), "dashboard", "static")
 os.makedirs(static_dir, exist_ok=True)
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
@@ -234,6 +263,7 @@ class LazyAuthMiddleware:
 
 
 app.add_middleware(LazyAuthMiddleware)
+app.add_middleware(RequestIdMiddleware)
 
 # Include API routers
 app.include_router(health_router)
@@ -243,6 +273,9 @@ app.include_router(combos_router)
 app.include_router(dashboard_router)
 app.include_router(admin_router)
 app.include_router(backtest_router)
+app.include_router(debug_router)
+app.include_router(metrics_router)
+app.include_router(admin_db_router)
 
 # Include SSR page routes (must be after API routers)
 app.include_router(pages_router)

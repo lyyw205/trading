@@ -9,10 +9,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Optional
 
 from app.db.session import TradingSessionLocal
-from app.services.candle_store import store_closed_candle_1m, store_candles_batch_1m
+from app.services.candle_store import store_candles_batch_1m, store_closed_candle_1m
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +29,7 @@ class KlineWsManager:
         self._latest_prices: dict[str, float] = {}
         self._async_client = None  # binance.AsyncClient
         self._bsm = None  # BinanceSocketManager
-        self._ws_task: Optional[asyncio.Task] = None
+        self._ws_task: asyncio.Task | None = None
         self._running = False
         self._lock = asyncio.Lock()
 
@@ -87,7 +86,7 @@ class KlineWsManager:
                 self._subscriptions[symbol_lower] = count - 1
                 logger.debug("KlineWsManager: %s refcount -> %d", symbol, count - 1)
 
-    def get_latest_price(self, symbol: str) -> Optional[float]:
+    def get_latest_price(self, symbol: str) -> float | None:
         """Return the latest price from WebSocket stream, or None if unavailable."""
         return self._latest_prices.get(symbol.lower()) or self._latest_prices.get(symbol.upper())
 

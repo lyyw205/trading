@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import bcrypt
@@ -43,7 +43,7 @@ class AuthService:
                 return None
 
             # Check account lock
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             if user.locked_until and user.locked_until > now:
                 return None
 
@@ -114,7 +114,7 @@ class AuthService:
                 email=email,
                 password_hash=hashed.decode("utf-8"),
                 role=role,
-                password_changed_at=datetime.now(timezone.utc),
+                password_changed_at=datetime.now(UTC),
             )
             session.add(new_user)
             await session.commit()
@@ -143,7 +143,7 @@ class AuthService:
                 return False
 
             user.password_hash = hashed.decode("utf-8")
-            user.password_changed_at = datetime.now(timezone.utc)
+            user.password_changed_at = datetime.now(UTC)
             user.failed_login_count = 0
             user.locked_until = None
             await session.commit()

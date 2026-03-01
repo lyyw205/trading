@@ -1,13 +1,16 @@
 from __future__ import annotations
+
 from uuid import UUID
-from fastapi import APIRouter, Request, HTTPException, Depends
+
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.db.session import get_trading_session
-from app.schemas.account import AccountCreate, AccountUpdate, AccountResponse, AccountListResponse
-from app.services.account_service import AccountService
+
 from app.db.account_repo import AccountRepository
-from app.utils.encryption import EncryptionManager
+from app.db.session import get_trading_session
 from app.dependencies import get_current_user, get_owned_account, limiter
+from app.schemas.account import AccountCreate, AccountListResponse, AccountResponse, AccountUpdate
+from app.services.account_service import AccountService
+from app.utils.encryption import EncryptionManager
 from app.utils.logging import audit_log
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
@@ -20,10 +23,22 @@ async def list_accounts(request: Request, user: dict = Depends(get_current_user)
     svc = AccountService(session, encryption)
     if user.get("role") == "admin":
         repo = AccountRepository(session)
-        accounts = await repo.get_active_accounts()
+        accounts = await repo.get_all_accounts_with_owner()
+        responses = []
+        for a in accounts:
+            resp = AccountResponse.model_validate(a)
+            resp.circuit_breaker_tripped = a.circuit_breaker_disabled_at is not None
+            resp.owner_email = a.owner.email if a.owner else None
+            responses.append(resp)
+        return AccountListResponse(accounts=responses)
     else:
         accounts = await svc.get_accounts_by_owner(UUID(user["id"]))
-    return AccountListResponse(accounts=[AccountResponse.model_validate(a) for a in accounts])
+        responses = []
+        for a in accounts:
+            resp = AccountResponse.model_validate(a)
+            resp.circuit_breaker_tripped = a.circuit_breaker_disabled_at is not None
+            responses.append(resp)
+        return AccountListResponse(accounts=responses)
 
 
 @router.post("", response_model=AccountResponse, status_code=201)
@@ -31,8 +46,18 @@ async def list_accounts(request: Request, user: dict = Depends(get_current_user)
 async def create_account(body: AccountCreate, request: Request, user: dict = Depends(get_current_user), session: AsyncSession = Depends(get_trading_session)):
     encryption: EncryptionManager = request.app.state.encryption
     svc = AccountService(session, encryption)
+    # Admin can assign account to another user
+    if user.get("role") == "admin" and body.owner_id:
+        from app.models.user import UserProfile
+        target_user = await session.get(UserProfile, body.owner_id)
+        if not target_user:
+            raise HTTPException(status_code=404, detail="Target user not found")
+        effective_owner_id = body.owner_id
+    else:
+        effective_owner_id = UUID(user["id"])
+
     account = await svc.create_account(
-        owner_id=UUID(user["id"]), name=body.name,
+        owner_id=effective_owner_id, name=body.name,
         api_key=body.api_key, api_secret=body.api_secret,
         symbol=body.symbol, base_asset=body.base_asset, quote_asset=body.quote_asset,
         loop_interval_sec=body.loop_interval_sec, order_cooldown_sec=body.order_cooldown_sec,
@@ -46,7 +71,9 @@ async def create_account(body: AccountCreate, request: Request, user: dict = Dep
 @router.get("/{account_id}", response_model=AccountResponse)
 @limiter.limit("120/minute")
 async def get_account(request: Request, account=Depends(get_owned_account)):
-    return AccountResponse.model_validate(account)
+    resp = AccountResponse.model_validate(account)
+    resp.circuit_breaker_tripped = account.circuit_breaker_disabled_at is not None
+    return resp
 
 
 @router.put("/{account_id}", response_model=AccountResponse)

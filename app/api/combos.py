@@ -1,18 +1,25 @@
 from __future__ import annotations
+
 from uuid import UUID
-from fastapi import APIRouter, Request, HTTPException, Depends
+
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.db.session import get_trading_session
-from app.models.trading_combo import TradingCombo
+from app.dependencies import get_current_user, get_owned_account, limiter
 from app.models.lot import Lot
-from app.strategies.registry import BuyLogicRegistry, SellLogicRegistry
+from app.models.trading_combo import TradingCombo
 from app.schemas.strategy import (
-    BuyLogicInfo, SellLogicInfo, ComboCreate, ComboUpdate, ComboResponse,
+    BuyLogicInfo,
+    ComboCreate,
+    ComboResponse,
+    ComboUpdate,
+    SellLogicInfo,
 )
-from app.dependencies import get_owned_account, get_current_user, limiter
-from app.utils.logging import audit_log
 from app.services.combo_reapply import reapply_combo_orders
+from app.strategies.registry import BuyLogicRegistry, SellLogicRegistry
+from app.utils.logging import audit_log
 
 router = APIRouter(prefix="/api", tags=["combos"])
 

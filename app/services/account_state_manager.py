@@ -1,9 +1,12 @@
 from __future__ import annotations
+
 from uuid import UUID
-from sqlalchemy import update, select
+
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.strategies.state_store import StrategyStateStore
+
 from app.models.account import TradingAccount
+from app.strategies.state_store import StrategyStateStore
 
 
 class AccountStateManager:

@@ -1,6 +1,7 @@
-from typing import Any, Generic, TypeVar, Type
-from sqlalchemy import select, delete
+from typing import Any, Generic, TypeVar
+
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.models.base import Base
 
 ModelT = TypeVar("ModelT", bound=Base)
@@ -9,7 +10,7 @@ ModelT = TypeVar("ModelT", bound=Base)
 class BaseRepository(Generic[ModelT]):
     """공통 CRUD 베이스 리포지토리."""
 
-    def __init__(self, model: Type[ModelT], session: AsyncSession):
+    def __init__(self, model: type[ModelT], session: AsyncSession):
         self._model = model
         self._session = session
 

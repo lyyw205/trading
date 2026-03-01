@@ -1,7 +1,9 @@
 from __future__ import annotations
-from fastapi import APIRouter, Request, HTTPException
-from app.schemas.auth import LoginRequest, LoginResponse, UserResponse
+
+from fastapi import APIRouter, HTTPException, Request
+
 from app.dependencies import limiter
+from app.schemas.auth import LoginRequest, LoginResponse, UserResponse
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 

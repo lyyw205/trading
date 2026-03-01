@@ -127,50 +127,10 @@ async function handleLogin() {
    ============================================================ */
 
 async function loadAccounts() {
-  const grid = document.getElementById('accounts-grid');
-  if (!grid) return;
-  try {
-    const resp = await apiFetch('/api/accounts');
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const accounts = await resp.json();
-    if (!accounts.length) {
-      grid.innerHTML = '<p class="loading-spinner">No accounts found. Add your first account.</p>';
-      return;
-    }
-    grid.innerHTML = accounts.map(acct => {
-      const isActive = acct.is_active;
-      const badgeClass = isActive ? 'badge-success' : 'badge-danger';
-      const badgeText = isActive ? 'Active' : 'Inactive';
-      const cbTripped = acct.circuit_breaker_tripped;
-      const buyPauseBadge = acct.buy_pause_state === 'PAUSED'
-        ? '<span class="status-badge badge-buy-paused">Buy Paused</span>'
-        : acct.buy_pause_state === 'THROTTLED'
-        ? '<span class="status-badge badge-buy-throttled">Buy Throttled</span>'
-        : '';
-      const symbolUpper = (acct.symbol || '').toUpperCase();
-      const isBTC = symbolUpper.includes('BTC');
-      const symbolIcon = isBTC
-        ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.5 8H14a2 2 0 0 1 0 4h-4.5m0-4v8m0-4H14a2 2 0 0 1 0 4H9.5m2-10v2m0 8v2"/></svg>'
-        : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>';
-      return `
-        <div class="account-card" onclick="window.location.href='/accounts/${acct.id}'">
-          <div class="account-card-top">
-            <div class="account-card-icon">${symbolIcon}</div>
-            <div>
-              <div class="account-card-label">${escapeHtml(acct.label || acct.id)}</div>
-              <div class="account-card-symbol">${escapeHtml(acct.symbol || '')}</div>
-            </div>
-          </div>
-          <div class="account-card-footer">
-            <span class="status-badge ${badgeClass}">${badgeText}</span>
-            ${cbTripped ? '<span class="status-badge badge-danger">CB Tripped</span>' : ''}
-            ${buyPauseBadge}
-          </div>
-        </div>
-      `;
-    }).join('');
-  } catch (e) {
-    if (grid) grid.innerHTML = '<p class="error-text">Failed to load accounts: ' + escapeHtml(e.message) + '</p>';
+  // Accounts page now handles its own rendering via inline scripts.
+  // This stub exists for backward compatibility with DOMContentLoaded call.
+  if (typeof loadAccountsPage === 'function') {
+    await loadAccountsPage();
   }
 }
 

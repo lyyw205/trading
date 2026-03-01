@@ -1,19 +1,19 @@
 from __future__ import annotations
 
-import time
 import logging
+import time
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from app.strategies.base import BaseBuyLogic, StrategyContext, RepositoryBundle
+from app.strategies.base import BaseBuyLogic, RepositoryBundle, StrategyContext
 from app.strategies.registry import BuyLogicRegistry
 from app.strategies.sizing import resolve_buy_usdt
 from app.strategies.utils import extract_base_commission_qty
 
 if TYPE_CHECKING:
-    from app.strategies.state_store import StrategyStateStore
     from app.exchange.base_client import ExchangeClient
     from app.services.account_state_manager import AccountStateManager
+    from app.strategies.state_store import StrategyStateStore
 
 logger = logging.getLogger(__name__)
 
@@ -104,9 +104,9 @@ class TrendBuy(BaseBuyLogic):
     async def tick(
         self,
         ctx: StrategyContext,
-        state: "StrategyStateStore",
-        exchange: "ExchangeClient",
-        account_state: "AccountStateManager",
+        state: StrategyStateStore,
+        exchange: ExchangeClient,
+        account_state: AccountStateManager,
         repos: RepositoryBundle,
         combo_id: UUID,
     ) -> None:
@@ -125,9 +125,9 @@ class TrendBuy(BaseBuyLogic):
     async def _process_pending_trend_buy(
         self,
         ctx: StrategyContext,
-        state: "StrategyStateStore",
-        exchange: "ExchangeClient",
-        account_state: "AccountStateManager",
+        state: StrategyStateStore,
+        exchange: ExchangeClient,
+        account_state: AccountStateManager,
         repos: RepositoryBundle,
         combo_id: UUID,
     ) -> bool:
@@ -183,9 +183,9 @@ class TrendBuy(BaseBuyLogic):
     async def _handle_filled_trend_buy(
         self,
         ctx: StrategyContext,
-        state: "StrategyStateStore",
+        state: StrategyStateStore,
         order_data: dict,
-        account_state: "AccountStateManager",
+        account_state: AccountStateManager,
         repos: RepositoryBundle,
         combo_id: UUID,
         *,
@@ -233,9 +233,9 @@ class TrendBuy(BaseBuyLogic):
     async def _maybe_buy_on_trend(
         self,
         ctx: StrategyContext,
-        state: "StrategyStateStore",
-        exchange: "ExchangeClient",
-        account_state: "AccountStateManager",
+        state: StrategyStateStore,
+        exchange: ExchangeClient,
+        account_state: AccountStateManager,
         repos: RepositoryBundle,
         combo_id: UUID,
     ) -> None:

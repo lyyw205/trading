@@ -6,8 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.order import Order
 from app.models.fill import Fill
+from app.models.order import Order
 
 
 class OrderRepository:

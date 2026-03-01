@@ -5,16 +5,16 @@ Combo Reapply Service
 from __future__ import annotations
 
 import logging
-from uuid import UUID
 from typing import TYPE_CHECKING
 
-from app.exchange.binance_client import BinanceClient
 from app.db.lot_repo import LotRepository
 from app.db.order_repo import OrderRepository
+from app.exchange.binance_client import BinanceClient
 from app.strategies.state_store import StrategyStateStore
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
+
     from app.models.account import TradingAccount
     from app.models.trading_combo import TradingCombo
     from app.utils.encryption import EncryptionManager
@@ -31,10 +31,10 @@ _PENDING_KEYS = (
 
 
 async def reapply_combo_orders(
-    account: "TradingAccount",
-    combo: "TradingCombo",
-    session: "AsyncSession",
-    encryption: "EncryptionManager",
+    account: TradingAccount,
+    combo: TradingCombo,
+    session: AsyncSession,
+    encryption: EncryptionManager,
 ) -> dict:
     """
     콤보의 미체결 주문을 취소하여 다음 사이클에서 새 파라미터로 재등록되도록 한다.

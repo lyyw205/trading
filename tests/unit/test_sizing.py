@@ -3,7 +3,6 @@
 import pytest
 
 from app.strategies.sizing import (
-    SizingMode,
     calc_scaled_plan_amount,
     resolve_buy_usdt,
 )

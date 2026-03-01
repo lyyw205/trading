@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+
+{% block title %}Earnings - Crypto Multi-Trader{% endblock %}
+
+{% block content %}
+<div class="hero-banner">
+  <h1 class="page-title">Earnings & Reserves</h1>
+  <p class="hero-subtitle">Reserve pool history and pending earnings across all accounts.</p>
+</div>
+
+<!-- Pending Earnings KPI -->
+<div class="kpi-grid" id="earnings-kpi" style="margin-bottom:1rem;">
+  <div class="loading-spinner">Loading...</div>
+</div>
+
+<section class="dashboard-section">
+  <div class="section-header">
+    <h2 class="section-title">Reserve History</h2>
+    <button class="btn btn-outline btn-sm" onclick="loadEarnings()">Refresh</button>
+  </div>
+
+  <div class="tune-grid" style="margin-bottom:1rem;">
+    <div class="form-group">
+      <label class="form-label">Account</label>
+      <select id="filter-account" class="form-input" onchange="resetAndLoad()">
+        <option value="">All Accounts</option>
+      </select>
+    </div>
+    <div class="form-group"></div>
+  </div>
+
+  <div class="table-wrapper">
+    <table class="data-table" id="earnings-table">
+      <thead>
+        <tr>
+          <th>Account</th>
+          <th>Symbol</th>
+          <th>BTC Qty</th>
+          <th>Cost (USDT)</th>
+          <th>Source</th>
+          <th>Date</th>
+        </tr>
+      </thead>
+      <tbody id="earnings-tbody">
+        <tr><td colspan="6" class="table-empty">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="pagination" id="earnings-pagination" style="display:none;">
+    <button class="btn btn-outline btn-sm" id="earnings-prev" onclick="changePage(-1)">Prev</button>
+    <span id="earnings-page-info" class="text-muted" style="font-size:0.85rem;"></span>
+    <button class="btn btn-outline btn-sm" id="earnings-next" onclick="changePage(1)">Next</button>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let _earningsPage = 0;
+const _earningsLimit = 100;
+
+function resetAndLoad() { _earningsPage = 0; loadEarnings(); }
+
+async function loadAccountOptions() {
+  try {
+    const resp = await apiFetch('/api/admin/accounts');
+    if (!resp.ok) return;
+    const accounts = await resp.json();
+    const sel = document.getElementById('filter-account');
+    accounts.forEach(a => {
+      const opt = document.createElement('option');
+      opt.value = a.id;
+      opt.textContent = a.name || a.id;
+      sel.appendChild(opt);
+    });
+  } catch (e) {}
+}
+
+async function loadEarnings() {
+  const tbody = document.getElementById('earnings-tbody');
+  if (!tbody) return;
+
+  const accountId = document.getElementById('filter-account').value;
+  const offset = _earningsPage * _earningsLimit;
+
+  let url = `/api/admin/earnings?limit=${_earningsLimit}&offset=${offset}`;
+  if (accountId) url += `&account_id=${accountId}`;
+
+  try {
+    const resp = await apiFetch(url);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+
+    // KPI cards
+    const kpiEl = document.getElementById('earnings-kpi');
+    if (kpiEl) {
+      const pending = data.pending_accounts || [];
+      kpiEl.innerHTML = `
+        <div class="kpi-card">
+          <div class="kpi-card-header"><span class="kpi-label">Total Pending</span></div>
+          <div class="kpi-value">$${fmt(data.total_pending_usdt, 2)}</div>
+          <div class="kpi-detail">${pending.length} account${pending.length !== 1 ? 's' : ''} with pending earnings</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-card-header"><span class="kpi-label">Reserve Records</span></div>
+          <div class="kpi-value">${data.total}</div>
+          <div class="kpi-detail">Total reserve history entries</div>
+        </div>
+      `;
+    }
+
+    // Table
+    const history = data.history || [];
+    const total = data.total || 0;
+
+    if (!history.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="table-empty">No reserve history found</td></tr>';
+      document.getElementById('earnings-pagination').style.display = 'none';
+      return;
+    }
+
+    tbody.innerHTML = history.map(h => {
+      const sourceBadge = h.source === 'MANUAL_APPROVE'
+        ? '<span class="status-badge badge-success">Manual</span>'
+        : `<span class="status-badge badge-info">${escapeHtml(h.source)}</span>`;
+      return `<tr>
+        <td><a href="/accounts/${h.account_id}">${escapeHtml(h.account_name)}</a></td>
+        <td>${escapeHtml(h.symbol)}</td>
+        <td>${fmt(h.btc_qty, 8)}</td>
+        <td>$${fmt(h.cost_usdt, 2)}</td>
+        <td>${sourceBadge}</td>
+        <td style="font-size:0.8rem;color:var(--text-muted);">${new Date(h.created_at).toLocaleString()}</td>
+      </tr>`;
+    }).join('');
+
+    // Pagination
+    const totalPages = Math.ceil(total / _earningsLimit);
+    const pag = document.getElementById('earnings-pagination');
+    pag.style.display = totalPages > 1 ? 'flex' : 'none';
+    document.getElementById('earnings-page-info').textContent = `Page ${_earningsPage + 1} of ${totalPages} (${total} total)`;
+    document.getElementById('earnings-prev').disabled = _earningsPage === 0;
+    document.getElementById('earnings-next').disabled = _earningsPage >= totalPages - 1;
+  } catch (e) {
+    tbody.innerHTML = '<tr><td colspan="6" class="table-empty error-text">Failed to load earnings</td></tr>';
+  }
+}
+
+function changePage(delta) {
+  _earningsPage += delta;
+  if (_earningsPage < 0) _earningsPage = 0;
+  loadEarnings();
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadAccountOptions();
+  loadEarnings();
+});
+</script>
+
+<style>
+.badge-info { background: var(--info-light, rgba(49,130,246,0.12)); color: var(--info, #3182f6); }
+.pagination { display: flex; gap: 0.75rem; align-items: center; justify-content: center; margin-top: 1rem; }
+</style>
+{% endblock %}

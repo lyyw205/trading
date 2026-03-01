@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from uuid import UUID
 from datetime import datetime
+from uuid import UUID
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -64,6 +64,19 @@ class AccountRepository:
             )
         )
         await self._session.execute(stmt)
+
+    async def get_all_accounts(self) -> list[TradingAccount]:
+        """Return all accounts regardless of active status."""
+        stmt = select(TradingAccount)
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_all_accounts_with_owner(self) -> list[TradingAccount]:
+        """Return all accounts with owner relationship eagerly loaded."""
+        from sqlalchemy.orm import selectinload
+        stmt = select(TradingAccount).options(selectinload(TradingAccount.owner))
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
 
     async def update_last_success(self, account_id: UUID) -> None:
         """Stamp last_success_at with the current UTC time."""

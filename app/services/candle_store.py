@@ -7,11 +7,12 @@ an existing transaction context OR with a fresh session.
 from __future__ import annotations
 
 import logging
-from sqlalchemy import select, func, delete, text
+
+from sqlalchemy import delete, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.price_candle import PriceCandle1m, PriceCandle5m, PriceCandle1h, PriceCandle1d
+from app.models.price_candle import PriceCandle1d, PriceCandle1h, PriceCandle1m, PriceCandle5m
 
 logger = logging.getLogger(__name__)
 

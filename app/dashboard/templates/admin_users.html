@@ -4,44 +4,34 @@
 
 {% block content %}
 <div class="hero-banner">
-  <h1 class="page-title">User Management</h1>
-  <p class="hero-subtitle">Create, manage, and control access for all platform users.</p>
+  <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;">
+    <div>
+      <h1 class="page-title">User Management</h1>
+      <p class="hero-subtitle">Create, manage, and control access for all platform users.</p>
+    </div>
+    <button class="btn btn-primary" onclick="openCreateUserModal()">+ Create User</button>
+  </div>
 </div>
 
-<!-- Create User Form -->
+<!-- Filter bar -->
 <section class="dashboard-section">
-  <div class="section-header">
-    <h2 class="section-title">Create User</h2>
-  </div>
-  <form class="tune-form" onsubmit="return false;">
-    <div class="tune-grid">
-      <div class="form-group">
-        <label class="form-label">Email</label>
-        <input type="email" id="new-user-email" class="form-input" placeholder="user@example.com">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Password</label>
-        <input type="password" id="new-user-password" class="form-input" placeholder="min 8 chars" minlength="8">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Role</label>
-        <select id="new-user-role" class="form-input">
-          <option value="user" selected>User</option>
-          <option value="admin">Admin</option>
-        </select>
-      </div>
-    </div>
-    <button type="button" class="btn btn-primary" onclick="createUser()" style="margin-top: 0.75rem;">Create User</button>
-  </form>
-</section>
-
-<!-- Users Table -->
-<section class="dashboard-section">
-  <div class="section-header">
+  <div class="section-header" style="margin-bottom:1rem;">
     <h2 class="section-title">All Users</h2>
-    <button class="btn btn-outline btn-sm" onclick="loadAdminUsers()">Refresh</button>
+    <button class="btn btn-outline btn-sm" onclick="loadUsers()">Refresh</button>
   </div>
-  <div class="table-wrapper">
+  <div class="filter-bar" style="margin-bottom:1rem;">
+    <select id="filter-role" class="form-input" style="max-width:160px;" onchange="applyFilter()">
+      <option value="">All Roles</option>
+      <option value="admin">Admin</option>
+      <option value="user">User</option>
+    </select>
+    <select id="filter-status" class="form-input" style="max-width:160px;" onchange="applyFilter()">
+      <option value="">All Statuses</option>
+      <option value="active">Active</option>
+      <option value="inactive">Inactive</option>
+    </select>
+  </div>
+  <div class="card" style="padding:0;overflow:hidden;">
     <table class="data-table" id="admin-users-table">
       <thead>
         <tr>
@@ -49,66 +39,163 @@
           <th>Role</th>
           <th>Status</th>
           <th>Created</th>
-          <th>Actions</th>
+          <th style="text-align:right;">Actions</th>
         </tr>
       </thead>
       <tbody id="admin-users-tbody">
-        <tr><td colspan="5" class="table-empty">Loading...</td></tr>
+        <tr><td colspan="5" class="table-empty" style="text-align:center;padding:2rem;">Loading...</td></tr>
       </tbody>
     </table>
   </div>
 </section>
+
+<!-- Create User Modal -->
+<div class="modal" id="create-user-modal" style="display:none;">
+  <div class="modal-dialog">
+    <div class="modal-header">
+      <h3 class="modal-title">Create User</h3>
+      <button class="modal-close" onclick="closeModal('create-user-modal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <input type="email" id="create-email" class="form-input" placeholder="user@example.com">
+      </div>
+      <div class="form-group" style="margin-top:0.75rem;">
+        <label class="form-label">Password</label>
+        <input type="password" id="create-password" class="form-input" placeholder="min 8 characters" minlength="8">
+      </div>
+      <div class="form-group" style="margin-top:0.75rem;">
+        <label class="form-label">Role</label>
+        <select id="create-role" class="form-input">
+          <option value="user" selected>User</option>
+          <option value="admin">Admin</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-footer" style="display:flex;gap:0.5rem;justify-content:flex-end;">
+      <button class="btn btn-outline" onclick="closeModal('create-user-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="submitCreateUser()">Create User</button>
+    </div>
+  </div>
+</div>
+
+<!-- Reset Password Modal -->
+<div class="modal" id="reset-password-modal" style="display:none;">
+  <div class="modal-dialog">
+    <div class="modal-header">
+      <h3 class="modal-title">Reset Password</h3>
+      <button class="modal-close" onclick="closeModal('reset-password-modal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p style="color:var(--text-muted);margin-bottom:0.75rem;">Set a new password for this user.</p>
+      <div class="form-group">
+        <label class="form-label">New Password</label>
+        <input type="password" id="reset-new-password" class="form-input" placeholder="min 8 characters" minlength="8">
+      </div>
+      <input type="hidden" id="reset-user-id">
+    </div>
+    <div class="modal-footer" style="display:flex;gap:0.5rem;justify-content:flex-end;">
+      <button class="btn btn-outline" onclick="closeModal('reset-password-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="submitResetPassword()">Reset Password</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal backdrop -->
+<div class="modal-backdrop" id="modal-backdrop" style="display:none;" onclick="closeAllModals()"></div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-async function loadAdminUsers() {
+// ——— State ———
+let _allUsers = [];
+
+// ——— Bootstrap ———
+document.addEventListener('DOMContentLoaded', () => { loadUsers(); });
+
+// ——— Data ———
+async function loadUsers() {
   const tbody = document.getElementById('admin-users-tbody');
   if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="5" class="table-empty" style="text-align:center;padding:2rem;">Loading...</td></tr>';
   try {
     const resp = await apiFetch('/api/admin/users');
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const users = await resp.json();
-    if (!users.length) {
-      tbody.innerHTML = '<tr><td colspan="5" class="table-empty">No users</td></tr>';
-      return;
-    }
-    tbody.innerHTML = users.map(u => {
-      const isActive = u.is_active !== false;
-      const created = u.created_at ? new Date(u.created_at).toLocaleDateString() : '-';
-      const initial = (u.email || 'U')[0].toUpperCase();
-      return `<tr>
-        <td>
-          <div style="display:flex;align-items:center;gap:0.6rem;">
-            <div class="topbar-avatar" style="width:32px;height:32px;font-size:0.7rem;">${initial}</div>
-            <span style="font-weight:500;">${escapeHtml(u.email || '-')}</span>
-          </div>
-        </td>
-        <td>
-          <select class="form-input" style="width:auto;" onchange="changeUserRole('${u.id}', this.value)">
-            <option value="user" ${u.role === 'user' ? 'selected' : ''}>User</option>
-            <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Admin</option>
-          </select>
-        </td>
-        <td><span class="status-badge ${isActive ? 'badge-success' : 'badge-danger'}">${isActive ? 'Active' : 'Inactive'}</span></td>
-        <td>${escapeHtml(created)}</td>
-        <td>
-          <button class="btn btn-outline btn-sm" onclick="resetUserPassword('${u.id}')">Reset PW</button>
-          <button class="btn ${isActive ? 'btn-danger' : 'btn-primary'} btn-sm" onclick="toggleUserActive('${u.id}', ${isActive})">${isActive ? 'Deactivate' : 'Activate'}</button>
-        </td>
-      </tr>`;
-    }).join('');
+    _allUsers = await resp.json();
+    applyFilter();
   } catch (e) {
-    tbody.innerHTML = '<tr><td colspan="5" class="table-empty error-text">Failed to load users</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" class="table-empty" style="text-align:center;color:var(--danger);padding:2rem;">Failed to load users: ' + escapeHtml(e.message) + '</td></tr>';
   }
 }
 
-async function createUser() {
-  const email = document.getElementById('new-user-email').value.trim();
-  const password = document.getElementById('new-user-password').value;
-  const role = document.getElementById('new-user-role').value;
+function applyFilter() {
+  const role = document.getElementById('filter-role').value;
+  const status = document.getElementById('filter-status').value;
+  let filtered = _allUsers;
+  if (role) filtered = filtered.filter(u => u.role === role);
+  if (status === 'active') filtered = filtered.filter(u => u.is_active !== false);
+  if (status === 'inactive') filtered = filtered.filter(u => u.is_active === false);
+  renderUsersTable(filtered);
+}
 
-  if (!email || !password) { showToast('Email and password required', 'error'); return; }
+function renderUsersTable(users) {
+  const tbody = document.getElementById('admin-users-tbody');
+  if (!tbody) return;
+  if (!users.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="table-empty" style="text-align:center;padding:2rem;">No users found</td></tr>';
+    return;
+  }
+  tbody.innerHTML = users.map(u => {
+    const isActive = u.is_active !== false;
+    const created = u.created_at ? new Date(u.created_at).toLocaleDateString() : '-';
+    const initial = (u.email || 'U')[0].toUpperCase();
+    const roleBadge = u.role === 'admin'
+      ? '<span class="status-badge badge-warning">Admin</span>'
+      : '<span class="status-badge badge-info">User</span>';
+    const statusBadge = isActive
+      ? '<span class="status-badge badge-success">Active</span>'
+      : '<span class="status-badge badge-inactive">Inactive</span>';
+    const accountCount = u.account_count !== undefined ? u.account_count : '-';
+    return `<tr>
+      <td>
+        <div style="display:flex;align-items:center;gap:0.6rem;">
+          <div style="width:32px;height:32px;border-radius:50%;background:var(--primary-light);color:var(--primary);display:flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:600;flex-shrink:0;">${escapeHtml(initial)}</div>
+          <span style="font-weight:500;">${escapeHtml(u.email || '-')}</span>
+        </div>
+      </td>
+      <td>${roleBadge}</td>
+      <td>${statusBadge}</td>
+      <td style="color:var(--text-muted);font-size:0.875rem;">${escapeHtml(created)}</td>
+      <td>
+        <div class="actions-cell">
+          <select class="form-input" style="width:auto;padding:0.2rem 0.4rem;font-size:0.78rem;" onchange="changeUserRole('${u.id}', this.value)" title="Change role">
+            <option value="user" ${u.role === 'user' ? 'selected' : ''}>User</option>
+            <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Admin</option>
+          </select>
+          <button class="btn btn-outline btn-sm" onclick="openResetPasswordModal('${u.id}')">Reset PW</button>
+          <button class="btn ${isActive ? 'btn-danger' : 'btn-primary'} btn-sm" onclick="toggleUserActive('${u.id}', ${isActive})">${isActive ? 'Deactivate' : 'Activate'}</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+// ——— Create User ———
+function openCreateUserModal() {
+  document.getElementById('create-email').value = '';
+  document.getElementById('create-password').value = '';
+  document.getElementById('create-role').value = 'user';
+  openModal('create-user-modal');
+}
+
+async function submitCreateUser() {
+  const email = document.getElementById('create-email').value.trim();
+  const password = document.getElementById('create-password').value;
+  const role = document.getElementById('create-role').value;
+
+  if (!email) { showToast('Email is required', 'error'); return; }
+  if (!password) { showToast('Password is required', 'error'); return; }
   if (password.length < 8) { showToast('Password must be at least 8 characters', 'error'); return; }
 
   try {
@@ -118,10 +205,9 @@ async function createUser() {
       body: JSON.stringify({ email, password, role }),
     });
     if (resp.ok) {
-      showToast('User created', 'success');
-      document.getElementById('new-user-email').value = '';
-      document.getElementById('new-user-password').value = '';
-      loadAdminUsers();
+      showToast('User created successfully', 'success');
+      closeModal('create-user-modal');
+      loadUsers();
     } else {
       const err = await resp.json().catch(() => ({}));
       showToast('Error: ' + (err.detail || 'Create failed'), 'error');
@@ -131,28 +217,41 @@ async function createUser() {
   }
 }
 
-async function changeUserRole(userId, role) {
-  if (!confirm('Change this user\'s role to ' + role + '?')) { loadAdminUsers(); return; }
+// ——— Change Role ———
+async function changeUserRole(userId, newRole) {
+  if (!confirm('Change this user\'s role to ' + newRole + '?')) { loadUsers(); return; }
   try {
     const resp = await apiFetch('/api/admin/users/' + userId + '/role', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
-      body: JSON.stringify({ role }),
+      body: JSON.stringify({ role: newRole }),
     });
     if (resp.ok) {
-      showToast('Role updated', 'success');
+      showToast('Role updated to ' + newRole, 'success');
+      loadUsers();
     } else {
       const err = await resp.json().catch(() => ({}));
       showToast('Error: ' + (err.detail || 'Update failed'), 'error');
+      loadUsers();
     }
   } catch (e) {
     showToast('Network error: ' + e.message, 'error');
+    loadUsers();
   }
 }
 
-async function resetUserPassword(userId) {
-  const newPassword = prompt('Enter new password (min 8 chars):');
-  if (!newPassword) return;
+// ——— Reset Password ———
+function openResetPasswordModal(userId) {
+  document.getElementById('reset-user-id').value = userId;
+  document.getElementById('reset-new-password').value = '';
+  openModal('reset-password-modal');
+}
+
+async function submitResetPassword() {
+  const userId = document.getElementById('reset-user-id').value;
+  const newPassword = document.getElementById('reset-new-password').value;
+
+  if (!newPassword) { showToast('Password is required', 'error'); return; }
   if (newPassword.length < 8) { showToast('Password must be at least 8 characters', 'error'); return; }
 
   try {
@@ -162,7 +261,8 @@ async function resetUserPassword(userId) {
       body: JSON.stringify({ new_password: newPassword }),
     });
     if (resp.ok) {
-      showToast('Password reset', 'success');
+      showToast('Password reset successfully', 'success');
+      closeModal('reset-password-modal');
     } else {
       const err = await resp.json().catch(() => ({}));
       showToast('Error: ' + (err.detail || 'Reset failed'), 'error');
@@ -172,19 +272,19 @@ async function resetUserPassword(userId) {
   }
 }
 
-async function toggleUserActive(userId, currentActive) {
-  const action = currentActive ? 'deactivate' : 'activate';
-  if (!confirm(`Are you sure you want to ${action} this user?`)) return;
-
+// ——— Toggle Active ———
+async function toggleUserActive(userId, isActive) {
+  const action = isActive ? 'deactivate' : 'activate';
+  if (!confirm('Are you sure you want to ' + action + ' this user?')) return;
   try {
     const resp = await apiFetch('/api/admin/users/' + userId + '/active', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
-      body: JSON.stringify({ is_active: !currentActive }),
+      body: JSON.stringify({ is_active: !isActive }),
     });
     if (resp.ok) {
       showToast('User ' + action + 'd', 'success');
-      loadAdminUsers();
+      loadUsers();
     } else {
       const err = await resp.json().catch(() => ({}));
       showToast('Error: ' + (err.detail || 'Update failed'), 'error');
@@ -194,8 +294,60 @@ async function toggleUserActive(userId, currentActive) {
   }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-  loadAdminUsers();
-});
+// ——— Modal helpers ———
+function openModal(id) {
+  document.getElementById(id).style.display = 'flex';
+  document.getElementById('modal-backdrop').style.display = 'block';
+}
+function closeModal(id) {
+  document.getElementById(id).style.display = 'none';
+  const anyOpen = ['create-user-modal', 'reset-password-modal']
+    .some(m => document.getElementById(m).style.display !== 'none');
+  if (!anyOpen) document.getElementById('modal-backdrop').style.display = 'none';
+}
+function closeAllModals() {
+  ['create-user-modal', 'reset-password-modal'].forEach(m => {
+    document.getElementById(m).style.display = 'none';
+  });
+  document.getElementById('modal-backdrop').style.display = 'none';
+}
+
+// ——— Toast ———
+function showToast(msg, type) {
+  const existing = document.querySelector('.toast');
+  if (existing) existing.remove();
+  const t = document.createElement('div');
+  t.className = 'toast toast-' + (type === 'error' ? 'error' : 'success');
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 300); }, 3000);
+}
 </script>
+
+<style>
+.modal {
+  position: fixed; inset: 0; z-index: 9000;
+  align-items: center; justify-content: center;
+}
+.modal-backdrop {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 8999;
+}
+.modal-dialog {
+  background: var(--card-bg); border: 1px solid var(--border);
+  border-radius: 12px; padding: 0; width: 100%; max-width: 460px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.4); z-index: 9001; position: relative;
+}
+.modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--border);
+}
+.modal-title { font-size: 1rem; font-weight: 600; margin: 0; }
+.modal-close {
+  background: none; border: none; color: var(--text-muted); font-size: 1.4rem;
+  cursor: pointer; line-height: 1; padding: 0.1rem 0.3rem; border-radius: 4px;
+}
+.modal-close:hover { color: var(--text); background: var(--bg-tertiary); }
+.modal-body { padding: 1.5rem; }
+.modal-footer { padding: 1rem 1.5rem; border-top: 1px solid var(--border); }
+</style>
 {% endblock %}

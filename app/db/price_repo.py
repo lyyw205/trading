@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from sqlalchemy import select, func, literal
+from sqlalchemy import func, literal, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.price_candle import PriceCandle5m, PriceCandle1m, PriceCandle1h, PriceCandle1d
+from app.models.price_candle import PriceCandle1d, PriceCandle1h, PriceCandle1m, PriceCandle5m
 
 # Interval -> Model mapping
 _TABLE_MAP = {

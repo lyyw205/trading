@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-from typing import Tuple, Optional
-
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 router = APIRouter(tags=["pages"])
 
 
-def _require_admin_page(request: Request) -> Tuple[Optional[dict], Optional[RedirectResponse]]:
+def _require_admin_page(request: Request) -> tuple[dict | None, RedirectResponse | None]:
     """Shared guard for admin SSR pages. Returns (user, redirect) tuple."""
     user = getattr(request.state, "user", None)
     if not user or user.get("role") != "admin":
@@ -51,20 +49,59 @@ async def admin_overview_page(request: Request):
 
 @router.get("/admin/accounts", response_class=HTMLResponse)
 async def admin_accounts_page(request: Request):
-    user, redirect = _require_admin_page(request)
-    if redirect:
-        return redirect
-    templates = request.app.state.templates
-    return templates.TemplateResponse("admin_accounts.html", {"request": request, "user": user})
+    """Deprecated — redirects to unified /accounts page."""
+    return RedirectResponse(url="/accounts", status_code=302)
 
 
 @router.get("/admin/users", response_class=HTMLResponse)
 async def admin_users_page(request: Request):
+    """Deprecated — redirects to unified /accounts page."""
+    return RedirectResponse(url="/accounts", status_code=302)
+
+
+@router.get("/admin/lots", response_class=HTMLResponse)
+async def admin_lots_page(request: Request):
     user, redirect = _require_admin_page(request)
     if redirect:
         return redirect
     templates = request.app.state.templates
-    return templates.TemplateResponse("admin_users.html", {"request": request, "user": user})
+    return templates.TemplateResponse("admin_lots.html", {"request": request, "user": user})
+
+
+@router.get("/admin/strategies", response_class=HTMLResponse)
+async def admin_strategies_page(request: Request):
+    user, redirect = _require_admin_page(request)
+    if redirect:
+        return redirect
+    templates = request.app.state.templates
+    return templates.TemplateResponse("admin_strategies.html", {"request": request, "user": user})
+
+
+@router.get("/admin/positions", response_class=HTMLResponse)
+async def admin_positions_page(request: Request):
+    user, redirect = _require_admin_page(request)
+    if redirect:
+        return redirect
+    templates = request.app.state.templates
+    return templates.TemplateResponse("admin_positions.html", {"request": request, "user": user})
+
+
+@router.get("/admin/earnings", response_class=HTMLResponse)
+async def admin_earnings_page(request: Request):
+    user, redirect = _require_admin_page(request)
+    if redirect:
+        return redirect
+    templates = request.app.state.templates
+    return templates.TemplateResponse("admin_earnings.html", {"request": request, "user": user})
+
+
+@router.get("/admin/system", response_class=HTMLResponse)
+async def admin_system_page(request: Request):
+    user, redirect = _require_admin_page(request)
+    if redirect:
+        return redirect
+    templates = request.app.state.templates
+    return templates.TemplateResponse("admin_system.html", {"request": request, "user": user})
 
 
 @router.get("/admin/backtest", response_class=HTMLResponse)

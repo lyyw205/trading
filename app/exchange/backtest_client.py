@@ -1,8 +1,8 @@
 from __future__ import annotations
+
 import math
 import time
 import uuid
-from typing import Optional, List
 
 from app.exchange.base_client import ExchangeClient, SymbolFilters
 
@@ -49,9 +49,7 @@ class BacktestClient(ExchangeClient):
         for order in self._open_orders:
             filled = False
             order_price = float(order["price"])
-            if order["side"] == "BUY" and self._current_price <= order_price:
-                filled = True
-            elif order["side"] == "SELL" and self._current_price >= order_price:
+            if order["side"] == "BUY" and self._current_price <= order_price or order["side"] == "SELL" and self._current_price >= order_price:
                 filled = True
 
             if filled:
@@ -129,7 +127,7 @@ class BacktestClient(ExchangeClient):
         adjusted = math.floor(price / tick) * tick
         return round(adjusted, precision)
 
-    async def get_open_orders(self, symbol: str) -> List[dict]:
+    async def get_open_orders(self, symbol: str) -> list[dict]:
         return [o for o in self._open_orders if o["symbol"] == symbol]
 
     async def get_order(self, order_id: int, symbol: str) -> dict:
@@ -183,8 +181,8 @@ class BacktestClient(ExchangeClient):
         return {"orderId": order_id, "symbol": symbol, "status": "CANCELED"}
 
     async def get_my_trades(
-        self, symbol: str, limit: int = 1000, order_id: Optional[int] = None
-    ) -> List[dict]:
+        self, symbol: str, limit: int = 1000, order_id: int | None = None
+    ) -> list[dict]:
         trades = [t for t in self._trades if t["symbol"] == symbol]
         if order_id is not None:
             trades = [t for t in trades if t["orderId"] == order_id]
@@ -195,7 +193,7 @@ class BacktestClient(ExchangeClient):
         quote_usdt: float,
         price: float,
         symbol: str,
-        client_oid: Optional[str] = None,
+        client_oid: str | None = None,
     ) -> dict:
         if price <= 0:
             raise ValueError("price must be > 0")
@@ -237,7 +235,7 @@ class BacktestClient(ExchangeClient):
         qty_base: float,
         price: float,
         symbol: str,
-        client_oid: Optional[str] = None,
+        client_oid: str | None = None,
     ) -> dict:
         if price <= 0:
             raise ValueError("price must be > 0")

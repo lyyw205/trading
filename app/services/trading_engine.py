@@ -1,16 +1,17 @@
 from __future__ import annotations
+
 import asyncio
 import logging
 import random
-from uuid import UUID
 from typing import TYPE_CHECKING
+from uuid import UUID
 
-from app.db.session import TradingSessionLocal
 from app.db.account_repo import AccountRepository
+from app.db.session import TradingSessionLocal
 from app.services.account_trader import AccountTrader
+from app.services.kline_ws_manager import KlineWsManager
 from app.services.price_collector import PriceCollector
 from app.services.rate_limiter import GlobalRateLimiter
-from app.services.kline_ws_manager import KlineWsManager
 
 if TYPE_CHECKING:
     from app.utils.encryption import EncryptionManager
@@ -26,7 +27,7 @@ class TradingEngine:
     - Shared PriceCollector and GlobalRateLimiter
     """
 
-    def __init__(self, rate_limiter: GlobalRateLimiter, encryption: "EncryptionManager"):
+    def __init__(self, rate_limiter: GlobalRateLimiter, encryption: EncryptionManager):
         self._traders: dict[UUID, AccountTrader] = {}
         self._tasks: dict[UUID, asyncio.Task] = {}
         self._price_collector = PriceCollector()

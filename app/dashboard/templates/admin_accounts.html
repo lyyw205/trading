@@ -52,12 +52,12 @@ async function loadAdminAccounts() {
       const cbTripped = acct.circuit_breaker_tripped;
       const bpState = (acct.health && acct.health.buy_pause_state) || 'ACTIVE';
       const bpClass = bpState === 'ACTIVE' ? 'badge-success' : (bpState === 'PAUSED' ? 'badge-danger' : 'badge-warning');
-      const initial = (acct.label || acct.id || 'A')[0].toUpperCase();
+      const initial = (acct.name || acct.id || 'A')[0].toUpperCase();
       return `<tr>
         <td>
           <div style="display:flex;align-items:center;gap:0.6rem;">
             <div class="topbar-avatar" style="width:32px;height:32px;font-size:0.7rem;">${initial}</div>
-            <a href="/accounts/${acct.id}" style="font-weight:600;color:var(--text);">${escapeHtml(acct.label || acct.id)}</a>
+            <a href="/accounts/${acct.id}" style="font-weight:600;color:var(--text);">${escapeHtml(acct.name || acct.id)}</a>
           </div>
         </td>
         <td><span style="font-family:var(--font-mono);font-weight:500;">${escapeHtml(acct.symbol || '')}</span></td>

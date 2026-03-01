@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-import math
 import time
 import uuid
-from typing import Optional
 
 import binance.client
 
@@ -74,7 +72,7 @@ class BinanceClient(ExchangeClient):
         return self.client.cancel_order(symbol=symbol, orderId=order_id)
 
     def _sync_get_my_trades(
-        self, symbol: str, limit: int = 1000, order_id: Optional[int] = None
+        self, symbol: str, limit: int = 1000, order_id: int | None = None
     ) -> list[dict]:
         kwargs: dict = {"symbol": symbol, "limit": limit}
         if order_id is not None:
@@ -86,7 +84,7 @@ class BinanceClient(ExchangeClient):
         qty_base: float,
         price: float,
         symbol: str,
-        client_oid: Optional[str] = None,
+        client_oid: str | None = None,
     ) -> dict:
         qty = self._sync_adjust_qty(qty_base, symbol)
         px = self._sync_adjust_price(price, symbol)
@@ -103,7 +101,7 @@ class BinanceClient(ExchangeClient):
         quote_usdt: float,
         price: float,
         symbol: str,
-        client_oid: Optional[str] = None,
+        client_oid: str | None = None,
     ) -> dict:
         px = self._sync_adjust_price(price, symbol)
         qty = quote_usdt / px
@@ -156,7 +154,7 @@ class BinanceClient(ExchangeClient):
         return await asyncio.to_thread(self._sync_cancel_order, order_id, symbol)
 
     async def get_my_trades(
-        self, symbol: str, limit: int = 1000, order_id: Optional[int] = None
+        self, symbol: str, limit: int = 1000, order_id: int | None = None
     ) -> list[dict]:
         return await asyncio.to_thread(
             self._sync_get_my_trades, symbol, limit, order_id
@@ -167,7 +165,7 @@ class BinanceClient(ExchangeClient):
         qty_base: float,
         price: float,
         symbol: str,
-        client_oid: Optional[str] = None,
+        client_oid: str | None = None,
     ) -> dict:
         return await asyncio.to_thread(
             self._sync_place_limit_sell, qty_base, price, symbol, client_oid
@@ -178,7 +176,7 @@ class BinanceClient(ExchangeClient):
         quote_usdt: float,
         price: float,
         symbol: str,
-        client_oid: Optional[str] = None,
+        client_oid: str | None = None,
     ) -> dict:
         return await asyncio.to_thread(
             self._sync_place_limit_buy_by_quote, quote_usdt, price, symbol, client_oid

@@ -1,5 +1,7 @@
 from __future__ import annotations
+
 import logging
+
 from itsdangerous import URLSafeTimedSerializer
 
 logger = logging.getLogger(__name__)

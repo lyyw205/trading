@@ -1,92 +1,1049 @@
 {% extends "base.html" %}
 
-{% block title %}My Accounts - Crypto Multi-Trader{% endblock %}
+{% block title %}{% if user.get('role') == 'admin' %}Management{% else %}My Accounts{% endif %} - Crypto Multi-Trader{% endblock %}
 
 {% block content %}
+<style>
+.toast { position: fixed; top: 1rem; right: 1rem; padding: 0.75rem 1.5rem; border-radius: 8px; z-index: 10000; font-size: 0.9rem; transition: opacity 0.3s; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+.toast-success { background: var(--success); color: #fff; }
+.toast-error { background: var(--danger); color: #fff; }
+.badge-warning { background: rgba(234,179,8,0.15); color: #ca8a04; }
+.badge-info { background: var(--info-light, rgba(49,130,246,0.12)); color: var(--info, #3182f6); }
+.badge-buy-paused { background: rgba(249,115,22,0.15); color: #ea580c; }
+.badge-buy-throttled { background: rgba(234,179,8,0.15); color: #ca8a04; }
+.actions-cell { display: flex; gap: 0.4rem; justify-content: flex-end; flex-wrap: wrap; align-items: center; }
+.actions-cell .btn { padding: 0.2rem 0.5rem; font-size: 0.78rem; line-height: 1.4; }
+.filter-bar { margin-bottom: 1rem; display: flex; gap: 0.75rem; align-items: center; }
+.account-name-link { color: var(--primary); text-decoration: none; font-weight: 500; }
+.account-name-link:hover { text-decoration: underline; }
+</style>
+
+<div id="accounts-container" data-role="{{ user.get('role', 'user') }}">
+
+{% if user.get('role') == 'admin' %}
+<div class="hero-banner">
+  <h1 class="page-title">Management</h1>
+  <p class="hero-subtitle">Manage users and trading accounts in one place.</p>
+</div>
+{% else %}
 <div class="page-header">
   <h1 class="page-title">My Accounts</h1>
-  <button class="btn btn-primary" onclick="openAddAccountModal()">+ Add Account</button>
+  <button class="btn btn-primary" onclick="openModal('add-account-modal')">+ Add Account</button>
 </div>
+{% endif %}
 
+{% if user.get('role') == 'admin' %}
+<!-- ============================================================
+     Section 1 — Users
+     ============================================================ -->
+<section class="dashboard-section">
+  <div class="section-header">
+    <h2 class="section-title">Users</h2>
+    <div style="display:flex;gap:0.5rem;align-items:center;">
+      <button class="btn btn-outline btn-sm" onclick="loadUsers()">Refresh</button>
+      <button class="btn btn-primary btn-sm" onclick="openCreateUserModal()">+ Create User</button>
+    </div>
+  </div>
+  <div class="tune-grid" style="margin-bottom:1rem;">
+    <div class="form-group">
+      <label class="form-label">Role</label>
+      <select id="filter-role" class="form-input" onchange="applyUserFilter()">
+        <option value="">All Roles</option>
+        <option value="admin">Admin</option>
+        <option value="user">User</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Status</label>
+      <select id="filter-status" class="form-input" onchange="applyUserFilter()">
+        <option value="">All Statuses</option>
+        <option value="active">Active</option>
+        <option value="inactive">Inactive</option>
+      </select>
+    </div>
+  </div>
+  <div class="table-wrapper">
+    <table class="data-table" id="users-table">
+      <thead>
+        <tr>
+          <th>Email</th>
+          <th>Role</th>
+          <th>Accounts</th>
+          <th>Status</th>
+          <th>Created</th>
+          <th style="text-align:right;">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="users-tbody">
+        <tr><td colspan="6" class="table-empty">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============================================================
+     Section 2 — Accounts
+     ============================================================ -->
+<section class="dashboard-section">
+  <div class="section-header">
+    <h2 class="section-title">Accounts</h2>
+    <div style="display:flex;gap:0.5rem;align-items:center;">
+      <button class="btn btn-outline btn-sm" onclick="loadAccountsData()">Refresh</button>
+      <button class="btn btn-primary btn-sm" onclick="openModal('add-account-modal')">+ Add Account</button>
+    </div>
+  </div>
+  <div class="tune-grid" style="margin-bottom:1rem;">
+    <div class="form-group">
+      <label class="form-label">Owner</label>
+      <select id="owner-filter" class="form-input" onchange="filterAccounts()">
+        <option value="">All Owners</option>
+      </select>
+    </div>
+    <div class="form-group" style="display:flex;align-items:flex-end;">
+      <span id="account-count" class="text-muted" style="font-size: 0.85rem;"></span>
+    </div>
+  </div>
+  <div class="table-wrapper">
+    <table class="data-table" id="accounts-table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Symbol</th>
+          <th>Owner</th>
+          <th>Status</th>
+          <th style="text-align:right;">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="accounts-tbody">
+        <tr><td colspan="5" class="table-empty">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+{% else %}
+<!-- User: summary + card grid -->
+<div id="user-summary" style="margin-bottom: 1rem;"></div>
 <div id="accounts-grid" class="accounts-grid">
   <div class="loading-spinner">Loading accounts...</div>
 </div>
+{% endif %}
 
-<!-- Add Account Modal -->
+</div><!-- #accounts-container -->
+
+<!-- ============================================================
+     Add Account Modal
+     ============================================================ -->
 <div id="add-account-modal" class="modal" style="display:none;">
-  <div class="modal-backdrop" onclick="closeAddAccountModal()"></div>
+  <div class="modal-backdrop" onclick="closeModal('add-account-modal')"></div>
   <div class="modal-dialog">
     <div class="modal-header">
       <h2 class="modal-title">Add Trading Account</h2>
-      <button class="modal-close" onclick="closeAddAccountModal()">&times;</button>
+      <button class="modal-close" onclick="closeModal('add-account-modal')">&times;</button>
     </div>
     <div class="modal-body">
-      <form id="add-account-form">
+      <form id="add-account-form" onsubmit="event.preventDefault(); submitAddAccount();">
         <div class="form-group">
-          <label class="form-label">Label</label>
-          <input type="text" id="acc-label" class="form-input" placeholder="e.g. Main BTC Account" required>
+          <label class="form-label">Name <span style="color:var(--danger);">*</span></label>
+          <input type="text" id="add-name" class="form-input" placeholder="e.g. Main BTC Account" required>
         </div>
         <div class="form-group">
           <label class="form-label">Symbol</label>
-          <input type="text" id="acc-symbol" class="form-input" value="BTCUSDT" required>
+          <input type="text" id="add-symbol" class="form-input" value="BTCUSDT" oninput="deriveAssets('add')">
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.75rem;">
+          <div class="form-group">
+            <label class="form-label">Base Asset</label>
+            <input type="text" id="add-base-asset" class="form-input" value="BTC">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Quote Asset</label>
+            <input type="text" id="add-quote-asset" class="form-input" value="USDT">
+          </div>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.75rem;">
+          <div class="form-group">
+            <label class="form-label">Loop Interval (sec)</label>
+            <input type="number" id="add-loop-interval" class="form-input" value="60" min="10" max="3600">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Order Cooldown (sec)</label>
+            <input type="number" id="add-order-cooldown" class="form-input" value="7" min="1" max="300">
+          </div>
         </div>
         <div class="form-group">
-          <label class="form-label">Binance API Key</label>
-          <input type="text" id="acc-api-key" class="form-input" placeholder="API Key" required>
+          <label class="form-label">API Key <span style="color:var(--danger);">*</span></label>
+          <input type="text" id="add-api-key" class="form-input" placeholder="Binance API Key" autocomplete="off">
         </div>
         <div class="form-group">
-          <label class="form-label">Binance API Secret</label>
-          <input type="password" id="acc-api-secret" class="form-input" placeholder="API Secret" required>
+          <label class="form-label">API Secret <span style="color:var(--danger);">*</span></label>
+          <input type="password" id="add-api-secret" class="form-input" placeholder="Binance API Secret" autocomplete="new-password">
+        </div>
+        <div class="form-group" id="add-owner-group" style="display:none;">
+          <label class="form-label">Owner</label>
+          <select id="add-owner-id" class="form-input">
+            <option value="">Loading users...</option>
+          </select>
         </div>
       </form>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-outline" onclick="closeAddAccountModal()">Cancel</button>
+      <button class="btn btn-outline" onclick="closeModal('add-account-modal')">Cancel</button>
       <button class="btn btn-primary" onclick="submitAddAccount()">Add Account</button>
     </div>
   </div>
 </div>
+
+<!-- ============================================================
+     Edit Account Modal
+     ============================================================ -->
+<div id="edit-account-modal" class="modal" style="display:none;">
+  <div class="modal-backdrop" onclick="closeModal('edit-account-modal')"></div>
+  <div class="modal-dialog">
+    <div class="modal-header">
+      <h2 class="modal-title">Edit Account</h2>
+      <button class="modal-close" onclick="closeModal('edit-account-modal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <form id="edit-account-form" onsubmit="event.preventDefault(); submitEditAccount();">
+        <input type="hidden" id="edit-account-id">
+        <div class="form-group">
+          <label class="form-label">Name</label>
+          <input type="text" id="edit-name" class="form-input">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Symbol</label>
+          <input type="text" id="edit-symbol" class="form-input" oninput="deriveAssets('edit')">
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.75rem;">
+          <div class="form-group">
+            <label class="form-label">Base Asset</label>
+            <input type="text" id="edit-base-asset" class="form-input">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Quote Asset</label>
+            <input type="text" id="edit-quote-asset" class="form-input">
+          </div>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.75rem;">
+          <div class="form-group">
+            <label class="form-label">Loop Interval (sec)</label>
+            <input type="number" id="edit-loop-interval" class="form-input" min="10" max="3600">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Order Cooldown (sec)</label>
+            <input type="number" id="edit-order-cooldown" class="form-input" min="1" max="300">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">API Key</label>
+          <input type="text" id="edit-api-key" class="form-input" placeholder="Leave blank to keep existing" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label class="form-label">API Secret</label>
+          <input type="password" id="edit-api-secret" class="form-input" placeholder="Leave blank to keep existing" autocomplete="new-password">
+        </div>
+        <div class="form-group" id="edit-active-group" style="display:none;">
+          <label class="form-label" style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+            <input type="checkbox" id="edit-is-active" style="width:auto;">
+            Active
+          </label>
+        </div>
+      </form>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('edit-account-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="submitEditAccount()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     Delete Confirmation Modal
+     ============================================================ -->
+<div id="delete-account-modal" class="modal" style="display:none;">
+  <div class="modal-backdrop" onclick="closeModal('delete-account-modal')"></div>
+  <div class="modal-dialog" style="max-width: 420px;">
+    <div class="modal-header">
+      <h2 class="modal-title">Delete Account</h2>
+      <button class="modal-close" onclick="closeModal('delete-account-modal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p>Are you sure you want to delete <strong id="delete-account-name"></strong>?</p>
+      <p class="text-muted" style="font-size: 0.875rem; margin-top: 0.5rem;">This action cannot be undone. All associated data will be permanently removed.</p>
+      <input type="hidden" id="delete-account-id">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('delete-account-modal')">Cancel</button>
+      <button class="btn btn-primary" style="background:var(--danger); border-color:var(--danger);" onclick="confirmDelete()">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     Create User Modal
+     ============================================================ -->
+<div id="create-user-modal" class="modal" style="display:none;">
+  <div class="modal-backdrop" onclick="closeModal('create-user-modal')"></div>
+  <div class="modal-dialog">
+    <div class="modal-header">
+      <h2 class="modal-title">Create User</h2>
+      <button class="modal-close" onclick="closeModal('create-user-modal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <form id="create-user-form" onsubmit="event.preventDefault(); submitCreateUser();">
+        <div class="form-group">
+          <label class="form-label">Email <span style="color:var(--danger);">*</span></label>
+          <input type="email" id="create-email" class="form-input" placeholder="user@example.com" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password <span style="color:var(--danger);">*</span></label>
+          <input type="password" id="create-password" class="form-input" placeholder="min 8 characters" minlength="8" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Role</label>
+          <select id="create-role" class="form-input">
+            <option value="user" selected>User</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+      </form>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('create-user-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="submitCreateUser()">Create User</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     Reset Password Modal
+     ============================================================ -->
+<div id="reset-password-modal" class="modal" style="display:none;">
+  <div class="modal-backdrop" onclick="closeModal('reset-password-modal')"></div>
+  <div class="modal-dialog" style="max-width: 420px;">
+    <div class="modal-header">
+      <h2 class="modal-title">Reset Password</h2>
+      <button class="modal-close" onclick="closeModal('reset-password-modal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p style="color:var(--text-muted);margin-bottom:0.75rem;">Set a new password for this user.</p>
+      <div class="form-group">
+        <label class="form-label">New Password <span style="color:var(--danger);">*</span></label>
+        <input type="password" id="reset-new-password" class="form-input" placeholder="min 8 characters" minlength="8">
+      </div>
+      <input type="hidden" id="reset-user-id">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('reset-password-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="submitResetPassword()">Reset Password</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="toast" style="display:none;"></div>
+
 {% endblock %}
 
 {% block scripts %}
 <script>
+// ============================================================
+//  State
+// ============================================================
+let _allAccounts = [];
+let _allUsers = [];
+
+// ============================================================
+//  Bootstrap
+// ============================================================
 document.addEventListener('DOMContentLoaded', () => {
-  loadAccounts();
+  loadAccountsPage();
 });
 
-function openAddAccountModal() {
-  document.getElementById('add-account-modal').style.display = 'flex';
+async function loadAccountsPage() {
+  const role = document.getElementById('accounts-container').dataset.role;
+  if (role === 'admin') {
+    // Load users and accounts in parallel for admin
+    await Promise.all([loadUsers(), loadAccountsData()]);
+  } else {
+    await loadAccountsData();
+  }
 }
 
-function closeAddAccountModal() {
-  document.getElementById('add-account-modal').style.display = 'none';
+// ============================================================
+//  Data Loading — Accounts
+// ============================================================
+async function loadAccountsData() {
+  const role = document.getElementById('accounts-container').dataset.role;
+  try {
+    const resp = await apiFetch('/api/accounts');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    _allAccounts = data.accounts || data || [];
+
+    if (role === 'admin') {
+      populateOwnerFilter(_allAccounts);
+      renderAdminTable(_allAccounts);
+    } else {
+      renderUserSummary(_allAccounts);
+      renderUserCards(_allAccounts);
+    }
+  } catch (e) {
+    const role2 = document.getElementById('accounts-container').dataset.role;
+    if (role2 === 'admin') {
+      const tbody = document.getElementById('accounts-tbody');
+      if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color:var(--danger);">Failed to load: ' + escapeHtml(e.message) + '</td></tr>';
+    } else {
+      const grid = document.getElementById('accounts-grid');
+      if (grid) grid.innerHTML = '<p class="error-text">Failed to load accounts: ' + escapeHtml(e.message) + '</p>';
+    }
+  }
 }
 
-async function submitAddAccount() {
-  const label = document.getElementById('acc-label').value.trim();
-  const symbol = document.getElementById('acc-symbol').value.trim();
-  const apiKey = document.getElementById('acc-api-key').value.trim();
-  const apiSecret = document.getElementById('acc-api-secret').value.trim();
-  if (!label || !symbol || !apiKey || !apiSecret) {
-    alert('All fields are required.');
+// Keep backward compat — loadAccounts reloads everything
+async function loadAccounts() {
+  const role = document.getElementById('accounts-container').dataset.role;
+  if (role === 'admin') {
+    await Promise.all([loadUsers(), loadAccountsData()]);
+  } else {
+    await loadAccountsData();
+  }
+}
+
+// ============================================================
+//  Data Loading — Users (Admin only)
+// ============================================================
+async function loadUsers() {
+  const tbody = document.getElementById('users-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">Loading...</td></tr>';
+  try {
+    const resp = await apiFetch('/api/admin/users');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    _allUsers = await resp.json();
+    applyUserFilter();
+  } catch (e) {
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="color:var(--danger);">Failed to load users: ' + escapeHtml(e.message) + '</td></tr>';
+  }
+}
+
+function applyUserFilter() {
+  const role = (document.getElementById('filter-role') || {}).value || '';
+  const status = (document.getElementById('filter-status') || {}).value || '';
+  let filtered = _allUsers;
+  if (role) filtered = filtered.filter(u => u.role === role);
+  if (status === 'active') filtered = filtered.filter(u => u.is_active !== false);
+  if (status === 'inactive') filtered = filtered.filter(u => u.is_active === false);
+  renderUsersTable(filtered);
+}
+
+function renderUsersTable(users) {
+  const tbody = document.getElementById('users-tbody');
+  if (!tbody) return;
+  if (!users.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No users found.</td></tr>';
     return;
   }
+  tbody.innerHTML = users.map(u => {
+    const isActive = u.is_active !== false;
+    const created = u.created_at ? new Date(u.created_at).toLocaleDateString() : '-';
+    const initial = (u.email || 'U')[0].toUpperCase();
+    const roleBadge = u.role === 'admin'
+      ? '<span class="status-badge badge-warning">Admin</span>'
+      : '<span class="status-badge badge-info">User</span>';
+    const statusBadge = isActive
+      ? '<span class="status-badge badge-success">Active</span>'
+      : '<span class="status-badge badge-danger">Inactive</span>';
+    const accountCount = u.account_count !== undefined ? u.account_count : '-';
+    return `<tr>
+      <td>
+        <div style="display:flex;align-items:center;gap:0.6rem;">
+          <div style="width:32px;height:32px;border-radius:50%;background:var(--primary-light);color:var(--primary);display:flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:600;flex-shrink:0;">${escapeHtml(initial)}</div>
+          <span style="font-weight:500;">${escapeHtml(u.email || '-')}</span>
+        </div>
+      </td>
+      <td>${roleBadge}</td>
+      <td style="text-align:center;">${escapeHtml(String(accountCount))}</td>
+      <td>${statusBadge}</td>
+      <td style="color:var(--text-muted);font-size:0.875rem;">${escapeHtml(created)}</td>
+      <td>
+        <div class="actions-cell">
+          <select class="form-input" style="width:auto;padding:0.2rem 0.4rem;font-size:0.78rem;" onchange="changeUserRole('${u.id}', this.value)" title="Change role">
+            <option value="user" ${u.role === 'user' ? 'selected' : ''}>User</option>
+            <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Admin</option>
+          </select>
+          <button class="btn btn-outline btn-sm" onclick="openResetPasswordModal('${u.id}')">Reset PW</button>
+          <button class="btn ${isActive ? 'btn-outline' : 'btn-primary'} btn-sm" style="${isActive ? 'color:var(--danger);border-color:var(--danger);' : ''}" onclick="toggleUserActive('${u.id}', ${isActive})">${isActive ? 'Deactivate' : 'Activate'}</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+// ============================================================
+//  User Actions (Admin only)
+// ============================================================
+function openCreateUserModal() {
+  document.getElementById('create-email').value = '';
+  document.getElementById('create-password').value = '';
+  document.getElementById('create-role').value = 'user';
+  openModal('create-user-modal');
+}
+
+async function submitCreateUser() {
+  const email = document.getElementById('create-email').value.trim();
+  const password = document.getElementById('create-password').value;
+  const role = document.getElementById('create-role').value;
+
+  if (!email) { showToast('Email is required', 'error'); return; }
+  if (!password) { showToast('Password is required', 'error'); return; }
+  if (password.length < 8) { showToast('Password must be at least 8 characters', 'error'); return; }
+
+  try {
+    const resp = await apiFetch('/api/admin/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, role }),
+    });
+    if (resp.ok) {
+      showToast('User created successfully', 'success');
+      closeModal('create-user-modal');
+      await loadAccounts();
+    } else {
+      const err = await resp.json().catch(() => ({}));
+      showToast('Error: ' + (err.detail || 'Create failed'), 'error');
+    }
+  } catch (e) {
+    showToast('Network error: ' + e.message, 'error');
+  }
+}
+
+async function changeUserRole(userId, newRole) {
+  if (!confirm('Change this user\'s role to ' + newRole + '?')) { loadUsers(); return; }
+  try {
+    const resp = await apiFetch('/api/admin/users/' + userId + '/role', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role: newRole }),
+    });
+    if (resp.ok) {
+      showToast('Role updated to ' + newRole, 'success');
+      loadUsers();
+    } else {
+      const err = await resp.json().catch(() => ({}));
+      showToast('Error: ' + (err.detail || 'Update failed'), 'error');
+      loadUsers();
+    }
+  } catch (e) {
+    showToast('Network error: ' + e.message, 'error');
+    loadUsers();
+  }
+}
+
+function openResetPasswordModal(userId) {
+  document.getElementById('reset-user-id').value = userId;
+  document.getElementById('reset-new-password').value = '';
+  openModal('reset-password-modal');
+}
+
+async function submitResetPassword() {
+  const userId = document.getElementById('reset-user-id').value;
+  const newPassword = document.getElementById('reset-new-password').value;
+
+  if (!newPassword) { showToast('Password is required', 'error'); return; }
+  if (newPassword.length < 8) { showToast('Password must be at least 8 characters', 'error'); return; }
+
+  try {
+    const resp = await apiFetch('/api/admin/users/' + userId + '/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ new_password: newPassword }),
+    });
+    if (resp.ok) {
+      showToast('Password reset successfully', 'success');
+      closeModal('reset-password-modal');
+    } else {
+      const err = await resp.json().catch(() => ({}));
+      showToast('Error: ' + (err.detail || 'Reset failed'), 'error');
+    }
+  } catch (e) {
+    showToast('Network error: ' + e.message, 'error');
+  }
+}
+
+async function toggleUserActive(userId, isActive) {
+  const action = isActive ? 'deactivate' : 'activate';
+  if (!confirm('Are you sure you want to ' + action + ' this user?')) return;
+  try {
+    const resp = await apiFetch('/api/admin/users/' + userId + '/active', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_active: !isActive }),
+    });
+    if (resp.ok) {
+      showToast('User ' + action + 'd', 'success');
+      loadUsers();
+    } else {
+      const err = await resp.json().catch(() => ({}));
+      showToast('Error: ' + (err.detail || 'Update failed'), 'error');
+    }
+  } catch (e) {
+    showToast('Network error: ' + e.message, 'error');
+  }
+}
+
+// ============================================================
+//  Admin Rendering
+// ============================================================
+function populateOwnerFilter(accounts) {
+  const sel = document.getElementById('owner-filter');
+  if (!sel) return;
+  const emails = [...new Set(accounts.map(a => a.owner_email).filter(Boolean))].sort();
+  // Keep "All Owners" option, rebuild the rest
+  sel.innerHTML = '<option value="">All Owners</option>';
+  emails.forEach(email => {
+    const opt = document.createElement('option');
+    opt.value = email;
+    opt.textContent = email;
+    sel.appendChild(opt);
+  });
+}
+
+function renderAdminTable(accounts) {
+  const tbody = document.getElementById('accounts-tbody');
+  if (!tbody) return;
+  const filterEmail = (document.getElementById('owner-filter') || {}).value || '';
+  const visible = filterEmail ? accounts.filter(a => a.owner_email === filterEmail) : accounts;
+
+  const countEl = document.getElementById('account-count');
+  if (countEl) countEl.textContent = visible.length + ' account' + (visible.length !== 1 ? 's' : '');
+
+  if (!visible.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No accounts found.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = visible.map(acct => {
+    const statusBadges = buildStatusBadges(acct);
+    const isActive = acct.is_active;
+    const cbTripped = acct.circuit_breaker_tripped;
+    const isBuyPaused = acct.buy_pause_state === 'PAUSED';
+
+    return `<tr>
+      <td><a class="account-name-link" href="/accounts/${escapeHtml(acct.id)}">${escapeHtml(acct.name || acct.id)}</a></td>
+      <td>${escapeHtml(acct.symbol || '')}</td>
+      <td style="font-size:0.85rem; color:var(--text-muted);">${escapeHtml(acct.owner_email || '')}</td>
+      <td>${statusBadges}</td>
+      <td>
+        <div class="actions-cell">
+          <button class="btn btn-sm ${isActive ? 'btn-outline' : 'btn-primary'}"
+            onclick="event.stopPropagation(); toggleAccount('${acct.id}', ${isActive})">
+            ${isActive ? 'Stop' : 'Start'}
+          </button>
+          <button class="btn btn-sm btn-outline"
+            onclick="event.stopPropagation(); openEditModal(${JSON.stringify(JSON.stringify(acct))})">
+            Edit
+          </button>
+          <button class="btn btn-sm btn-outline" style="color:var(--danger); border-color:var(--danger);"
+            onclick="event.stopPropagation(); openDeleteModal('${acct.id}', '${escapeHtml(acct.name || acct.id).replace(/'/g, "\\'")}')">
+            Delete
+          </button>
+          ${isBuyPaused ? `<button class="btn btn-sm btn-outline" style="color:var(--warning);"
+            onclick="event.stopPropagation(); resumeBuying('${acct.id}')">Resume Buy</button>` : ''}
+          ${cbTripped ? `<button class="btn btn-sm btn-outline" style="color:var(--danger);"
+            onclick="event.stopPropagation(); resetCircuitBreaker('${acct.id}')">Reset CB</button>` : ''}
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function filterAccounts() {
+  renderAdminTable(_allAccounts);
+}
+
+// ============================================================
+//  User Rendering
+// ============================================================
+function renderUserSummary(accounts) {
+  const el = document.getElementById('user-summary');
+  if (!el) return;
+  const total = accounts.length;
+  const active = accounts.filter(a => a.is_active).length;
+  el.innerHTML = `
+    <div style="display:flex; gap:1rem; flex-wrap:wrap;">
+      <div class="card" style="padding:0.75rem 1.25rem; display:flex; gap:0.5rem; align-items:center; min-width:120px;">
+        <span style="font-size:1.5rem; font-weight:700; color:var(--primary);">${total}</span>
+        <span class="text-muted" style="font-size:0.875rem;">Total</span>
+      </div>
+      <div class="card" style="padding:0.75rem 1.25rem; display:flex; gap:0.5rem; align-items:center; min-width:120px;">
+        <span style="font-size:1.5rem; font-weight:700; color:var(--success);">${active}</span>
+        <span class="text-muted" style="font-size:0.875rem;">Active</span>
+      </div>
+    </div>`;
+}
+
+function renderUserCards(accounts) {
+  const grid = document.getElementById('accounts-grid');
+  if (!grid) return;
+  if (!accounts.length) {
+    grid.innerHTML = '<p class="text-muted">No accounts found. Add your first account.</p>';
+    return;
+  }
+
+  grid.innerHTML = accounts.map(acct => {
+    const isActive = acct.is_active;
+    const cbTripped = acct.circuit_breaker_tripped;
+    const isBuyPaused = acct.buy_pause_state === 'PAUSED';
+    const statusBadges = buildStatusBadges(acct);
+    const symbolUpper = (acct.symbol || '').toUpperCase();
+    const isBTC = symbolUpper.includes('BTC');
+    const symbolIcon = isBTC
+      ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:28px;height:28px;"><circle cx="12" cy="12" r="10"/><path d="M9.5 8H14a2 2 0 0 1 0 4h-4.5m0-4v8m0-4H14a2 2 0 0 1 0 4H9.5m2-10v2m0 8v2"/></svg>'
+      : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:28px;height:28px;"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>';
+
+    // Encode account for edit modal safely via data attribute
+    const acctJson = escapeHtml(JSON.stringify(acct));
+
+    return `
+      <div class="account-card" onclick="window.location.href='/accounts/${acct.id}'" style="cursor:pointer;">
+        <div class="account-card-top">
+          <div class="account-card-icon">${symbolIcon}</div>
+          <div>
+            <div class="account-card-label">${escapeHtml(acct.name || acct.id)}</div>
+            <div class="account-card-symbol">${escapeHtml(acct.symbol || '')}</div>
+          </div>
+        </div>
+        <div class="account-card-footer" style="margin-top:0.75rem;">
+          ${statusBadges}
+        </div>
+        <div class="actions-cell" style="margin-top:0.75rem; justify-content:flex-start;">
+          <button class="btn btn-sm ${isActive ? 'btn-outline' : 'btn-primary'}"
+            onclick="event.stopPropagation(); toggleAccount('${acct.id}', ${isActive})">
+            ${isActive ? 'Stop' : 'Start'}
+          </button>
+          <button class="btn btn-sm btn-outline"
+            onclick="event.stopPropagation(); openEditModalById('${acct.id}')">
+            Edit
+          </button>
+          <button class="btn btn-sm btn-outline" style="color:var(--danger); border-color:var(--danger);"
+            onclick="event.stopPropagation(); openDeleteModal('${acct.id}', '${escapeHtml(acct.name || acct.id).replace(/'/g, "\\'")}')">
+            Delete
+          </button>
+          ${isBuyPaused ? `<button class="btn btn-sm btn-outline" style="color:var(--warning);"
+            onclick="event.stopPropagation(); resumeBuying('${acct.id}')">Resume Buy</button>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ============================================================
+//  Status Badge Builder
+// ============================================================
+function buildStatusBadges(acct) {
+  const parts = [];
+  parts.push(`<span class="status-badge ${acct.is_active ? 'badge-success' : 'badge-danger'}">${acct.is_active ? 'Active' : 'Inactive'}</span>`);
+  if (acct.circuit_breaker_tripped) {
+    parts.push('<span class="status-badge badge-danger">CB Tripped</span>');
+  }
+  if (acct.buy_pause_state === 'PAUSED') {
+    parts.push('<span class="status-badge badge-buy-paused">Buy Paused</span>');
+  } else if (acct.buy_pause_state === 'THROTTLED') {
+    parts.push('<span class="status-badge badge-buy-throttled">Buy Throttled</span>');
+  }
+  return parts.join(' ');
+}
+
+// ============================================================
+//  Modal Helpers
+// ============================================================
+function openModal(id) {
+  const modal = document.getElementById(id);
+  if (!modal) return;
+  modal.style.display = 'flex';
+  // Admin: lazy-load owner dropdown when add modal opens
+  if (id === 'add-account-modal') {
+    const role = document.getElementById('accounts-container').dataset.role;
+    if (role === 'admin') {
+      document.getElementById('add-owner-group').style.display = '';
+      loadOwnerDropdown();
+    }
+    document.getElementById('edit-active-group');
+  }
+}
+
+function closeModal(id) {
+  const modal = document.getElementById(id);
+  if (modal) modal.style.display = 'none';
+}
+
+// ============================================================
+//  Add Account
+// ============================================================
+async function submitAddAccount() {
+  const name = document.getElementById('add-name').value.trim();
+  const symbol = document.getElementById('add-symbol').value.trim().toUpperCase();
+  const baseAsset = document.getElementById('add-base-asset').value.trim().toUpperCase();
+  const quoteAsset = document.getElementById('add-quote-asset').value.trim().toUpperCase();
+  const loopInterval = parseInt(document.getElementById('add-loop-interval').value, 10);
+  const orderCooldown = parseInt(document.getElementById('add-order-cooldown').value, 10);
+  const apiKey = document.getElementById('add-api-key').value.trim();
+  const apiSecret = document.getElementById('add-api-secret').value.trim();
+
+  if (!name) { showToast('Name is required.', 'error'); return; }
+  if (!apiKey) { showToast('API Key is required.', 'error'); return; }
+  if (!apiSecret) { showToast('API Secret is required.', 'error'); return; }
+
+  const body = { name, symbol, base_asset: baseAsset, quote_asset: quoteAsset,
+    loop_interval_sec: loopInterval, order_cooldown_sec: orderCooldown,
+    api_key: apiKey, api_secret: apiSecret };
+
+  const role = document.getElementById('accounts-container').dataset.role;
+  if (role === 'admin') {
+    const ownerId = document.getElementById('add-owner-id').value;
+    if (ownerId) body.owner_id = ownerId;
+  }
+
   try {
     const resp = await apiFetch('/api/accounts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ label, symbol, api_key: apiKey, api_secret: apiSecret }),
+      body: JSON.stringify(body),
     });
     if (resp.ok) {
-      closeAddAccountModal();
-      loadAccounts();
+      closeModal('add-account-modal');
+      showToast('Account created successfully.', 'success');
+      document.getElementById('add-account-form').reset();
+      document.getElementById('add-symbol').value = 'BTCUSDT';
+      document.getElementById('add-base-asset').value = 'BTC';
+      document.getElementById('add-quote-asset').value = 'USDT';
+      document.getElementById('add-loop-interval').value = '60';
+      document.getElementById('add-order-cooldown').value = '7';
+      await loadAccounts();
     } else {
-      const err = await resp.json();
-      alert('Error: ' + (err.detail || 'Failed to add account'));
+      const err = await resp.json().catch(() => ({}));
+      showToast('Error: ' + (err.detail || 'Failed to add account'), 'error');
     }
   } catch (e) {
-    alert('Network error: ' + e.message);
+    showToast('Network error: ' + e.message, 'error');
   }
+}
+
+// ============================================================
+//  Edit Account
+// ============================================================
+function openEditModalById(accountId) {
+  const acct = _allAccounts.find(a => a.id === accountId);
+  if (acct) openEditModal(acct);
+}
+
+function openEditModal(acct) {
+  // acct may come in as a JSON string (from inline onclick double-encode) or object
+  if (typeof acct === 'string') {
+    try { acct = JSON.parse(acct); } catch (_) { return; }
+  }
+  document.getElementById('edit-account-id').value = acct.id;
+  document.getElementById('edit-name').value = acct.name || '';
+  document.getElementById('edit-symbol').value = acct.symbol || '';
+  document.getElementById('edit-base-asset').value = acct.base_asset || '';
+  document.getElementById('edit-quote-asset').value = acct.quote_asset || '';
+  document.getElementById('edit-loop-interval').value = acct.loop_interval_sec || 60;
+  document.getElementById('edit-order-cooldown').value = acct.order_cooldown_sec || 7;
+  document.getElementById('edit-api-key').value = '';
+  document.getElementById('edit-api-secret').value = '';
+
+  const role = document.getElementById('accounts-container').dataset.role;
+  const activeGroup = document.getElementById('edit-active-group');
+  if (role === 'admin') {
+    activeGroup.style.display = '';
+    document.getElementById('edit-is-active').checked = !!acct.is_active;
+  } else {
+    activeGroup.style.display = 'none';
+  }
+
+  openModal('edit-account-modal');
+}
+
+async function submitEditAccount() {
+  const id = document.getElementById('edit-account-id').value;
+  const body = {
+    name: document.getElementById('edit-name').value.trim(),
+    symbol: document.getElementById('edit-symbol').value.trim().toUpperCase(),
+    base_asset: document.getElementById('edit-base-asset').value.trim().toUpperCase(),
+    quote_asset: document.getElementById('edit-quote-asset').value.trim().toUpperCase(),
+    loop_interval_sec: parseInt(document.getElementById('edit-loop-interval').value, 10),
+    order_cooldown_sec: parseInt(document.getElementById('edit-order-cooldown').value, 10),
+  };
+
+  const apiKey = document.getElementById('edit-api-key').value.trim();
+  const apiSecret = document.getElementById('edit-api-secret').value.trim();
+  if (apiKey) body.api_key = apiKey;
+  if (apiSecret) body.api_secret = apiSecret;
+
+  const role = document.getElementById('accounts-container').dataset.role;
+  if (role === 'admin') {
+    body.is_active = document.getElementById('edit-is-active').checked;
+  }
+
+  try {
+    const resp = await apiFetch('/api/accounts/' + id, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (resp.ok) {
+      closeModal('edit-account-modal');
+      showToast('Account updated successfully.', 'success');
+      await loadAccounts();
+    } else {
+      const err = await resp.json().catch(() => ({}));
+      showToast('Error: ' + (err.detail || 'Failed to update account'), 'error');
+    }
+  } catch (e) {
+    showToast('Network error: ' + e.message, 'error');
+  }
+}
+
+// ============================================================
+//  Delete Account
+// ============================================================
+function openDeleteModal(id, name) {
+  document.getElementById('delete-account-id').value = id;
+  document.getElementById('delete-account-name').textContent = name;
+  openModal('delete-account-modal');
+}
+
+async function confirmDelete() {
+  const id = document.getElementById('delete-account-id').value;
+  try {
+    const resp = await apiFetch('/api/accounts/' + id, { method: 'DELETE' });
+    if (resp.ok) {
+      closeModal('delete-account-modal');
+      showToast('Account deleted.', 'success');
+      await loadAccounts();
+    } else {
+      const err = await resp.json().catch(() => ({}));
+      showToast('Error: ' + (err.detail || 'Failed to delete'), 'error');
+    }
+  } catch (e) {
+    showToast('Network error: ' + e.message, 'error');
+  }
+}
+
+// ============================================================
+//  Account Actions
+// ============================================================
+async function toggleAccount(id, isActive) {
+  const action = isActive ? 'stop' : 'start';
+  try {
+    const resp = await apiFetch('/api/accounts/' + id + '/' + action, { method: 'POST' });
+    if (resp.ok) {
+      showToast('Account ' + (isActive ? 'stopped' : 'started') + '.', 'success');
+      await loadAccounts();
+    } else {
+      const err = await resp.json().catch(() => ({}));
+      showToast('Error: ' + (err.detail || 'Action failed'), 'error');
+    }
+  } catch (e) {
+    showToast('Network error: ' + e.message, 'error');
+  }
+}
+
+async function resumeBuying(id) {
+  try {
+    const resp = await apiFetch('/api/accounts/' + id + '/buy-pause/resume', { method: 'POST' });
+    if (resp.ok) {
+      showToast('Buy resumed.', 'success');
+      await loadAccounts();
+    } else {
+      const err = await resp.json().catch(() => ({}));
+      showToast('Error: ' + (err.detail || 'Failed to resume'), 'error');
+    }
+  } catch (e) {
+    showToast('Network error: ' + e.message, 'error');
+  }
+}
+
+async function resetCircuitBreaker(id) {
+  try {
+    const resp = await apiFetch('/api/accounts/' + id + '/reset-circuit-breaker', { method: 'POST' });
+    if (resp.ok) {
+      showToast('Circuit breaker reset.', 'success');
+      await loadAccounts();
+    } else {
+      const err = await resp.json().catch(() => ({}));
+      showToast('Error: ' + (err.detail || 'Failed to reset CB'), 'error');
+    }
+  } catch (e) {
+    showToast('Network error: ' + e.message, 'error');
+  }
+}
+
+// ============================================================
+//  Toast
+// ============================================================
+let _toastTimer = null;
+function showToast(msg, type) {
+  const toast = document.getElementById('toast');
+  if (!toast) return;
+  toast.textContent = msg;
+  toast.className = 'toast toast-' + (type === 'success' ? 'success' : 'error');
+  toast.style.display = 'block';
+  toast.style.opacity = '1';
+  if (_toastTimer) clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => {
+    toast.style.opacity = '0';
+    setTimeout(() => { toast.style.display = 'none'; }, 300);
+  }, 3500);
+}
+
+// ============================================================
+//  Symbol → Base/Quote Auto-derive
+// ============================================================
+function deriveAssets(prefix) {
+  const symbol = (document.getElementById(prefix + '-symbol').value || '').toUpperCase().trim();
+  // Common quote assets ordered longest-first to avoid partial matches
+  const quotes = ['USDT', 'BUSD', 'USDC', 'BTC', 'ETH', 'BNB', 'TRY', 'EUR', 'GBP', 'AUD'];
+  for (const q of quotes) {
+    if (symbol.endsWith(q) && symbol.length > q.length) {
+      document.getElementById(prefix + '-base-asset').value = symbol.slice(0, symbol.length - q.length);
+      document.getElementById(prefix + '-quote-asset').value = q;
+      return;
+    }
+  }
+}
+
+// ============================================================
+//  Admin: Load Owner Dropdown
+// ============================================================
+async function loadOwnerDropdown() {
+  const sel = document.getElementById('add-owner-id');
+  if (!sel) return;
+  try {
+    const resp = await apiFetch('/api/admin/users');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    const users = data.users || data || [];
+    sel.innerHTML = '<option value="">— Select Owner —</option>';
+    users.forEach(u => {
+      const opt = document.createElement('option');
+      opt.value = u.id;
+      opt.textContent = u.email || u.id;
+      sel.appendChild(opt);
+    });
+  } catch (e) {
+    sel.innerHTML = '<option value="">Failed to load users</option>';
+  }
+}
+
+// ============================================================
+//  escapeHtml (local fallback if main.js not yet loaded)
+// ============================================================
+if (typeof escapeHtml === 'undefined') {
+  window.escapeHtml = function escapeHtml(str) {
+    if (str == null) return '';
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  };
 }
 </script>
 {% endblock %}

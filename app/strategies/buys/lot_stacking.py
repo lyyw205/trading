@@ -1,20 +1,20 @@
 from __future__ import annotations
 
-import time
 import logging
+import time
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from app.strategies.base import BaseBuyLogic, StrategyContext, RepositoryBundle
+from app.models.core_btc_history import CoreBtcHistory
+from app.strategies.base import BaseBuyLogic, RepositoryBundle, StrategyContext
 from app.strategies.registry import BuyLogicRegistry
 from app.strategies.sizing import resolve_buy_usdt
 from app.strategies.utils import extract_base_commission_qty
-from app.models.core_btc_history import CoreBtcHistory
 
 if TYPE_CHECKING:
-    from app.strategies.state_store import StrategyStateStore
     from app.exchange.base_client import ExchangeClient
     from app.services.account_state_manager import AccountStateManager
+    from app.strategies.state_store import StrategyStateStore
 
 logger = logging.getLogger(__name__)
 
@@ -117,8 +117,8 @@ class LotStackingBuy(BaseBuyLogic):
     async def pre_tick(
         self,
         ctx: StrategyContext,
-        state: "StrategyStateStore",
-        exchange: "ExchangeClient",
+        state: StrategyStateStore,
+        exchange: ExchangeClient,
         repos: RepositoryBundle,
         combo_id: UUID,
     ) -> None:
@@ -127,9 +127,9 @@ class LotStackingBuy(BaseBuyLogic):
     async def tick(
         self,
         ctx: StrategyContext,
-        state: "StrategyStateStore",
-        exchange: "ExchangeClient",
-        account_state: "AccountStateManager",
+        state: StrategyStateStore,
+        exchange: ExchangeClient,
+        account_state: AccountStateManager,
         repos: RepositoryBundle,
         combo_id: UUID,
     ) -> None:
@@ -148,9 +148,9 @@ class LotStackingBuy(BaseBuyLogic):
     async def _process_pending_buy(
         self,
         ctx: StrategyContext,
-        state: "StrategyStateStore",
-        exchange: "ExchangeClient",
-        account_state: "AccountStateManager",
+        state: StrategyStateStore,
+        exchange: ExchangeClient,
+        account_state: AccountStateManager,
         repos: RepositoryBundle,
         combo_id: UUID,
     ) -> bool:
@@ -223,9 +223,9 @@ class LotStackingBuy(BaseBuyLogic):
     async def _handle_filled_buy(
         self,
         ctx: StrategyContext,
-        state: "StrategyStateStore",
+        state: StrategyStateStore,
         order_data: dict,
-        account_state: "AccountStateManager",
+        account_state: AccountStateManager,
         repos: RepositoryBundle,
         combo_id: UUID,
         *,
@@ -296,8 +296,8 @@ class LotStackingBuy(BaseBuyLogic):
     async def _maybe_recenter_base(
         self,
         ctx: StrategyContext,
-        state: "StrategyStateStore",
-        exchange: "ExchangeClient",
+        state: StrategyStateStore,
+        exchange: ExchangeClient,
         repos: RepositoryBundle,
         combo_id: UUID,
     ) -> None:
@@ -333,7 +333,7 @@ class LotStackingBuy(BaseBuyLogic):
             await state.set("base_price", ema)
 
     async def _update_recenter_ema(
-        self, state: "StrategyStateStore", price: float, n: int
+        self, state: StrategyStateStore, price: float, n: int
     ) -> float:
         alpha = 2.0 / (n + 1)
         prev = await state.get_float("recenter_ema", 0.0)
@@ -351,9 +351,9 @@ class LotStackingBuy(BaseBuyLogic):
     async def _maybe_buy_on_drop(
         self,
         ctx: StrategyContext,
-        state: "StrategyStateStore",
-        exchange: "ExchangeClient",
-        account_state: "AccountStateManager",
+        state: StrategyStateStore,
+        exchange: ExchangeClient,
+        account_state: AccountStateManager,
         repos: RepositoryBundle,
         combo_id: UUID,
     ) -> None:

@@ -33,5 +33,22 @@ services:
       retries: 5
     restart: unless-stopped
 
+  test-db:
+    image: postgres:16-alpine
+    profiles: ["test"]
+    environment:
+      POSTGRES_DB: crypto_trader_test
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+    ports:
+      - "5433:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test -d crypto_trader_test"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
 volumes:
   pgdata:

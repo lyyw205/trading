@@ -487,6 +487,16 @@ html.theme-transition *::after {
 .dashboard-section:nth-child(5) { animation-delay: 0.12s; }
 .dashboard-section:nth-child(6) { animation-delay: 0.15s; }
 
+/* Management sections (unified admin page) */
+.management-section { margin-bottom: 2rem; }
+.management-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+.management-section-header h2 { margin: 0; font-size: 1.15rem; font-weight: 600; }
+
 .section-header {
   display: flex;
   align-items: center;
@@ -1808,4 +1818,42 @@ select.form-input {
 @keyframes wizard-slide-back {
   from { opacity: 0; transform: translateX(-12px); }
   to   { opacity: 1; transform: translateX(0); }
+}
+
+/* ————————————————————————————————————————
+   Admin Table — Responsive
+   ———————————————————————————————————————— */
+.data-table { width: 100%; border-collapse: collapse; }
+.data-table th,
+.data-table td { padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid var(--border); }
+.data-table th { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); font-weight: 600; }
+.data-table tbody tr { transition: background 0.15s; }
+.data-table tbody tr:hover { background: var(--bg-tertiary); }
+
+/* Filter bar */
+.filter-bar { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
+
+
+/* Action buttons in table */
+.actions-cell { display: flex; gap: 0.4rem; justify-content: flex-end; flex-wrap: wrap; }
+.actions-cell .btn { padding: 0.25rem 0.6rem; font-size: 0.78rem; white-space: nowrap; }
+
+/* Status badges — additional */
+.badge-warning { background: var(--warning-light); color: var(--warning); }
+.badge-inactive { background: var(--bg-tertiary); color: var(--text-muted); }
+
+/* Mobile responsive for tables */
+@media (max-width: 768px) {
+  .data-table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .filter-bar { flex-direction: column; align-items: stretch; }
+  .filter-bar select { max-width: 100% !important; }
+  .actions-cell { flex-direction: column; gap: 0.25rem; }
+  .actions-cell .btn { width: 100%; text-align: center; }
+  .modal-dialog { margin: 0.5rem; max-width: calc(100vw - 1rem); }
+}
+
+@media (max-width: 480px) {
+  .accounts-grid { grid-template-columns: 1fr; }
+  .page-header { flex-direction: column; gap: 0.75rem; align-items: stretch; }
+  .page-header .btn { width: 100%; text-align: center; }
 }

@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+
+{% block title %}System Health - Crypto Multi-Trader{% endblock %}
+
+{% block content %}
+<div class="hero-banner">
+  <h1 class="page-title">System Health</h1>
+  <p class="hero-subtitle">Database, WebSocket, trading engine, and candle storage monitoring.</p>
+  <div class="hero-actions">
+    <button class="btn btn-hero btn-sm" onclick="loadSystemHealth()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+      Refresh
+    </button>
+  </div>
+</div>
+
+<!-- KPI Cards -->
+<div class="kpi-grid" id="system-kpi">
+  <div class="loading-spinner">Loading...</div>
+</div>
+
+<!-- Database Section -->
+<section class="dashboard-section">
+  <div class="section-header">
+    <h2 class="section-title">Database</h2>
+  </div>
+  <div id="db-pool-info" style="margin-bottom:1rem;">
+    <div class="loading-spinner">Loading...</div>
+  </div>
+
+  <h3 style="font-size:0.9rem;font-weight:600;margin:1.25rem 0 0.75rem;color:var(--text-muted);">Dead Tuples (Top 10)</h3>
+  <div class="table-wrapper">
+    <table class="data-table" id="dead-tuples-table">
+      <thead>
+        <tr>
+          <th>Table</th>
+          <th>Dead Tuples</th>
+          <th>Live Tuples</th>
+          <th>Ratio</th>
+        </tr>
+      </thead>
+      <tbody id="dead-tuples-tbody">
+        <tr><td colspan="4" class="table-empty">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- Candle Storage Section -->
+<section class="dashboard-section">
+  <div class="section-header">
+    <h2 class="section-title">Candle Storage</h2>
+  </div>
+  <div class="table-wrapper">
+    <table class="data-table" id="candles-table">
+      <thead>
+        <tr>
+          <th>Interval</th>
+          <th>Symbol</th>
+          <th>Records</th>
+        </tr>
+      </thead>
+      <tbody id="candles-tbody">
+        <tr><td colspan="3" class="table-empty">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadSystemHealth() {
+  try {
+    const resp = await apiFetch('/api/admin/system-health');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+
+    renderKPIs(data);
+    renderDbInfo(data.database);
+    renderDeadTuples(data.database.dead_tuples || []);
+    renderCandles(data.candles || []);
+  } catch (e) {
+    document.getElementById('system-kpi').innerHTML = `<p class="error-text">Failed to load: ${escapeHtml(e.message)}</p>`;
+  }
+}
+
+function renderKPIs(data) {
+  const db = data.database || {};
+  const ws = data.websocket || {};
+  const eng = data.engine || {};
+  const pool = db.connection_pool || {};
+
+  const wsHealthClass = ws.healthy ? 'kpi-positive' : 'kpi-negative';
+  const wsHealthText = ws.healthy ? 'Healthy' : 'Unhealthy';
+
+  document.getElementById('system-kpi').innerHTML = `
+    <div class="kpi-card">
+      <div class="kpi-card-header"><span class="kpi-label">DB Connections</span></div>
+      <div class="kpi-value">${db.active_connections != null ? db.active_connections : '-'}</div>
+      <div class="kpi-detail">Pool: ${pool.checked_out || 0} out / ${pool.pool_size || 0} size</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-card-header"><span class="kpi-label">WebSocket</span></div>
+      <div class="kpi-value ${wsHealthClass}">${wsHealthText}</div>
+      <div class="kpi-detail">${ws.subscriptions || 0} subscriptions</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-card-header"><span class="kpi-label">Trading Engine</span></div>
+      <div class="kpi-value">${eng.active_accounts || 0}</div>
+      <div class="kpi-detail">${eng.total_traders || 0} total traders</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-card-header"><span class="kpi-label">Slow Queries</span></div>
+      <div class="kpi-value">${db.slow_queries_count != null ? db.slow_queries_count : 'N/A'}</div>
+      <div class="kpi-detail">Queries > 1s avg execution</div>
+    </div>
+  `;
+}
+
+function renderDbInfo(db) {
+  const pool = db.connection_pool || {};
+  document.getElementById('db-pool-info').innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:0.75rem;">
+      <div class="health-card">
+        <div class="health-card-label">Pool Size</div>
+        <div class="health-card-value">${pool.pool_size || 0}</div>
+      </div>
+      <div class="health-card">
+        <div class="health-card-label">Checked In</div>
+        <div class="health-card-value">${pool.checked_in || 0}</div>
+      </div>
+      <div class="health-card">
+        <div class="health-card-label">Checked Out</div>
+        <div class="health-card-value">${pool.checked_out || 0}</div>
+      </div>
+      <div class="health-card">
+        <div class="health-card-label">Overflow</div>
+        <div class="health-card-value">${pool.overflow || 0}</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderDeadTuples(tuples) {
+  const tbody = document.getElementById('dead-tuples-tbody');
+  if (!tuples.length) {
+    tbody.innerHTML = '<tr><td colspan="4" class="table-empty">No data</td></tr>';
+    return;
+  }
+  tbody.innerHTML = tuples.map(t => {
+    const ratio = t.live_tuples > 0 ? ((t.dead_tuples / t.live_tuples) * 100).toFixed(1) + '%' : '-';
+    const ratioClass = t.dead_tuples > 10000 ? 'style="color:var(--danger);font-weight:600;"' : '';
+    return `<tr>
+      <td style="font-weight:500;">${escapeHtml(t.table)}</td>
+      <td ${ratioClass}>${t.dead_tuples.toLocaleString()}</td>
+      <td>${t.live_tuples.toLocaleString()}</td>
+      <td ${ratioClass}>${ratio}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderCandles(candles) {
+  const tbody = document.getElementById('candles-tbody');
+  if (!candles.length) {
+    tbody.innerHTML = '<tr><td colspan="3" class="table-empty">No candle data</td></tr>';
+    return;
+  }
+  const intervalLabels = {
+    'price_candles_1m': '1 Minute',
+    'price_candles_5m': '5 Minutes',
+    'price_candles_1h': '1 Hour',
+    'price_candles_1d': '1 Day',
+  };
+  tbody.innerHTML = candles.map(c => `<tr>
+    <td><span class="status-badge badge-info">${intervalLabels[c.table] || c.table}</span></td>
+    <td>${escapeHtml(c.symbol)}</td>
+    <td style="font-weight:600;">${c.count.toLocaleString()}</td>
+  </tr>`).join('');
+}
+
+document.addEventListener('DOMContentLoaded', () => { loadSystemHealth(); });
+</script>
+
+<style>
+.badge-info { background: var(--info-light, rgba(49,130,246,0.12)); color: var(--info, #3182f6); }
+.kpi-positive { color: var(--success); }
+.kpi-negative { color: var(--danger); }
+</style>
+{% endblock %}

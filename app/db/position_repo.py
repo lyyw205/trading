@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.position import Position
 from app.models.fill import Fill
+from app.models.position import Position
 
 
 class PositionRepository:

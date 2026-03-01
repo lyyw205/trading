@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+
+{% block title %}Strategies - Crypto Multi-Trader{% endblock %}
+
+{% block content %}
+<div class="hero-banner">
+  <h1 class="page-title">Strategy Overview</h1>
+  <p class="hero-subtitle">Cross-account trading combo configurations and performance.</p>
+</div>
+
+<section class="dashboard-section">
+  <div class="section-header">
+    <h2 class="section-title">Trading Combos</h2>
+    <button class="btn btn-outline btn-sm" onclick="loadCombos()">Refresh</button>
+  </div>
+
+  <div class="tune-grid" style="margin-bottom:1rem;">
+    <div class="form-group">
+      <label class="form-label">Account</label>
+      <select id="filter-account" class="form-input" onchange="loadCombos()">
+        <option value="">All Accounts</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Status</label>
+      <select id="filter-enabled" class="form-input" onchange="loadCombos()">
+        <option value="">All</option>
+        <option value="true">Enabled</option>
+        <option value="false">Disabled</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="table-wrapper">
+    <table class="data-table" id="combos-table">
+      <thead>
+        <tr>
+          <th>Account</th>
+          <th>Combo Name</th>
+          <th>Buy Logic</th>
+          <th>Sell Logic</th>
+          <th>Status</th>
+          <th>Open Lots</th>
+          <th>Invested</th>
+          <th>Created</th>
+        </tr>
+      </thead>
+      <tbody id="combos-tbody">
+        <tr><td colspan="8" class="table-empty">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadAccountOptions() {
+  try {
+    const resp = await apiFetch('/api/admin/accounts');
+    if (!resp.ok) return;
+    const accounts = await resp.json();
+    const sel = document.getElementById('filter-account');
+    accounts.forEach(a => {
+      const opt = document.createElement('option');
+      opt.value = a.id;
+      opt.textContent = a.name || a.id;
+      sel.appendChild(opt);
+    });
+  } catch (e) {}
+}
+
+async function loadCombos() {
+  const tbody = document.getElementById('combos-tbody');
+  if (!tbody) return;
+
+  const accountId = document.getElementById('filter-account').value;
+  const enabled = document.getElementById('filter-enabled').value;
+
+  let url = '/api/admin/combos?';
+  if (accountId) url += `account_id=${accountId}&`;
+  if (enabled) url += `enabled=${enabled}&`;
+
+  try {
+    const resp = await apiFetch(url);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const combos = await resp.json();
+
+    if (!combos.length) {
+      tbody.innerHTML = '<tr><td colspan="8" class="table-empty">No combos found</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = combos.map(c => {
+      const statusBadge = c.is_enabled
+        ? '<span class="status-badge badge-success">Enabled</span>'
+        : '<span class="status-badge badge-danger">Disabled</span>';
+      const lotsClass = c.open_lots > 0 ? 'style="font-weight:600;"' : 'style="color:var(--text-muted);"';
+      return `<tr>
+        <td><a href="/accounts/${c.account_id}">${escapeHtml(c.account_name)}</a></td>
+        <td style="font-weight:500;">${escapeHtml(c.name)}</td>
+        <td><span class="status-badge badge-info">${escapeHtml(c.buy_logic_name)}</span></td>
+        <td><span class="status-badge badge-warning">${escapeHtml(c.sell_logic_name)}</span></td>
+        <td>${statusBadge}</td>
+        <td ${lotsClass}>${c.open_lots}</td>
+        <td>${c.total_invested > 0 ? '$' + fmt(c.total_invested, 2) : '-'}</td>
+        <td style="font-size:0.8rem;color:var(--text-muted);">${new Date(c.created_at).toLocaleDateString()}</td>
+      </tr>`;
+    }).join('');
+  } catch (e) {
+    tbody.innerHTML = '<tr><td colspan="8" class="table-empty error-text">Failed to load combos</td></tr>';
+  }
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadAccountOptions();
+  loadCombos();
+});
+</script>
+
+<style>
+.badge-info { background: var(--info-light, rgba(49,130,246,0.12)); color: var(--info, #3182f6); }
+.badge-warning { background: rgba(234,179,8,0.15); color: #ca8a04; }
+</style>
+{% endblock %}

@@ -1,9 +1,9 @@
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, Request
-from sqlalchemy.ext.asyncio import AsyncSession
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_trading_session
 

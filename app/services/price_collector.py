@@ -1,7 +1,8 @@
 from __future__ import annotations
+
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from app.exchange.base_client import ExchangeClient
@@ -23,14 +24,14 @@ class PriceCollector:
     def __init__(self):
         self._prices: dict[str, float] = {}
         self._lock = asyncio.Lock()
-        self._exchange_clients: dict[str, "ExchangeClient"] = {}
-        self._kline_ws: Optional["KlineWsManager"] = None
+        self._exchange_clients: dict[str, ExchangeClient] = {}
+        self._kline_ws: KlineWsManager | None = None
 
-    def set_kline_ws(self, kline_ws: "KlineWsManager") -> None:
+    def set_kline_ws(self, kline_ws: KlineWsManager) -> None:
         """Inject KlineWsManager reference (called by TradingEngine)."""
         self._kline_ws = kline_ws
 
-    def register_client(self, symbol: str, client: "ExchangeClient"):
+    def register_client(self, symbol: str, client: ExchangeClient):
         """Register an exchange client for a symbol (first one wins)"""
         if symbol not in self._exchange_clients:
             self._exchange_clients[symbol] = client

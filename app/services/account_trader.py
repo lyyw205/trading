@@ -1,25 +1,25 @@
 from __future__ import annotations
+
 import asyncio
 import logging
 import time
 from datetime import datetime
-from uuid import UUID
 from typing import TYPE_CHECKING
+from uuid import UUID, uuid4
 
-import contextvars
-from app.db.session import TradingSessionLocal
+from app.db.account_repo import AccountRepository
 from app.db.lot_repo import LotRepository
 from app.db.order_repo import OrderRepository
 from app.db.position_repo import PositionRepository
-from app.db.account_repo import AccountRepository
+from app.db.session import TradingSessionLocal
 from app.exchange.binance_client import BinanceClient
+from app.models.account import BuyPauseState
+from app.services.account_state_manager import AccountStateManager
+from app.services.buy_pause_manager import MIN_TRADE_USDT, BuyPauseManager
+from app.strategies.base import BaseBuyLogic, BaseSellLogic, RepositoryBundle, StrategyContext
 from app.strategies.registry import BuyLogicRegistry, SellLogicRegistry
 from app.strategies.state_store import StrategyStateStore
-from app.strategies.base import BaseBuyLogic, BaseSellLogic, StrategyContext, RepositoryBundle
-from app.services.account_state_manager import AccountStateManager
-from app.services.buy_pause_manager import BuyPauseManager, MIN_TRADE_USDT
-from app.models.account import BuyPauseState
-from app.utils.logging import current_account_id
+from app.utils.logging import current_account_id, current_cycle_id
 
 if TYPE_CHECKING:
     from app.services.price_collector import PriceCollector
@@ -42,9 +42,9 @@ class AccountTrader:
     def __init__(
         self,
         account_id: UUID,
-        price_collector: "PriceCollector",
-        rate_limiter: "GlobalRateLimiter",
-        encryption: "EncryptionManager",
+        price_collector: PriceCollector,
+        rate_limiter: GlobalRateLimiter,
+        encryption: EncryptionManager,
     ):
         self.account_id = account_id
         self._running = True
@@ -94,6 +94,9 @@ class AccountTrader:
 
     async def step(self):
         """Single trading cycle (corresponds to btc_trader.py step())"""
+        # Generate cycle ID for correlation across logs
+        cycle_id = uuid4().hex[:12]
+        cycle_token = current_cycle_id.set(cycle_id)
         # Set account context for structured logging
         token = current_account_id.set(str(self.account_id))
         try:
@@ -143,11 +146,12 @@ class AccountTrader:
                     price=None,  # price_repo is module-level functions
                 )
 
-                from sqlalchemy import select, func
+                from sqlalchemy import func, select
+
+                from app.models.lot import Lot
 
                 # --- Combo-based execution (Phase 3) ---
                 from app.models.trading_combo import TradingCombo
-                from app.models.lot import Lot
                 combo_stmt = select(TradingCombo).where(
                     TradingCombo.account_id == self.account_id,
                     TradingCombo.is_enabled == True,
@@ -158,6 +162,18 @@ class AccountTrader:
                 if not combos:
                     logger.debug("[%s] No active combos, skipping cycle", self.account_id)
                     return
+
+                # Sentry context for this trading cycle
+                try:
+                    import sentry_sdk
+                    sentry_sdk.set_tag("account_id", str(self.account_id))
+                    sentry_sdk.set_tag("trading_cycle", cycle_id)
+                    sentry_sdk.set_context("trading", {
+                        "buy_pause_state": str(self._buy_pause_state),
+                        "active_combos": len(combos),
+                    })
+                except Exception:
+                    pass  # Sentry not configured
 
                 # --- Open lots snapshot (for sell detection) ---
                 open_lots_before_stmt = select(func.count()).select_from(Lot).where(
@@ -248,6 +264,7 @@ class AccountTrader:
                 await session.commit()
         finally:
             current_account_id.reset(token)
+            current_cycle_id.reset(cycle_token)
 
     async def _sync_orders_and_fills(self, account, order_repo: OrderRepository, position_repo: PositionRepository):
         """Sync open orders and recent fills from exchange"""
@@ -314,7 +331,7 @@ class AccountTrader:
             try:
                 # Phase 3-B: step() 타임아웃 (180초)
                 await asyncio.wait_for(self.step(), timeout=180)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 self._consecutive_failures += 1
                 logger.error(f"[{self.account_id}] step() timed out (180s), failures: {self._consecutive_failures}")
 
@@ -349,7 +366,7 @@ class AccountTrader:
         self._wake_event.clear()
         try:
             await asyncio.wait_for(self._wake_event.wait(), timeout=seconds)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pass
 
     async def _get_loop_interval(self) -> int:

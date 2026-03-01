@@ -128,7 +128,7 @@ async function loadHealthTable() {
       const lotsPct = Math.min(100, Math.round((lots / maxLots) * 100));
       return `
       <div class="health-card" style="border-left:3px solid ${_hColors[idx % _hColors.length]}">
-        <div class="health-card-label">${escapeHtml(h.label || accountId)}</div>
+        <div class="health-card-label">${escapeHtml(h.name || accountId)}</div>
         <div class="health-card-value">${escapeHtml(h.status || 'unknown')}</div>
         <div style="display:flex;gap:0.5rem;margin-top:0.5rem;flex-wrap:wrap;">
           <span class="status-badge ${cbOk ? 'badge-success' : 'badge-danger'}">${cbOk ? 'CB OK' : 'CB Tripped'}</span>

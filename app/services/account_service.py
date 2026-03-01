@@ -1,9 +1,12 @@
 from __future__ import annotations
+
 import logging
 from uuid import UUID
+
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models.account import TradingAccount
+
 from app.db.account_repo import AccountRepository
+from app.models.account import TradingAccount
 from app.utils.encryption import EncryptionManager
 
 logger = logging.getLogger(__name__)

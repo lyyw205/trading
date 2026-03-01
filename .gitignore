@@ -14,3 +14,13 @@ build/
 *.sqlite3
 .omc/
 data/
+
+# Testing
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+
+# IDE
+.vscode/
+.idea/

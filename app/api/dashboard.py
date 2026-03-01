@@ -1,26 +1,27 @@
 from __future__ import annotations
+
 from uuid import UUID
-from fastapi import APIRouter, Request, Depends, Query, HTTPException
-from sqlalchemy import select, func
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.db.session import get_trading_session
+
 from app.db.lot_repo import LotRepository
 from app.db.position_repo import PositionRepository
-from app.db.account_repo import AccountRepository
 from app.db.price_repo import get_candles
-from app.db.strategy_state_repo import get_all_for_account
+from app.db.session import get_trading_session
+from app.dependencies import get_owned_account, limiter
+from app.models.core_btc_history import CoreBtcHistory
 from app.models.lot import Lot
 from app.models.order import Order
-from app.models.core_btc_history import CoreBtcHistory
-from app.services.account_state_manager import AccountStateManager
 from app.schemas.dashboard import (
-    DashboardSummary,
-    BuyPauseInfo,
     ApproveEarningsRequest,
     ApproveEarningsResponse,
+    BuyPauseInfo,
+    DashboardSummary,
 )
 from app.schemas.trade import LotResponse, OrderResponse
-from app.dependencies import get_owned_account, limiter
+from app.services.account_state_manager import AccountStateManager
 from app.utils.logging import audit_log
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])

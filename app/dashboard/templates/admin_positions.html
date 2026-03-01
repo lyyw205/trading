@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+
+{% block title %}Positions - Crypto Multi-Trader{% endblock %}
+
+{% block content %}
+<div class="hero-banner">
+  <h1 class="page-title">Positions</h1>
+  <p class="hero-subtitle">Cross-account position summary with cost basis tracking.</p>
+</div>
+
+<section class="dashboard-section">
+  <div class="section-header">
+    <h2 class="section-title">All Positions</h2>
+    <div style="display:flex;gap:0.5rem;align-items:center;">
+      <span id="positions-summary" class="text-muted" style="font-size:0.85rem;"></span>
+      <button class="btn btn-outline btn-sm" onclick="loadPositions()">Refresh</button>
+    </div>
+  </div>
+
+  <div class="tune-grid" style="margin-bottom:1rem;">
+    <div class="form-group">
+      <label class="form-label">Account</label>
+      <select id="filter-account" class="form-input" onchange="loadPositions()">
+        <option value="">All Accounts</option>
+      </select>
+    </div>
+    <div class="form-group"></div>
+  </div>
+
+  <div class="table-wrapper">
+    <table class="data-table" id="positions-table">
+      <thead>
+        <tr>
+          <th>Account</th>
+          <th>Symbol</th>
+          <th>Qty</th>
+          <th>Cost Basis (USDT)</th>
+          <th>Avg Entry</th>
+          <th>Updated</th>
+        </tr>
+      </thead>
+      <tbody id="positions-tbody">
+        <tr><td colspan="6" class="table-empty">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadAccountOptions() {
+  try {
+    const resp = await apiFetch('/api/admin/accounts');
+    if (!resp.ok) return;
+    const accounts = await resp.json();
+    const sel = document.getElementById('filter-account');
+    accounts.forEach(a => {
+      const opt = document.createElement('option');
+      opt.value = a.id;
+      opt.textContent = a.name || a.id;
+      sel.appendChild(opt);
+    });
+  } catch (e) {}
+}
+
+async function loadPositions() {
+  const tbody = document.getElementById('positions-tbody');
+  if (!tbody) return;
+
+  const accountId = document.getElementById('filter-account').value;
+  let url = '/api/admin/positions';
+  if (accountId) url += `?account_id=${accountId}`;
+
+  try {
+    const resp = await apiFetch(url);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const positions = await resp.json();
+
+    // Summary
+    const sumEl = document.getElementById('positions-summary');
+    if (sumEl) {
+      const totalCost = positions.reduce((s, p) => s + p.cost_basis_usdt, 0);
+      sumEl.textContent = `${positions.length} positions · $${totalCost.toFixed(2)} total cost basis`;
+    }
+
+    if (!positions.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="table-empty">No positions found</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = positions.map(p => `<tr>
+      <td><a href="/accounts/${p.account_id}">${escapeHtml(p.account_name)}</a></td>
+      <td style="font-weight:500;">${escapeHtml(p.symbol)}</td>
+      <td>${fmt(p.qty, 8)}</td>
+      <td>$${fmt(p.cost_basis_usdt, 2)}</td>
+      <td>${fmt(p.avg_entry, 2)}</td>
+      <td style="font-size:0.8rem;color:var(--text-muted);">${new Date(p.updated_at).toLocaleString()}</td>
+    </tr>`).join('');
+  } catch (e) {
+    tbody.innerHTML = '<tr><td colspan="6" class="table-empty error-text">Failed to load positions</td></tr>';
+  }
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadAccountOptions();
+  loadPositions();
+});
+</script>
+{% endblock %}

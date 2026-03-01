@@ -1,18 +1,19 @@
 from __future__ import annotations
+
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Dict, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 if TYPE_CHECKING:
-    from app.strategies.state_store import StrategyStateStore
-    from app.exchange.base_client import ExchangeClient
-    from app.services.account_state_manager import AccountStateManager
     from app.db.lot_repo import LotRepository
     from app.db.order_repo import OrderRepository
     from app.db.position_repo import PositionRepository
     from app.db.price_repo import PriceRepository
+    from app.exchange.base_client import ExchangeClient
+    from app.services.account_state_manager import AccountStateManager
+    from app.strategies.state_store import StrategyStateStore
 
 
 @dataclass
@@ -23,17 +24,17 @@ class StrategyContext:
     base_asset: str
     quote_asset: str
     current_price: float
-    params: Dict[str, Any]
+    params: dict[str, Any]
     client_order_prefix: str
 
 
 @dataclass
 class RepositoryBundle:
     """전략에 필요한 리포지토리 묶음"""
-    lot: "LotRepository"
-    order: "OrderRepository"
-    position: "PositionRepository"
-    price: "PriceRepository"
+    lot: LotRepository
+    order: OrderRepository
+    position: PositionRepository
+    price: PriceRepository
 
 
 class BaseBuyLogic(ABC):
@@ -42,8 +43,8 @@ class BaseBuyLogic(ABC):
     display_name: str = ""
     description: str = ""
     version: str = "1.0.0"
-    default_params: Dict[str, Any] = {}
-    tunable_params: Dict[str, Dict[str, Any]] = {}
+    default_params: dict[str, Any] = {}
+    tunable_params: dict[str, dict[str, Any]] = {}
 
     def __init__(self):
         self._last_order_ts: float = 0.0
@@ -51,8 +52,8 @@ class BaseBuyLogic(ABC):
     async def pre_tick(
         self,
         ctx: StrategyContext,
-        state: "StrategyStateStore",
-        exchange: "ExchangeClient",
+        state: StrategyStateStore,
+        exchange: ExchangeClient,
         repos: RepositoryBundle,
         combo_id: UUID,
     ) -> None:
@@ -63,16 +64,16 @@ class BaseBuyLogic(ABC):
     async def tick(
         self,
         ctx: StrategyContext,
-        state: "StrategyStateStore",
-        exchange: "ExchangeClient",
-        account_state: "AccountStateManager",
+        state: StrategyStateStore,
+        exchange: ExchangeClient,
+        account_state: AccountStateManager,
         repos: RepositoryBundle,
         combo_id: UUID,
     ) -> None:
         """매수 로직 1 사이클 (매도 실행 이후에 호출)."""
         ...
 
-    def validate_params(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    def validate_params(self, params: dict[str, Any]) -> dict[str, Any]:
         return {**self.default_params, **params}
 
     def _cooldown_ok(self, cooldown_sec: float) -> bool:
@@ -88,8 +89,8 @@ class BaseSellLogic(ABC):
     display_name: str = ""
     description: str = ""
     version: str = "1.0.0"
-    default_params: Dict[str, Any] = {}
-    tunable_params: Dict[str, Dict[str, Any]] = {}
+    default_params: dict[str, Any] = {}
+    tunable_params: dict[str, dict[str, Any]] = {}
 
     def __init__(self):
         self._last_order_ts: float = 0.0
@@ -98,16 +99,16 @@ class BaseSellLogic(ABC):
     async def tick(
         self,
         ctx: StrategyContext,
-        state: "StrategyStateStore",
-        exchange: "ExchangeClient",
-        account_state: "AccountStateManager",
+        state: StrategyStateStore,
+        exchange: ExchangeClient,
+        account_state: AccountStateManager,
         repos: RepositoryBundle,
         open_lots: list,
     ) -> None:
         """매도 로직 1 사이클. open_lots는 이 조합의 미결 로트들."""
         ...
 
-    def validate_params(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    def validate_params(self, params: dict[str, Any]) -> dict[str, Any]:
         return {**self.default_params, **params}
 
     def _cooldown_ok(self, cooldown_sec: float) -> bool:

@@ -28,6 +28,16 @@ class GlobalConfig(BaseSettings):
     max_accounts_per_instance: int = 20
     thread_pool_size: int = 20
 
+    # Monitoring
+    sentry_dsn: str = ""
+    environment: str = "development"
+    slow_query_threshold_ms: int = 200
+
+    # Alerts (Telegram)
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+    alert_rate_limit_per_hour: int = 10
+
     @property
     def encryption_key_list(self) -> list[str]:
         return [k.strip() for k in self.encryption_keys.split(",") if k.strip()]

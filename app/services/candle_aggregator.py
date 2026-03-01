@@ -12,11 +12,11 @@ import asyncio
 import logging
 import time
 
-from sqlalchemy import select, distinct
+from sqlalchemy import distinct, select
 
 from app.db.session import TradingSessionLocal
-from app.services.candle_store import aggregate_candles, delete_old_candles
 from app.models.price_candle import PriceCandle1m
+from app.services.candle_store import aggregate_candles, delete_old_candles
 
 logger = logging.getLogger(__name__)
 

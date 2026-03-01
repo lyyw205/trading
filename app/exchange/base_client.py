@@ -1,7 +1,7 @@
 from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional, List
 
 
 @dataclass(frozen=True)
@@ -27,7 +27,7 @@ class ExchangeClient(ABC):
     async def adjust_price(self, price: float, symbol: str) -> float: ...
 
     @abstractmethod
-    async def get_open_orders(self, symbol: str) -> List[dict]: ...
+    async def get_open_orders(self, symbol: str) -> list[dict]: ...
 
     @abstractmethod
     async def get_order(self, order_id: int, symbol: str) -> dict: ...
@@ -37,15 +37,15 @@ class ExchangeClient(ABC):
 
     @abstractmethod
     async def get_my_trades(self, symbol: str, limit: int = 1000,
-                            order_id: Optional[int] = None) -> List[dict]: ...
+                            order_id: int | None = None) -> list[dict]: ...
 
     @abstractmethod
     async def place_limit_sell(self, qty_base: float, price: float,
-                               symbol: str, client_oid: Optional[str] = None) -> dict: ...
+                               symbol: str, client_oid: str | None = None) -> dict: ...
 
     @abstractmethod
     async def place_limit_buy_by_quote(self, quote_usdt: float, price: float,
-                                        symbol: str, client_oid: Optional[str] = None) -> dict: ...
+                                        symbol: str, client_oid: str | None = None) -> dict: ...
 
     @abstractmethod
     async def get_balance(self, asset: str) -> dict: ...

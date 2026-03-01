@@ -14,14 +14,17 @@ Usage:
     # Open http://localhost:8080
 
 Pages:
-    /login              - Login page (Google OAuth UI)
-    /accounts           - Account list
+    /login              - Login page
+    /accounts           - Account list (admin: Users + Accounts)
     /accounts/<id>      - Account detail dashboard (chart, lots, tune, etc.)
     /admin              - Admin overview (KPIs + health)
-    /admin/accounts     - Admin account management
-    /admin/users        - Admin user management
-    /admin/backtest     - Backtest lab
+    /admin/lots         - Cross-account lot management
+    /admin/strategies   - Strategy/combo overview
+    /admin/positions    - Cross-account positions
+    /admin/earnings     - Earnings & reserve history
     /admin/trades       - Cross-account trade history
+    /admin/backtest     - Backtest lab
+    /admin/system       - System health monitoring
 """
 from __future__ import annotations
 
@@ -287,6 +290,7 @@ SAMPLE_USERS = [
         "email": "demo@example.com",
         "role": "admin",
         "is_active": True,
+        "account_count": 2,
         "created_at": (datetime.now() - timedelta(days=60)).isoformat(),
     },
     {
@@ -294,6 +298,7 @@ SAMPLE_USERS = [
         "email": "trader2@example.com",
         "role": "user",
         "is_active": True,
+        "account_count": 1,
         "created_at": (datetime.now() - timedelta(days=30)).isoformat(),
     },
     {
@@ -301,6 +306,7 @@ SAMPLE_USERS = [
         "email": "viewer@example.com",
         "role": "user",
         "is_active": False,
+        "account_count": 0,
         "created_at": (datetime.now() - timedelta(days=10)).isoformat(),
     },
 ]
@@ -401,17 +407,56 @@ async def admin_overview_page(request: Request):
 
 @app.get("/admin/accounts", response_class=HTMLResponse)
 async def admin_accounts_page(request: Request):
+    """[SAMPLE_DATA] Deprecated — redirect to unified /accounts."""
+    return RedirectResponse(url="/accounts", status_code=302)
+
+
+@app.get("/admin/users", response_class=HTMLResponse)
+async def admin_users_page(request: Request):
+    """[SAMPLE_DATA] Deprecated — redirect to unified /accounts."""
+    return RedirectResponse(url="/accounts", status_code=302)
+
+
+@app.get("/admin/lots", response_class=HTMLResponse)
+async def admin_lots_page(request: Request):
     # [SAMPLE_DATA] Inject mock admin user (no role check)
-    return templates.TemplateResponse("admin_accounts.html", {
+    return templates.TemplateResponse("admin_lots.html", {
         "request": request,
         "user": SAMPLE_USER,
     })
 
 
-@app.get("/admin/users", response_class=HTMLResponse)
-async def admin_users_page(request: Request):
+@app.get("/admin/strategies", response_class=HTMLResponse)
+async def admin_strategies_page(request: Request):
     # [SAMPLE_DATA] Inject mock admin user (no role check)
-    return templates.TemplateResponse("admin_users.html", {
+    return templates.TemplateResponse("admin_strategies.html", {
+        "request": request,
+        "user": SAMPLE_USER,
+    })
+
+
+@app.get("/admin/positions", response_class=HTMLResponse)
+async def admin_positions_page(request: Request):
+    # [SAMPLE_DATA] Inject mock admin user (no role check)
+    return templates.TemplateResponse("admin_positions.html", {
+        "request": request,
+        "user": SAMPLE_USER,
+    })
+
+
+@app.get("/admin/earnings", response_class=HTMLResponse)
+async def admin_earnings_page(request: Request):
+    # [SAMPLE_DATA] Inject mock admin user (no role check)
+    return templates.TemplateResponse("admin_earnings.html", {
+        "request": request,
+        "user": SAMPLE_USER,
+    })
+
+
+@app.get("/admin/system", response_class=HTMLResponse)
+async def admin_system_page(request: Request):
+    # [SAMPLE_DATA] Inject mock admin user (no role check)
+    return templates.TemplateResponse("admin_system.html", {
         "request": request,
         "user": SAMPLE_USER,
     })
@@ -602,6 +647,159 @@ async def api_set_user_active(user_id: str, request: Request):
     """[SAMPLE_DATA] Mock user active toggle (no-op)."""
     body = await request.json()
     return {"status": "updated", "is_active": body.get("is_active", True)}
+
+
+# ---- [SAMPLE_DATA] Mock Admin Lots/Combos/Positions/Earnings/System ----
+
+@app.get("/api/admin/lots")
+async def api_admin_lots(limit: int = 100, offset: int = 0, account_id: str = None, status: str = None):
+    """[SAMPLE_DATA] Mock cross-account lots."""
+    all_lots = []
+    statuses = ["OPEN", "OPEN", "OPEN", "SOLD", "SOLD", "CANCELLED"]
+    for i in range(35):
+        acct = random.choice(SAMPLE_ACCOUNTS)
+        st = random.choice(statuses) if not status else status.upper()
+        buy_price = round(random.uniform(90000, 100000), 2)
+        qty = round(random.uniform(0.0005, 0.003), 6)
+        invested = round(buy_price * qty, 2)
+        sell_price = round(buy_price * (1 + random.uniform(-0.02, 0.05)), 2) if st == "SOLD" else None
+        net_profit = round((sell_price - buy_price) * qty, 2) if sell_price else None
+        all_lots.append({
+            "lot_id": str(_uuid.uuid4()),
+            "account_id": acct["id"],
+            "account_name": acct["name"],
+            "symbol": acct["symbol"],
+            "strategy_name": random.choice(["lot_stacking", "trend_buy"]),
+            "buy_price": buy_price,
+            "buy_qty": qty,
+            "invested_usdt": invested,
+            "buy_time": (datetime.now() - timedelta(hours=random.randint(1, 168))).isoformat(),
+            "status": st,
+            "sell_price": sell_price,
+            "net_profit_usdt": net_profit,
+        })
+    if account_id:
+        all_lots = [l for l in all_lots if l["account_id"] == account_id]
+    if status:
+        all_lots = [l for l in all_lots if l["status"] == status.upper()]
+    total = len(all_lots)
+    page = all_lots[offset:offset + limit]
+    return {"lots": page, "total": total}
+
+
+@app.get("/api/admin/combos")
+async def api_admin_combos(account_id: str = None, enabled: str = None):
+    """[SAMPLE_DATA] Mock cross-account combos."""
+    combos = []
+    for i, acct in enumerate(SAMPLE_ACCOUNTS):
+        for j in range(2):
+            is_enabled = random.choice([True, True, False])
+            if enabled == "true" and not is_enabled:
+                continue
+            if enabled == "false" and is_enabled:
+                continue
+            combos.append({
+                "combo_id": str(_uuid.uuid4()),
+                "account_id": acct["id"],
+                "account_name": acct["name"],
+                "name": f"Combo-{i * 2 + j + 1}",
+                "buy_logic_name": random.choice(["lot_stacking", "trend_buy"]),
+                "sell_logic_name": "fixed_tp",
+                "is_enabled": is_enabled,
+                "open_lots": random.randint(0, 8),
+                "total_invested": round(random.uniform(0, 2000), 2),
+                "created_at": (datetime.now() - timedelta(days=random.randint(1, 60))).isoformat(),
+            })
+    if account_id:
+        combos = [c for c in combos if c["account_id"] == account_id]
+    return combos
+
+
+@app.get("/api/admin/positions")
+async def api_admin_positions(account_id: str = None):
+    """[SAMPLE_DATA] Mock cross-account positions."""
+    positions = []
+    for acct in SAMPLE_ACCOUNTS:
+        positions.append({
+            "account_id": acct["id"],
+            "account_name": acct["name"],
+            "symbol": acct["symbol"],
+            "qty": round(random.uniform(0.01, 0.5), 8),
+            "cost_basis_usdt": round(random.uniform(500, 5000), 2),
+            "avg_entry": round(random.uniform(90000, 98000), 2),
+            "updated_at": datetime.now().isoformat(),
+        })
+    if account_id:
+        positions = [p for p in positions if p["account_id"] == account_id]
+    return positions
+
+
+@app.get("/api/admin/earnings")
+async def api_admin_earnings(limit: int = 100, offset: int = 0, account_id: str = None):
+    """[SAMPLE_DATA] Mock earnings/reserve history."""
+    history = []
+    for i in range(25):
+        acct = random.choice(SAMPLE_ACCOUNTS)
+        history.append({
+            "account_id": acct["id"],
+            "account_name": acct["name"],
+            "symbol": acct["symbol"],
+            "btc_qty": round(random.uniform(0.0001, 0.005), 8),
+            "cost_usdt": round(random.uniform(10, 500), 2),
+            "source": random.choice(["AUTO_SELL", "MANUAL_APPROVE", "AUTO_SELL"]),
+            "created_at": (datetime.now() - timedelta(hours=random.randint(1, 720))).isoformat(),
+        })
+    if account_id:
+        history = [h for h in history if h["account_id"] == account_id]
+    total = len(history)
+    pending_accounts = [
+        {"account_id": a["id"], "account_name": a["name"], "pending_usdt": round(random.uniform(50, 500), 2)}
+        for a in SAMPLE_ACCOUNTS[:2]
+    ]
+    total_pending = sum(p["pending_usdt"] for p in pending_accounts)
+    page = history[offset:offset + limit]
+    return {
+        "history": page,
+        "total": total,
+        "pending_accounts": pending_accounts,
+        "total_pending_usdt": round(total_pending, 2),
+    }
+
+
+@app.get("/api/admin/system-health")
+async def api_admin_system_health():
+    """[SAMPLE_DATA] Mock system health data."""
+    return {
+        "database": {
+            "active_connections": 5,
+            "slow_queries_count": 0,
+            "connection_pool": {
+                "pool_size": 10,
+                "checked_in": 8,
+                "checked_out": 2,
+                "overflow": 0,
+            },
+            "dead_tuples": [
+                {"table": "lots", "dead_tuples": 1245, "live_tuples": 58320},
+                {"table": "orders", "dead_tuples": 890, "live_tuples": 42100},
+                {"table": "fills", "dead_tuples": 320, "live_tuples": 15600},
+            ],
+        },
+        "websocket": {
+            "healthy": True,
+            "subscriptions": 6,
+        },
+        "engine": {
+            "active_accounts": 2,
+            "total_traders": 3,
+        },
+        "candles": [
+            {"table": "price_candles_1m", "symbol": "BTCUSDT", "count": 525600},
+            {"table": "price_candles_5m", "symbol": "BTCUSDT", "count": 105120},
+            {"table": "price_candles_1h", "symbol": "BTCUSDT", "count": 8760},
+            {"table": "price_candles_1d", "symbol": "BTCUSDT", "count": 365},
+        ],
+    }
 
 
 # ---- [SAMPLE_DATA] Mock Combo / Logic API endpoints ----
@@ -876,13 +1074,16 @@ if __name__ == "__main__":
     print("  http://localhost:8080")
     print()
     print("  /login                - Login page")
-    print("  /accounts             - Account list (3 accounts)")
+    print("  /accounts             - Account list (admin: Users + Accounts)")
     print("  /accounts/<id>        - Account detail dashboard")
     print("  /admin                - Admin overview (KPIs)")
-    print("  /admin/accounts       - Account management")
-    print("  /admin/users          - User management")
-    print("  /admin/backtest       - Backtest lab")
+    print("  /admin/lots           - Lot management")
+    print("  /admin/strategies     - Strategy/combo overview")
+    print("  /admin/positions      - Cross-account positions")
+    print("  /admin/earnings       - Earnings & reserves")
     print("  /admin/trades         - Trade history")
+    print("  /admin/backtest       - Backtest lab")
+    print("  /admin/system         - System health")
     print()
     print("  To clean up: delete scripts/preview_ui.py")
     print("=" * 54)

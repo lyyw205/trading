@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+
+{% block title %}Lots - Crypto Multi-Trader{% endblock %}
+
+{% block content %}
+<div class="hero-banner">
+  <h1 class="page-title">Lot Management</h1>
+  <p class="hero-subtitle">Cross-account lot positions with filtering and risk overview.</p>
+</div>
+
+<section class="dashboard-section">
+  <div class="section-header">
+    <h2 class="section-title">All Lots</h2>
+    <div style="display:flex;gap:0.5rem;align-items:center;">
+      <span id="lots-summary" class="text-muted" style="font-size:0.85rem;"></span>
+      <button class="btn btn-outline btn-sm" onclick="loadLots()">Refresh</button>
+    </div>
+  </div>
+
+  <div class="tune-grid" style="margin-bottom:1rem;">
+    <div class="form-group">
+      <label class="form-label">Account</label>
+      <select id="filter-account" class="form-input" onchange="resetAndLoad()">
+        <option value="">All Accounts</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Status</label>
+      <select id="filter-status" class="form-input" onchange="resetAndLoad()">
+        <option value="">All</option>
+        <option value="OPEN" selected>Open</option>
+        <option value="SOLD">Sold</option>
+        <option value="CANCELLED">Cancelled</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="table-wrapper">
+    <table class="data-table" id="lots-table">
+      <thead>
+        <tr>
+          <th>Account</th>
+          <th>Symbol</th>
+          <th>Strategy</th>
+          <th>Buy Price</th>
+          <th>Qty</th>
+          <th>Invested</th>
+          <th>Buy Time</th>
+          <th>Status</th>
+          <th>Sell Price</th>
+          <th>Profit</th>
+        </tr>
+      </thead>
+      <tbody id="lots-tbody">
+        <tr><td colspan="10" class="table-empty">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="pagination" id="lots-pagination" style="display:none;">
+    <button class="btn btn-outline btn-sm" id="lots-prev" onclick="changePage(-1)">Prev</button>
+    <span id="lots-page-info" class="text-muted" style="font-size:0.85rem;"></span>
+    <button class="btn btn-outline btn-sm" id="lots-next" onclick="changePage(1)">Next</button>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let _lotsPage = 0;
+const _lotsLimit = 100;
+
+function resetAndLoad() { _lotsPage = 0; loadLots(); }
+
+async function loadAccountOptions() {
+  try {
+    const resp = await apiFetch('/api/admin/accounts');
+    if (!resp.ok) return;
+    const accounts = await resp.json();
+    const sel = document.getElementById('filter-account');
+    accounts.forEach(a => {
+      const opt = document.createElement('option');
+      opt.value = a.id;
+      opt.textContent = a.name || a.id;
+      sel.appendChild(opt);
+    });
+  } catch (e) {}
+}
+
+async function loadLots() {
+  const tbody = document.getElementById('lots-tbody');
+  if (!tbody) return;
+
+  const accountId = document.getElementById('filter-account').value;
+  const status = document.getElementById('filter-status').value;
+  const offset = _lotsPage * _lotsLimit;
+
+  let url = `/api/admin/lots?limit=${_lotsLimit}&offset=${offset}`;
+  if (accountId) url += `&account_id=${accountId}`;
+  if (status) url += `&status=${status}`;
+
+  try {
+    const resp = await apiFetch(url);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    const lots = data.lots || [];
+    const total = data.total || 0;
+
+    // Summary
+    const sumEl = document.getElementById('lots-summary');
+    if (sumEl) {
+      const totalInvested = lots.reduce((s, l) => s + (l.invested_usdt || 0), 0);
+      sumEl.textContent = `${total} lots · $${totalInvested.toFixed(2)} invested`;
+    }
+
+    if (!lots.length) {
+      tbody.innerHTML = '<tr><td colspan="10" class="table-empty">No lots found</td></tr>';
+      document.getElementById('lots-pagination').style.display = 'none';
+      return;
+    }
+
+    tbody.innerHTML = lots.map(l => {
+      const statusClass = l.status === 'OPEN' ? 'badge-success' : (l.status === 'SOLD' ? 'badge-info' : 'badge-danger');
+      const profitClass = l.net_profit_usdt > 0 ? 'pnl-positive' : (l.net_profit_usdt < 0 ? 'pnl-negative' : '');
+      return `<tr>
+        <td><a href="/accounts/${l.account_id}">${escapeHtml(l.account_name)}</a></td>
+        <td>${escapeHtml(l.symbol)}</td>
+        <td style="font-size:0.8rem;color:var(--text-muted);">${escapeHtml(l.strategy_name)}</td>
+        <td>${fmt(l.buy_price, 2)}</td>
+        <td>${fmt(l.buy_qty, 6)}</td>
+        <td>$${fmt(l.invested_usdt, 2)}</td>
+        <td style="font-size:0.8rem;color:var(--text-muted);">${new Date(l.buy_time).toLocaleString()}</td>
+        <td><span class="status-badge ${statusClass}">${l.status}</span></td>
+        <td>${l.sell_price ? fmt(l.sell_price, 2) : '-'}</td>
+        <td class="${profitClass}">${l.net_profit_usdt != null ? '$' + fmt(l.net_profit_usdt, 2) : '-'}</td>
+      </tr>`;
+    }).join('');
+
+    // Pagination
+    const totalPages = Math.ceil(total / _lotsLimit);
+    const pag = document.getElementById('lots-pagination');
+    pag.style.display = totalPages > 1 ? 'flex' : 'none';
+    document.getElementById('lots-page-info').textContent = `Page ${_lotsPage + 1} of ${totalPages} (${total} total)`;
+    document.getElementById('lots-prev').disabled = _lotsPage === 0;
+    document.getElementById('lots-next').disabled = _lotsPage >= totalPages - 1;
+  } catch (e) {
+    tbody.innerHTML = '<tr><td colspan="10" class="table-empty error-text">Failed to load lots</td></tr>';
+  }
+}
+
+function changePage(delta) {
+  _lotsPage += delta;
+  if (_lotsPage < 0) _lotsPage = 0;
+  loadLots();
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadAccountOptions();
+  loadLots();
+});
+</script>
+
+<style>
+.badge-info { background: var(--info-light, rgba(49,130,246,0.12)); color: var(--info, #3182f6); }
+.pnl-positive { color: var(--success); font-weight: 600; }
+.pnl-negative { color: var(--danger); font-weight: 600; }
+.pagination { display: flex; gap: 0.75rem; align-items: center; justify-content: center; margin-top: 1rem; }
+</style>
+{% endblock %}
