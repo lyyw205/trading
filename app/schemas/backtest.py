@@ -57,11 +57,17 @@ class BacktestSummaryOut(BaseModel):
     pnl_usdt: float
     pnl_pct: float
     total_trades: int
+    buy_trades: int = 0
+    sell_trades: int = 0
     winning_trades: int
     losing_trades: int
     win_rate: float
     max_drawdown_pct: float
     profit_factor: float
+    qty_before: float | None = None
+    qty_after: float | None = None
+    qty_change_pct: float | None = None
+    max_open_lots: int = 0
 
 
 class BacktestReportResponse(BaseModel):

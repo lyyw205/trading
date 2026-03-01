@@ -29,6 +29,11 @@ async def list_accounts(request: Request, user: dict = Depends(get_current_user)
             resp = AccountResponse.model_validate(a)
             resp.circuit_breaker_tripped = a.circuit_breaker_disabled_at is not None
             resp.owner_email = a.owner.email if a.owner else None
+            # Collect unique symbols from all combos
+            symbols: set[str] = set()
+            for combo in a.trading_combos:
+                symbols.update(combo.symbols or [])
+            resp.combo_symbols = sorted(symbols)
             responses.append(resp)
         return AccountListResponse(accounts=responses)
     else:
@@ -37,6 +42,11 @@ async def list_accounts(request: Request, user: dict = Depends(get_current_user)
         for a in accounts:
             resp = AccountResponse.model_validate(a)
             resp.circuit_breaker_tripped = a.circuit_breaker_disabled_at is not None
+            # Collect unique symbols from all combos
+            symbols: set[str] = set()
+            for combo in a.trading_combos:
+                symbols.update(combo.symbols or [])
+            resp.combo_symbols = sorted(symbols)
             responses.append(resp)
         return AccountListResponse(accounts=responses)
 

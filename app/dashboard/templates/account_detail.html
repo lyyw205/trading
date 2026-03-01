@@ -115,6 +115,23 @@
             <input type="text" id="combo-name" class="form-input" placeholder="e.g. BTC LOT + Fixed TP">
           </div>
           <div class="form-group" style="margin-top:0.5rem;">
+            <label class="form-label">Symbols</label>
+            <div class="symbol-tags" id="combo-symbol-tags"></div>
+            <div style="display:flex; gap:0.3rem; margin-top:0.3rem;">
+              <input type="text" class="form-input" id="combo-symbol-input"
+                     placeholder="ETHUSDT" style="flex:1;"
+                     onkeydown="if(event.key==='Enter'){event.preventDefault(); addComboSymbol();}">
+              <button type="button" class="btn btn-outline" onclick="addComboSymbol()" style="padding:0.3rem 0.6rem;">+</button>
+            </div>
+            <div class="symbol-quick-add" style="display:flex; gap:0.3rem; margin-top:0.4rem; flex-wrap:wrap;">
+              <button type="button" class="btn btn-outline" style="padding:0.15rem 0.4rem; font-size:0.75rem;" onclick="addComboSymbolDirect('ETHUSDT')">ETH</button>
+              <button type="button" class="btn btn-outline" style="padding:0.15rem 0.4rem; font-size:0.75rem;" onclick="addComboSymbolDirect('BTCUSDT')">BTC</button>
+              <button type="button" class="btn btn-outline" style="padding:0.15rem 0.4rem; font-size:0.75rem;" onclick="addComboSymbolDirect('SOLUSDT')">SOL</button>
+              <button type="button" class="btn btn-outline" style="padding:0.15rem 0.4rem; font-size:0.75rem;" onclick="addComboSymbolDirect('XRPUSDT')">XRP</button>
+              <button type="button" class="btn btn-outline" style="padding:0.15rem 0.4rem; font-size:0.75rem;" onclick="addComboSymbolDirect('DOGEUSDT')">DOGE</button>
+            </div>
+          </div>
+          <div class="form-group" style="margin-top:0.5rem;">
             <label class="form-label">Reference Combo (optional)</label>
             <select id="combo-reference" class="form-input">
               <option value="">None</option>
@@ -185,7 +202,7 @@
       <h3 style="margin:0;">매수 계획 계산기</h3>
       <button class="btn btn-outline btn-sm" onclick="closeBuyPlanCalc()">닫기</button>
     </div>
-    <p style="color:#94a3b8;font-size:0.85rem;margin:0 0 12px;">
+    <p style="color:var(--text-muted);font-size:0.85rem;margin:0 0 12px;">
       1~5회는 <code>x, 2x, 3x, 4x, 5x</code>, 6회 이후는 5회차 매수금액(A) 근사 유지 규칙으로 계산합니다.
     </p>
     <form id="buyplanCalcForm" onsubmit="event.preventDefault();runBuyPlanCalc();" style="margin-bottom:12px;">
@@ -210,7 +227,7 @@
       <button type="submit" class="btn btn-primary btn-sm" style="margin-top:8px;">계산하기</button>
     </form>
     <div id="bp-summary" class="asset-grid" style="margin-bottom:12px;"></div>
-    <div id="bp-warn" style="color:#dc2626;font-size:0.85rem;display:none;margin-bottom:8px;"></div>
+    <div id="bp-warn" style="color:var(--danger);font-size:0.85rem;display:none;margin-bottom:8px;"></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
       <div>
         <h4 style="margin:0 0 4px;font-size:0.9rem;">1~5회 예상 매수</h4>
@@ -250,6 +267,15 @@
     </div>
   </section>
 </div>
+{% endblock %}
+
+{% block extra_styles %}
+<style>
+.symbol-tags { display:flex; flex-wrap:wrap; gap:0.3rem; min-height:2rem; padding:0.3rem; border:1px solid var(--border); border-radius:6px; background:var(--bg-secondary); }
+.symbol-tag { display:inline-flex; align-items:center; gap:0.3rem; padding:0.15rem 0.5rem; border-radius:4px; background:var(--primary); color:#fff; font-size:0.8rem; font-weight:500; }
+.symbol-tag-remove { cursor:pointer; font-size:0.9rem; opacity:0.8; background:none; border:none; color:#fff; padding:0; line-height:1; }
+.symbol-tag-remove:hover { opacity:1; }
+</style>
 {% endblock %}
 
 {% block scripts %}

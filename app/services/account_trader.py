@@ -49,8 +49,8 @@ class AccountTrader:
         self.account_id = account_id
         self._running = True
         self._client: BinanceClient | None = None
-        self._buy_instances: dict[UUID, BaseBuyLogic] = {}
-        self._sell_instances: dict[UUID, BaseSellLogic] = {}
+        self._buy_instances: dict[tuple[UUID, str], BaseBuyLogic] = {}
+        self._sell_instances: dict[tuple[UUID, str], BaseSellLogic] = {}
         self._price_collector = price_collector
         self._rate_limiter = rate_limiter
         self._encryption = encryption
@@ -80,17 +80,32 @@ class AccountTrader:
             api_key = self._encryption.decrypt(account.api_key_encrypted)
             api_secret = self._encryption.decrypt(account.api_secret_encrypted)
             self._client = BinanceClient(api_key, api_secret, account.symbol)
-            self._price_collector.register_client(account.symbol, self._client)
+            # Register client for all combo symbols (BinanceClient methods accept explicit symbol)
+            from app.models.trading_combo import TradingCombo
+            from sqlalchemy import select as sa_select
+            combo_stmt = sa_select(TradingCombo.symbols).where(
+                TradingCombo.account_id == self.account_id,
+                TradingCombo.is_enabled == True,
+            )
+            combo_result = await session.execute(combo_stmt)
+            all_symbols = {account.symbol}
+            for row in combo_result.scalars():
+                if row:
+                    all_symbols.update(s.upper() for s in row)
+            for sym in all_symbols:
+                self._price_collector.register_client(sym, self._client)
 
-    def _get_or_create_buy(self, combo_id: UUID, name: str) -> BaseBuyLogic:
-        if combo_id not in self._buy_instances:
-            self._buy_instances[combo_id] = BuyLogicRegistry.create_instance(name)
-        return self._buy_instances[combo_id]
+    def _get_or_create_buy(self, combo_id: UUID, symbol: str, name: str) -> BaseBuyLogic:
+        key = (combo_id, symbol)
+        if key not in self._buy_instances:
+            self._buy_instances[key] = BuyLogicRegistry.create_instance(name)
+        return self._buy_instances[key]
 
-    def _get_or_create_sell(self, combo_id: UUID, name: str) -> BaseSellLogic:
-        if combo_id not in self._sell_instances:
-            self._sell_instances[combo_id] = SellLogicRegistry.create_instance(name)
-        return self._sell_instances[combo_id]
+    def _get_or_create_sell(self, combo_id: UUID, symbol: str, name: str) -> BaseSellLogic:
+        key = (combo_id, symbol)
+        if key not in self._sell_instances:
+            self._sell_instances[key] = SellLogicRegistry.create_instance(name)
+        return self._sell_instances[key]
 
     async def step(self):
         """Single trading cycle (corresponds to btc_trader.py step())"""
@@ -114,18 +129,12 @@ class AccountTrader:
                 # Rate limiter
                 await self._rate_limiter.acquire(weight=1)
 
-                # Sync orders and fills
+                # Sync orders and fills (deferred until combo symbols are known)
                 order_repo = OrderRepository(session)
                 position_repo = PositionRepository(session)
-                await self._sync_orders_and_fills(account, order_repo, position_repo)
+                # Order sync deferred until combo symbols are known
 
-                # Current price (via PriceCollector)
-                cur_price = await self._price_collector.get_price(account.symbol)
-                if cur_price <= 0:
-                    cur_price = await self._price_collector.refresh_symbol(account.symbol)
-                if cur_price <= 0:
-                    logger.warning(f"[{self.account_id}] Price is 0, skipping cycle")
-                    return
+                # Price fetching moved to per-symbol in combo loop
 
                 # --- Balance pre-check (account-level, single API call) ---
                 balance_ok = True
@@ -163,6 +172,13 @@ class AccountTrader:
                     logger.debug("[%s] No active combos, skipping cycle", self.account_id)
                     return
 
+                # Sync orders and fills for all combo symbols
+                all_combo_symbols = {account.symbol}
+                for c in combos:
+                    if c.symbols:
+                        all_combo_symbols.update(s.upper() for s in c.symbols)
+                await self._sync_orders_and_fills(account, all_combo_symbols, order_repo, position_repo)
+
                 # Sentry context for this trading cycle
                 try:
                     import sentry_sdk
@@ -186,10 +202,29 @@ class AccountTrader:
                 self._buy_pause_mgr = pause_mgr
 
                 for combo in combos:
-                        buy_logic = self._get_or_create_buy(combo.id, combo.buy_logic_name)
-                        sell_logic = self._get_or_create_sell(combo.id, combo.sell_logic_name)
+                    # Get symbols from combo (fallback to account symbol)
+                    combo_symbols = combo.symbols if combo.symbols else [account.symbol]
 
-                        combo_state = StrategyStateStore(self.account_id, str(combo.id), session)
+                    for symbol in combo_symbols:
+                        from app.utils.symbol_parser import parse_symbol
+                        try:
+                            base_asset, quote_asset = parse_symbol(symbol)
+                        except ValueError:
+                            logger.warning("[%s] Cannot parse symbol %s, skipping", self.account_id, symbol)
+                            continue
+
+                        # Fetch price for this symbol
+                        cur_price = await self._price_collector.get_price(symbol)
+                        if cur_price <= 0:
+                            cur_price = await self._price_collector.refresh_symbol(symbol)
+                        if cur_price <= 0:
+                            logger.warning("[%s] Price is 0 for %s, skipping", self.account_id, symbol)
+                            continue
+
+                        buy_logic = self._get_or_create_buy(combo.id, symbol, combo.buy_logic_name)
+                        sell_logic = self._get_or_create_sell(combo.id, symbol, combo.sell_logic_name)
+
+                        combo_state = StrategyStateStore(self.account_id, f"{combo.id}:{symbol}", session)
                         account_state = AccountStateManager(self.account_id, session)
                         prefix = f"CMT_{str(self.account_id)[:8]}_{str(combo.id)[:8]}_"
 
@@ -200,9 +235,9 @@ class AccountTrader:
 
                         buy_ctx = StrategyContext(
                             account_id=self.account_id,
-                            symbol=account.symbol,
-                            base_asset=account.base_asset,
-                            quote_asset=account.quote_asset,
+                            symbol=symbol,
+                            base_asset=base_asset,
+                            quote_asset=quote_asset,
                             current_price=cur_price,
                             params=buy_params,
                             client_order_prefix=prefix,
@@ -215,15 +250,15 @@ class AccountTrader:
                         sell_params = sell_logic.validate_params(combo.sell_params or {})
                         sell_ctx = StrategyContext(
                             account_id=self.account_id,
-                            symbol=account.symbol,
-                            base_asset=account.base_asset,
-                            quote_asset=account.quote_asset,
+                            symbol=symbol,
+                            base_asset=base_asset,
+                            quote_asset=quote_asset,
                             current_price=cur_price,
                             params=sell_params,
                             client_order_prefix=prefix,
                         )
                         open_lots = await lot_repo.get_open_lots_by_combo(
-                            self.account_id, account.symbol, combo.id,
+                            self.account_id, symbol, combo.id,
                         )
                         await sell_logic.tick(sell_ctx, combo_state, self._client, account_state, repos, open_lots)
 
@@ -266,53 +301,56 @@ class AccountTrader:
             current_account_id.reset(token)
             current_cycle_id.reset(cycle_token)
 
-    async def _sync_orders_and_fills(self, account, order_repo: OrderRepository, position_repo: PositionRepository):
-        """Sync open orders and recent fills from exchange"""
+    async def _sync_orders_and_fills(self, account, symbols: set[str], order_repo: OrderRepository, position_repo: PositionRepository):
+        """Sync open orders and recent fills for all active symbols"""
         # Get recent open orders from DB
         open_ids = await order_repo.get_recent_open_orders(self.account_id)
 
-        # Get open orders from exchange
-        try:
-            await self._rate_limiter.acquire(weight=3)  # get_open_orders is weight 3
-            ex_open = await self._client.get_open_orders(account.symbol)
-            for o in ex_open:
-                await order_repo.upsert_order(self.account_id, o)
-                oid = int(o["orderId"])
-                if oid not in open_ids:
-                    open_ids.append(oid)
-        except Exception as e:
-            logger.warning(f"[{self.account_id}] Open orders sync failed: {e}")
+        for symbol in symbols:
+            # Get open orders from exchange per symbol
+            try:
+                await self._rate_limiter.acquire(weight=3)
+                ex_open = await self._client.get_open_orders(symbol)
+                for o in ex_open:
+                    await order_repo.upsert_order(self.account_id, o)
+                    oid = int(o["orderId"])
+                    if oid not in open_ids:
+                        open_ids.append(oid)
+            except Exception as e:
+                logger.warning(f"[{self.account_id}] Open orders sync failed for {symbol}: {e}")
 
-        # Refresh each tracked order
+        # Refresh each tracked order (symbol is in the order data)
         for oid in open_ids[:50]:
             try:
                 await self._rate_limiter.acquire(weight=1)
+                # Try with account symbol first; order may belong to any symbol
                 o = await self._client.get_order(oid, account.symbol)
                 await order_repo.upsert_order(self.account_id, o)
             except Exception as e:
                 logger.warning(f"[{self.account_id}] Order {oid} sync failed: {e}")
 
-        # Sync recent fills
-        try:
-            await self._rate_limiter.acquire(weight=5)  # get_my_trades weight
-            trades = await self._client.get_my_trades(account.symbol)
-            seen_oids = set()
-            for t in trades:
-                oid = int(t.get("orderId", 0))
-                if oid > 0 and oid not in seen_oids:
-                    seen_oids.add(oid)
-                    try:
-                        await self._rate_limiter.acquire(weight=1)
-                        o = await self._client.get_order(oid, account.symbol)
-                        await order_repo.upsert_order(self.account_id, o)
-                    except Exception:
-                        pass
-                await order_repo.insert_fill(self.account_id, oid, t)
-        except Exception as e:
-            logger.warning(f"[{self.account_id}] Fills sync failed: {e}")
+        for symbol in symbols:
+            # Sync recent fills per symbol
+            try:
+                await self._rate_limiter.acquire(weight=5)
+                trades = await self._client.get_my_trades(symbol)
+                seen_oids = set()
+                for t in trades:
+                    oid = int(t.get("orderId", 0))
+                    if oid > 0 and oid not in seen_oids:
+                        seen_oids.add(oid)
+                        try:
+                            await self._rate_limiter.acquire(weight=1)
+                            o = await self._client.get_order(oid, symbol)
+                            await order_repo.upsert_order(self.account_id, o)
+                        except Exception:
+                            pass
+                    await order_repo.insert_fill(self.account_id, oid, t)
+            except Exception as e:
+                logger.warning(f"[{self.account_id}] Fills sync failed for {symbol}: {e}")
 
-        # Recompute position
-        await position_repo.recompute_from_fills(self.account_id, account.symbol)
+            # Recompute position per symbol
+            await position_repo.recompute_from_fills(self.account_id, symbol)
 
     async def run_forever(self):
         """Main trading loop with circuit breaker and exponential backoff"""

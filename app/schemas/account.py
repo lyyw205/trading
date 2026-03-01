@@ -53,6 +53,7 @@ class AccountResponse(BaseModel):
     circuit_breaker_tripped: bool = False
     owner_id: UUID
     owner_email: str | None = None
+    combo_symbols: list[str] = []
 
     model_config = {"from_attributes": True}
 

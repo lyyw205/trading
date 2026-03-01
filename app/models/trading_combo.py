@@ -21,6 +21,7 @@ class TradingCombo(Base):
         ForeignKey("trading_accounts.id", ondelete="CASCADE"), nullable=False
     )
     name: Mapped[str] = mapped_column(String, nullable=False)
+    symbols: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")
     buy_logic_name: Mapped[str] = mapped_column(String, nullable=False)
     buy_params: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
     sell_logic_name: Mapped[str] = mapped_column(String, nullable=False)

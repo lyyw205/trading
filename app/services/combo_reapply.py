@@ -50,58 +50,61 @@ async def reapply_combo_orders(
 
     lot_repo = LotRepository(session)
     order_repo = OrderRepository(session)
-    state = StrategyStateStore(account.id, str(combo.id), session)
+    # State scope now includes symbol; process each combo symbol
+    combo_symbols = combo.symbols if combo.symbols else [account.symbol]
 
     cancelled_buy = 0
     cancelled_sell = 0
     errors = []
 
-    # 1. Cancel pending buy order
-    pending_order_id = await state.get("pending_order_id")
-    if pending_order_id and str(pending_order_id).strip():
-        order_id = int(pending_order_id)
-        try:
-            cancel_resp = await client.cancel_order(order_id, account.symbol)
-            await order_repo.upsert_order(account.id, cancel_resp)
-            cancelled_buy += 1
-            logger.info(
-                "combo_reapply: cancelled pending buy order %s for combo %s",
-                order_id, combo.id,
-            )
-        except Exception as exc:
-            # Order may already be filled/cancelled - not critical
-            logger.warning(
-                "combo_reapply: cancel pending buy %s failed: %s", order_id, exc,
-            )
-            errors.append(f"buy order {order_id}: {exc}")
+    for symbol in combo_symbols:
+        state = StrategyStateStore(account.id, f"{combo.id}:{symbol}", session)
 
-        await state.clear_keys(*_PENDING_KEYS)
+        # 1. Cancel pending buy order for this symbol
+        pending_order_id = await state.get("pending_order_id")
+        if pending_order_id and str(pending_order_id).strip():
+            order_id = int(pending_order_id)
+            try:
+                cancel_resp = await client.cancel_order(order_id, symbol)
+                await order_repo.upsert_order(account.id, cancel_resp)
+                cancelled_buy += 1
+                logger.info(
+                    "combo_reapply: cancelled pending buy order %s for combo %s symbol %s",
+                    order_id, combo.id, symbol,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "combo_reapply: cancel pending buy %s failed: %s", order_id, exc,
+                )
+                errors.append(f"buy order {order_id}: {exc}")
 
-    # 2. Cancel TP sell orders on open lots
-    open_lots = await lot_repo.get_open_lots_by_combo(
-        account.id, account.symbol, combo.id,
-    )
-    for lot in open_lots:
-        if not lot.sell_order_id:
-            continue
-        try:
-            cancel_resp = await client.cancel_order(lot.sell_order_id, account.symbol)
-            await order_repo.upsert_order(account.id, cancel_resp)
-            cancelled_sell += 1
-            logger.info(
-                "combo_reapply: cancelled TP sell order %s for lot %s",
-                lot.sell_order_id, lot.lot_id,
-            )
-        except Exception as exc:
-            logger.warning(
-                "combo_reapply: cancel TP sell %s failed: %s",
-                lot.sell_order_id, exc,
-            )
-            errors.append(f"sell order {lot.sell_order_id}: {exc}")
+            await state.clear_keys(*_PENDING_KEYS)
 
-        await lot_repo.clear_sell_order(
-            account_id=account.id, lot_id=lot.lot_id,
+        # 2. Cancel TP sell orders on open lots for this symbol
+        open_lots = await lot_repo.get_open_lots_by_combo(
+            account.id, symbol, combo.id,
         )
+        for lot in open_lots:
+            if not lot.sell_order_id:
+                continue
+            try:
+                cancel_resp = await client.cancel_order(lot.sell_order_id, lot.symbol)
+                await order_repo.upsert_order(account.id, cancel_resp)
+                cancelled_sell += 1
+                logger.info(
+                    "combo_reapply: cancelled TP sell order %s for lot %s",
+                    lot.sell_order_id, lot.lot_id,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "combo_reapply: cancel TP sell %s failed: %s",
+                    lot.sell_order_id, exc,
+                )
+                errors.append(f"sell order {lot.sell_order_id}: {exc}")
+
+            await lot_repo.clear_sell_order(
+                account_id=account.id, lot_id=lot.lot_id,
+            )
 
     summary = {
         "cancelled_buy": cancelled_buy,

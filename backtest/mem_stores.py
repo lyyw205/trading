@@ -134,6 +134,9 @@ class InMemoryLotRepository:
     def __init__(self) -> None:
         self._lots: dict[tuple[int, UUID], MemLot] = {}
         self._next_lot_id: int = 1
+        self._combo_index: dict[tuple, list[MemLot]] = {}
+        self._open_count: int = 0
+        self.max_open_lots: int = 0
 
     async def insert_lot(
         self,
@@ -163,6 +166,13 @@ class InMemoryLotRepository:
             combo_id=combo_id,
         )
         self._lots[(lot_id, account_id)] = lot
+        idx_key = (account_id, symbol, combo_id)
+        if idx_key not in self._combo_index:
+            self._combo_index[idx_key] = []
+        self._combo_index[idx_key].append(lot)
+        self._open_count += 1
+        if self._open_count > self.max_open_lots:
+            self.max_open_lots = self._open_count
         return lot
 
     async def get_open_lots_by_combo(
@@ -171,16 +181,8 @@ class InMemoryLotRepository:
         symbol: str,
         combo_id: UUID,
     ) -> list[MemLot]:
-        return sorted(
-            [
-                lot for lot in self._lots.values()
-                if lot.account_id == account_id
-                and lot.symbol == symbol
-                and lot.combo_id == combo_id
-                and lot.status == "OPEN"
-            ],
-            key=lambda lot: lot.buy_time_ms or 0,
-        )
+        lots = self._combo_index.get((account_id, symbol, combo_id), [])
+        return sorted(lots, key=lambda lot: lot.buy_time_ms or 0)
 
     async def get_open_lots(
         self,
@@ -213,6 +215,15 @@ class InMemoryLotRepository:
         key = (lot_id, account_id)
         lot = self._lots[key]
         lot.status = "CLOSED"
+        self._open_count -= 1
+        # Remove from combo index (O(1) amortized vs full scan)
+        idx_key = (lot.account_id, lot.symbol, lot.combo_id)
+        idx_list = self._combo_index.get(idx_key)
+        if idx_list is not None:
+            try:
+                idx_list.remove(lot)
+            except ValueError:
+                pass
         lot.sell_price = float(sell_price)
         lot.sell_time = datetime.now(timezone.utc)
         lot.sell_time_ms = sell_time_ms

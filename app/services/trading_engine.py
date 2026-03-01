@@ -35,7 +35,7 @@ class TradingEngine:
         self._encryption = encryption
         self._kline_ws = KlineWsManager()
         self._price_collector.set_kline_ws(self._kline_ws)
-        self._account_symbols: dict[UUID, str] = {}  # account_id -> symbol mapping
+        self._account_symbols: dict[UUID, set[str]] = {}  # account_id -> symbol mapping
 
     async def start(self):
         """Start trading loops for all active accounts with staggered scheduling"""
@@ -68,10 +68,13 @@ class TradingEngine:
                 return
             if account:
                 symbol = account.symbol
-        # Subscribe symbol to kline WS stream
-        if symbol:
-            self._account_symbols[account_id] = symbol
-            await self._kline_ws.subscribe(symbol)
+        # Subscribe combo symbols to kline WS stream
+        combo_symbols = await self._get_combo_symbols(account_id)
+        if not combo_symbols and symbol:
+            combo_symbols = {symbol.lower()}
+        for s in combo_symbols:
+            await self._kline_ws.subscribe(s)
+        self._account_symbols[account_id] = combo_symbols
         trader = AccountTrader(
             account_id=account_id,
             price_collector=self._price_collector,
@@ -87,10 +90,10 @@ class TradingEngine:
     async def stop_account(self, account_id: UUID):
         if account_id not in self._tasks:
             return
-        # Unsubscribe symbol from kline WS stream
-        symbol = self._account_symbols.pop(account_id, None)
-        if symbol:
-            await self._kline_ws.unsubscribe(symbol)
+        # Unsubscribe all symbols from kline WS stream
+        symbols = self._account_symbols.pop(account_id, set())
+        for s in symbols:
+            await self._kline_ws.unsubscribe(s)
         trader = self._traders.get(account_id)
         if trader:
             trader.stop()
@@ -103,6 +106,38 @@ class TradingEngine:
                 pass
         self._traders.pop(account_id, None)
         logger.info(f"Stopped trader for account {account_id}")
+
+    async def _get_combo_symbols(self, account_id: UUID) -> set[str]:
+        """Collect all unique symbols from active combos for an account."""
+        from app.models.trading_combo import TradingCombo
+        from sqlalchemy import select
+        async with TradingSessionLocal() as session:
+            stmt = select(TradingCombo.symbols).where(
+                TradingCombo.account_id == account_id,
+                TradingCombo.is_enabled == True,
+            )
+            result = await session.execute(stmt)
+            all_symbols = set()
+            for row in result.scalars():
+                if row:
+                    all_symbols.update(s.lower() for s in row)
+            return all_symbols
+
+    async def refresh_subscriptions(self, account_id: UUID):
+        """Recalculate and update kline WS subscriptions for an account's combos."""
+        if account_id not in self._traders:
+            return  # Account not running, no subscriptions to manage
+        new_symbols = await self._get_combo_symbols(account_id)
+        old_symbols = self._account_symbols.get(account_id, set())
+        # Subscribe new
+        for s in new_symbols - old_symbols:
+            await self._kline_ws.subscribe(s)
+        # Unsubscribe removed
+        for s in old_symbols - new_symbols:
+            await self._kline_ws.unsubscribe(s)
+        self._account_symbols[account_id] = new_symbols
+        if new_symbols != old_symbols:
+            logger.info(f"Refreshed subscriptions for {account_id}: {old_symbols} -> {new_symbols}")
 
     async def stop_all(self):
         logger.info("Stopping all traders...")

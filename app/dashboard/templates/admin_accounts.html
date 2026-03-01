@@ -18,7 +18,7 @@
       <thead>
         <tr>
           <th>Label</th>
-          <th>Symbol</th>
+          <th>Symbols</th>
           <th>Owner</th>
           <th>Active</th>
           <th>Health</th>
@@ -60,7 +60,7 @@ async function loadAdminAccounts() {
             <a href="/accounts/${acct.id}" style="font-weight:600;color:var(--text);">${escapeHtml(acct.name || acct.id)}</a>
           </div>
         </td>
-        <td><span style="font-family:var(--font-mono);font-weight:500;">${escapeHtml(acct.symbol || '')}</span></td>
+        <td><span style="font-family:var(--font-mono);font-weight:500;">${formatComboSymbols(acct.combo_symbols || [], acct.symbol)}</span></td>
         <td>${escapeHtml(acct.owner_email || acct.user_id || '-')}</td>
         <td><span class="status-badge ${acct.is_active ? 'badge-success' : 'badge-neutral'}">${acct.is_active ? 'Active' : 'Inactive'}</span></td>
         <td>${escapeHtml(acct.health_status || '-')}</td>

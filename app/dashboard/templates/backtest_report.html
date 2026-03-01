@@ -11,16 +11,16 @@
 /* Trade overlay markers */
 .chart-container { position:relative; }
 .trade-overlay { position:absolute; inset:0; pointer-events:none; z-index:3; }
-.trade-line { position:absolute; width:1px; background:rgba(255,255,255,0.25); }
+.trade-line { position:absolute; width:1px; background:var(--text-faint); opacity:0.5; }
 .trade-dot { position:absolute; width:6px; height:6px; border-radius:999px; border:1.5px solid var(--card-bg, #0b0e11); }
 .trade-dot.buy { background:#0ecb81; }
 .trade-dot.sell { background:#f6465d; }
-.trade-label { position:absolute; font-size:9px; font-weight:700; padding:1px 4px; border-radius:4px; color:#0b0e11; white-space:nowrap; opacity:0.7; pointer-events:auto; cursor:default; transition:opacity 0.15s; }
+.trade-label { position:absolute; font-size:9px; font-weight:700; padding:1px 4px; border-radius:4px; color:var(--card-bg); white-space:nowrap; opacity:0.7; pointer-events:auto; cursor:default; transition:opacity 0.15s; }
 .trade-label:hover { opacity:1; }
 .trade-label.buy { background:#0ecb81; }
 .trade-label.sell { background:#f6465d; }
 /* Trade tooltip */
-.chart-tooltip { position:fixed; pointer-events:auto; padding:8px 10px; border-radius:10px; background:rgba(12,16,20,0.96); border:1px solid var(--border); color:var(--text); font-size:12px; line-height:1.35; box-shadow:0 6px 18px rgba(0,0,0,0.45); z-index:9999; white-space:pre-line; display:none; max-height:50vh; overflow-y:auto; overscroll-behavior:contain; }
+.chart-tooltip { position:fixed; pointer-events:auto; padding:8px 10px; border-radius:10px; background:var(--bg-floating); border:1px solid var(--border); color:var(--text); font-size:12px; line-height:1.35; box-shadow:var(--shadow-lg); z-index:9999; white-space:pre-line; display:none; max-height:50vh; overflow-y:auto; overscroll-behavior:contain; }
 .chart-tooltip .tt-head { display:flex; gap:6px; align-items:baseline; margin-bottom:6px; }
 .chart-tooltip .tt-title { font-weight:500; color:var(--text-muted); }
 .chart-tooltip .tt-time { font-weight:700; }
@@ -33,7 +33,7 @@
 /* Strategy params - category layout */
 .param-cat { margin-bottom: 0.75rem; }
 .param-cat:last-child { margin-bottom: 0; }
-.param-cat-label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--primary, #f0b90b); margin-bottom: 0.35rem; padding-bottom: 0.2rem; border-bottom: 1px solid var(--border, #1e2329); }
+.param-cat-label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--primary); margin-bottom: 0.35rem; padding-bottom: 0.2rem; border-bottom: 1px solid var(--border); }
 .param-row { display: flex; justify-content: space-between; align-items: center; padding: 0.25rem 0; font-size: 0.82rem; }
 .param-key { color: var(--text-muted, #848e9c); }
 .param-val { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text, #eaecef); }
@@ -120,6 +120,11 @@
         <tr><td colspan="6" class="table-empty">Loading...</td></tr>
       </tbody>
     </table>
+    <div id="bt-trade-pager" style="display:none; padding:12px 0; align-items:center; justify-content:center; gap:12px;">
+      <button id="bt-page-prev" class="tf-btn" disabled>&lt; Prev</button>
+      <span id="bt-page-info" style="font-size:0.85rem; color:var(--text-muted);"></span>
+      <button id="bt-page-next" class="tf-btn">&gt; Next</button>
+    </div>
   </div>
 </section>
 {% endblock %}
@@ -210,7 +215,16 @@ function renderSummary(report) {
     </div>
     <div class="health-card">
       <div class="health-card-label">Profit Factor</div>
-      <div class="health-card-value">${fmtNum(s.profit_factor, 2)}</div>
+      <div class="health-card-value">${s.profit_factor >= 999 ? '∞ (No Loss)' : fmtNum(s.profit_factor, 2)}</div>
+    </div>
+    <div class="health-card">
+      <div class="health-card-label">${cfg.symbol.replace('USDT','')} Qty Change</div>
+      <div class="health-card-value ${(s.qty_change_pct ?? 0) >= 0 ? 'pnl-positive' : 'pnl-negative'}">${s.qty_change_pct != null ? ((s.qty_change_pct >= 0 ? '+' : '') + fmtNum(s.qty_change_pct, 2) + '%') : '-'}</div>
+      <div class="asset-sub">${s.qty_before != null ? fmtNum(s.qty_before, 6) : '-'} → ${s.qty_after != null ? fmtNum(s.qty_after, 6) : '-'}</div>
+    </div>
+    <div class="health-card">
+      <div class="health-card-label">Max Open Lots</div>
+      <div class="health-card-value">${s.max_open_lots ?? 0}</div>
     </div>
   `;
 }
@@ -332,6 +346,9 @@ function aggregateCandles(candles1m, tfMinutes) {
 let _priceChart = null;
 let _candleSeries = null;
 let _reportCache = null;
+let _cachedCandleMap = null;
+let _cachedTradeGroups = null;
+let _overlayRAF = null;
 
 function renderPriceChart(report, tfMinutes) {
   const container = document.getElementById('bt-price-chart');
@@ -348,6 +365,29 @@ function renderPriceChart(report, tfMinutes) {
     _candleSeries = null;
   }
 
+  // Pre-compute candle map (cached — no recompute on pan/zoom)
+  _cachedCandleMap = {};
+  candles.forEach(c => { _cachedCandleMap[c.time] = c; });
+
+  // Pre-compute trade groups by candle time
+  const intervalSec = (tfMinutes || 1) * 60;
+  _cachedTradeGroups = {};
+  if (report.trade_log) {
+    report.trade_log
+      .filter(t => t.ts_ms && t.price)
+      .forEach(t => {
+        const time = Math.floor(Math.floor(t.ts_ms / 1000) / intervalSec) * intervalSec;
+        if (!_cachedTradeGroups[time]) _cachedTradeGroups[time] = [];
+        _cachedTradeGroups[time].push({
+          time,
+          price: parseFloat(t.price),
+          side: (t.side || '').toUpperCase() === 'BUY' ? 'buy' : 'sell',
+          qty: t.quote_qty || t.qty || '',
+          ts_ms: t.ts_ms,
+        });
+      });
+  }
+
   const theme = getChartTheme();
   _priceChart = LightweightCharts.createChart(container, {
     ...theme,
@@ -362,18 +402,33 @@ function renderPriceChart(report, tfMinutes) {
   });
 
   _candleSeries.setData(candles);
-  _priceChart.timeScale().fitContent();
+  // Show last ~120 bars initially (not all candles — user can zoom out)
+  const initBars = 120;
+  if (candles.length > initBars) {
+    _priceChart.timeScale().setVisibleLogicalRange({
+      from: candles.length - initBars,
+      to: candles.length - 1,
+    });
+  } else {
+    _priceChart.timeScale().fitContent();
+  }
 
-  // Render trade overlay markers (defer to ensure chart layout is complete)
-  const renderOverlay = () => _renderTradeOverlay(report.trade_log, tfMinutes);
-  requestAnimationFrame(() => requestAnimationFrame(renderOverlay));
-  _priceChart.timeScale().subscribeVisibleTimeRangeChange(renderOverlay);
-  _priceChart.timeScale().subscribeVisibleLogicalRangeChange(renderOverlay);
+  // Debounced overlay render (RAF-based — max once per frame)
+  const scheduleOverlay = () => {
+    if (_overlayRAF) return;
+    _overlayRAF = requestAnimationFrame(() => {
+      _overlayRAF = null;
+      _renderTradeOverlay();
+    });
+  };
+  requestAnimationFrame(() => requestAnimationFrame(scheduleOverlay));
+  _priceChart.timeScale().subscribeVisibleTimeRangeChange(scheduleOverlay);
+  _priceChart.timeScale().subscribeVisibleLogicalRangeChange(scheduleOverlay);
 
   window.addEventListener('resize', () => {
     if (_priceChart) {
       _priceChart.applyOptions({ width: container.clientWidth });
-      renderOverlay();
+      scheduleOverlay();
     }
   });
 }
@@ -407,7 +462,7 @@ function _attachTradeTooltip(label, trades, x, labelY) {
       const dateStr = d.toLocaleDateString('ko-KR', { month:'2-digit', day:'2-digit' });
       const timeStr = d.toLocaleTimeString('ko-KR', { hour:'2-digit', minute:'2-digit', hour12:false });
       const sideLabel = t.side === 'buy' ? 'BUY' : 'SELL';
-      if (i > 0) html += '<div style="border-top:1px solid rgba(255,255,255,0.08); margin:4px 0;"></div>';
+      if (i > 0) html += '<div style="border-top:1px solid var(--border); margin:4px 0;"></div>';
       html += `<div class="tt-head"><span class="tt-title ${t.side}">${sideLabel}</span><span class="tt-time ${t.side}">${dateStr} ${timeStr}</span></div>`;
       html += '<div class="tt-body">';
       html += `<div class="tt-row"><span class="tt-key">Price</span><span class="tt-val">${t.price.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</span></div>`;
@@ -439,11 +494,10 @@ function _attachTradeTooltip(label, trades, x, labelY) {
   });
 }
 
-function _renderTradeOverlay(tradeLog, tfMinutes) {
+function _renderTradeOverlay() {
   const overlay = document.getElementById('trade-overlay');
-  if (!overlay || !_priceChart || !_candleSeries) return;
+  if (!overlay || !_priceChart || !_candleSeries || !_cachedTradeGroups) return;
   overlay.innerHTML = '';
-  if (!tradeLog || !tradeLog.length) return;
 
   const container = document.getElementById('bt-price-chart');
   if (!container) return;
@@ -451,40 +505,19 @@ function _renderTradeOverlay(tradeLog, tfMinutes) {
   if (rect.width <= 0 || rect.height <= 0) return;
 
   const range = _priceChart.timeScale().getVisibleRange();
-  const intervalSec = (tfMinutes || 1) * 60;
+  if (!range) return;
 
-  // Build candle lookup for high/low
-  const candleMap = {};
-  if (_reportCache && _reportCache.candles) {
-    const agg = aggregateCandles(_reportCache.candles, tfMinutes || 1);
-    agg.forEach(c => { candleMap[c.time] = c; });
-  }
+  const frag = document.createDocumentFragment();
 
-  const allEvents = tradeLog
-    .filter(t => t.ts_ms && t.price)
-    .map(t => ({
-      time: Math.floor(Math.floor(t.ts_ms / 1000) / intervalSec) * intervalSec,
-      price: parseFloat(t.price),
-      side: (t.side || '').toUpperCase() === 'BUY' || t.side === 'BUY' ? 'buy' : 'sell',
-      qty: t.quote_qty || t.qty || '',
-      ts_ms: t.ts_ms,
-    }))
-    .filter(ev => !range || (ev.time >= range.from && ev.time <= range.to));
-
-  // Group by candle time
-  const grouped = {};
-  allEvents.forEach(ev => {
-    const key = ev.time;
-    if (!grouped[key]) grouped[key] = [];
-    grouped[key].push(ev);
-  });
-
-  Object.entries(grouped).forEach(([timeKey, trades]) => {
+  for (const timeKey of Object.keys(_cachedTradeGroups)) {
     const time = Number(timeKey);
-    const x = _priceChart.timeScale().timeToCoordinate(time);
-    if (x === null || x < 0 || x > rect.width) return;
+    if (time < range.from || time > range.to) continue;
 
-    const candle = candleMap[time];
+    const x = _priceChart.timeScale().timeToCoordinate(time);
+    if (x === null || x < 0 || x > rect.width) continue;
+
+    const trades = _cachedTradeGroups[timeKey];
+    const candle = _cachedCandleMap[time];
     const buys = trades.filter(t => t.side === 'buy');
     const sells = trades.filter(t => t.side === 'sell');
 
@@ -498,26 +531,21 @@ function _renderTradeOverlay(tradeLog, tfMinutes) {
 
         const dot = document.createElement('div');
         dot.className = 'trade-dot buy';
-        dot.style.left = `${x - 3}px`;
-        dot.style.top = `${dotY - 3}px`;
-        overlay.appendChild(dot);
+        dot.style.cssText = `left:${x - 3}px;top:${dotY - 3}px`;
+        frag.appendChild(dot);
 
         const labelOffset = 14;
         const labelY = anchorY + labelOffset;
         const line = document.createElement('div');
         line.className = 'trade-line';
-        line.style.left = `${x}px`;
-        line.style.top = `${anchorY}px`;
-        line.style.height = `${Math.max(0, labelY - anchorY)}px`;
-        overlay.appendChild(line);
+        line.style.cssText = `left:${x}px;top:${anchorY}px;height:${Math.max(0, labelY - anchorY)}px`;
+        frag.appendChild(line);
 
         const label = document.createElement('div');
         label.className = 'trade-label buy';
         label.textContent = buys.length > 1 ? `B${buys.length}` : 'B';
-        overlay.appendChild(label);
-        const labelWidth = label.offsetWidth || 16;
-        label.style.left = `${x - (labelWidth / 2)}px`;
-        label.style.top = `${labelY}px`;
+        label.style.cssText = `left:${x - 8}px;top:${labelY}px`;
+        frag.appendChild(label);
 
         _attachTradeTooltip(label, buys, x, labelY);
       }
@@ -533,31 +561,28 @@ function _renderTradeOverlay(tradeLog, tfMinutes) {
 
         const dot = document.createElement('div');
         dot.className = 'trade-dot sell';
-        dot.style.left = `${x - 3}px`;
-        dot.style.top = `${dotY - 3}px`;
-        overlay.appendChild(dot);
+        dot.style.cssText = `left:${x - 3}px;top:${dotY - 3}px`;
+        frag.appendChild(dot);
 
         const labelOffset = 14;
         const labelY = anchorY - labelOffset - 12;
         const line = document.createElement('div');
         line.className = 'trade-line';
-        line.style.left = `${x}px`;
-        line.style.top = `${labelY + 12}px`;
-        line.style.height = `${Math.max(0, anchorY - (labelY + 12))}px`;
-        overlay.appendChild(line);
+        line.style.cssText = `left:${x}px;top:${labelY + 12}px;height:${Math.max(0, anchorY - (labelY + 12))}px`;
+        frag.appendChild(line);
 
         const label = document.createElement('div');
         label.className = 'trade-label sell';
         label.textContent = sells.length > 1 ? `S${sells.length}` : 'S';
-        overlay.appendChild(label);
-        const labelWidth = label.offsetWidth || 16;
-        label.style.left = `${x - (labelWidth / 2)}px`;
-        label.style.top = `${labelY}px`;
+        label.style.cssText = `left:${x - 8}px;top:${labelY}px`;
+        frag.appendChild(label);
 
         _attachTradeTooltip(label, sells, x, labelY);
       }
     }
-  });
+  }
+
+  overlay.appendChild(frag);
 }
 
 // Timeframe selector click handler
@@ -597,24 +622,62 @@ function renderEquityCurve(report) {
   });
 }
 
+const TRADE_PAGE_SIZE = 50;
+let _tradeLogData = [];
+let _tradeLogPage = 0;
+
 function renderTradeLog(report) {
   const tbody = document.getElementById('bt-trade-tbody');
   const countEl = document.getElementById('bt-trade-count');
   if (!tbody) return;
 
-  const trades = report.trade_log || [];
-  if (countEl) countEl.textContent = trades.length + ' trades';
+  _tradeLogData = report.trade_log || [];
+  _tradeLogPage = 0;
 
-  if (!trades.length) {
+  if (countEl) countEl.textContent = _tradeLogData.length + ' trades';
+
+  if (!_tradeLogData.length) {
     tbody.innerHTML = '<tr><td colspan="6" class="table-empty">No trades</td></tr>';
+    const pager = document.getElementById('bt-trade-pager');
+    if (pager) pager.style.display = 'none';
     return;
   }
 
-  tbody.innerHTML = trades.map((t, i) => {
+  _renderTradePage();
+
+  // Wire up pager buttons (once)
+  const prevBtn = document.getElementById('bt-page-prev');
+  const nextBtn = document.getElementById('bt-page-next');
+  if (prevBtn && !prevBtn._wired) {
+    prevBtn._wired = true;
+    prevBtn.addEventListener('click', () => {
+      if (_tradeLogPage > 0) { _tradeLogPage--; _renderTradePage(); }
+    });
+  }
+  if (nextBtn && !nextBtn._wired) {
+    nextBtn._wired = true;
+    nextBtn.addEventListener('click', () => {
+      const maxPage = Math.ceil(_tradeLogData.length / TRADE_PAGE_SIZE) - 1;
+      if (_tradeLogPage < maxPage) { _tradeLogPage++; _renderTradePage(); }
+    });
+  }
+}
+
+function _renderTradePage() {
+  const tbody = document.getElementById('bt-trade-tbody');
+  if (!tbody) return;
+
+  const total = _tradeLogData.length;
+  const totalPages = Math.ceil(total / TRADE_PAGE_SIZE);
+  const start = _tradeLogPage * TRADE_PAGE_SIZE;
+  const end = Math.min(start + TRADE_PAGE_SIZE, total);
+  const page = _tradeLogData.slice(start, end);
+
+  tbody.innerHTML = page.map((t, i) => {
     const time = t.ts_ms ? new Date(t.ts_ms).toLocaleString() : '-';
     const sideClass = t.side === 'BUY' ? 'pnl-positive' : 'pnl-negative';
     return `<tr>
-      <td>${i + 1}</td>
+      <td>${start + i + 1}</td>
       <td>${escapeHtml(time)}</td>
       <td class="${sideClass}">${escapeHtml(t.side || '-')}</td>
       <td>${fmtNum(parseFloat(t.price || 0), 2)}</td>
@@ -622,6 +685,16 @@ function renderTradeLog(report) {
       <td>${fmtNum(parseFloat(t.quote_qty || 0), 2)}</td>
     </tr>`;
   }).join('');
+
+  // Update pager
+  const pager = document.getElementById('bt-trade-pager');
+  const info = document.getElementById('bt-page-info');
+  const prevBtn = document.getElementById('bt-page-prev');
+  const nextBtn = document.getElementById('bt-page-next');
+  if (pager) pager.style.display = totalPages > 1 ? 'flex' : 'none';
+  if (info) info.textContent = `Page ${_tradeLogPage + 1} / ${totalPages}`;
+  if (prevBtn) prevBtn.disabled = _tradeLogPage === 0;
+  if (nextBtn) nextBtn.disabled = _tradeLogPage >= totalPages - 1;
 }
 
 function fmtNum(val, decimals) {

@@ -82,6 +82,7 @@ async def create_combo(
     combo = TradingCombo(
         account_id=account.id,
         name=body.name,
+        symbols=body.symbols,
         buy_logic_name=body.buy_logic_name,
         buy_params=body.buy_params,
         sell_logic_name=body.sell_logic_name,
@@ -91,6 +92,11 @@ async def create_combo(
     session.add(combo)
     await session.commit()
     await session.refresh(combo)
+
+    # Refresh kline WS subscriptions for new symbols
+    engine = getattr(request.app.state, 'trading_engine', None)
+    if engine:
+        await engine.refresh_subscriptions(account.id)
 
     audit_log(
         "combo_created",
@@ -131,9 +137,17 @@ async def update_combo(
         if not ref or ref.account_id != account.id:
             raise HTTPException(status_code=422, detail="Invalid reference_combo_id")
         combo.reference_combo_id = body.reference_combo_id
+    if body.symbols is not None:
+        combo.symbols = [s.upper() for s in body.symbols]
 
     await session.commit()
     await session.refresh(combo)
+
+    # Refresh kline WS subscriptions if symbols changed
+    if body.symbols is not None:
+        engine = getattr(request.app.state, 'trading_engine', None)
+        if engine:
+            await engine.refresh_subscriptions(account.id)
 
     # Reapply: cancel existing open orders so next cycle re-places with new params
     reapply_result = None
@@ -186,6 +200,11 @@ async def delete_combo(
     await session.delete(combo)
     await session.commit()
 
+    # Refresh kline WS subscriptions after combo deletion
+    engine = getattr(request.app.state, 'trading_engine', None)
+    if engine:
+        await engine.refresh_subscriptions(account.id)
+
     audit_log(
         "combo_deleted",
         user_id=user["id"],
@@ -211,6 +230,10 @@ async def enable_combo(
     combo.is_enabled = True
     await session.commit()
 
+    engine = getattr(request.app.state, 'trading_engine', None)
+    if engine:
+        await engine.refresh_subscriptions(account.id)
+
     audit_log("combo_enabled", user_id=user["id"], account_id=str(account.id), combo_id=str(combo_id))
     return {"status": "enabled"}
 
@@ -230,6 +253,10 @@ async def disable_combo(
 
     combo.is_enabled = False
     await session.commit()
+
+    engine = getattr(request.app.state, 'trading_engine', None)
+    if engine:
+        await engine.refresh_subscriptions(account.id)
 
     audit_log("combo_disabled", user_id=user["id"], account_id=str(account.id), combo_id=str(combo_id))
     return {"status": "disabled"}

@@ -16,6 +16,19 @@ class BinanceClient(ExchangeClient):
         self.symbol = symbol
         self.client = binance.client.Client(api_key, api_secret)
         self._filters_cache: dict[str, SymbolFilters] = {}
+        self._sync_time_offset()
+
+    # ------------------------------------------------------------------
+    # Time sync
+    # ------------------------------------------------------------------
+
+    def _sync_time_offset(self) -> None:
+        """Sync local clock with Binance server to avoid timestamp errors (WSL2 drift)."""
+        try:
+            server_time = self.client.get_server_time()
+            self.client.timestamp_offset = server_time["serverTime"] - int(time.time() * 1000)
+        except Exception:
+            self.client.timestamp_offset = 0
 
     # ------------------------------------------------------------------
     # Private sync helpers

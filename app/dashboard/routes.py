@@ -6,6 +6,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 router = APIRouter(tags=["pages"])
 
 
+
 def _require_login(request: Request) -> tuple[dict | None, RedirectResponse | None]:
     """Shared guard: redirect to /login if not authenticated."""
     user = getattr(request.state, "user", None)

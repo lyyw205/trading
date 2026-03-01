@@ -8,7 +8,7 @@
 .stepper { display:flex; align-items:center; gap:0; margin-bottom:1.5rem; padding:0 0.5rem; max-width:480px; }
 .step-item { display:flex; align-items:center; gap:0.5rem; cursor:pointer; padding:0.5rem 0.75rem; border-radius:8px; transition:background 0.15s; }
 .step-item:hover { background:var(--bg-hover, rgba(0,0,0,0.04)); }
-.step-num { width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:0.8rem; font-weight:700; border:2px solid var(--border); color:var(--text-muted); background:rgb(245,245,245); transition:all 0.2s; flex-shrink:0; }
+.step-num { width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:0.8rem; font-weight:700; border:2px solid var(--border); color:var(--text-muted); background:var(--bg-tertiary); transition:all 0.2s; flex-shrink:0; }
 .step-item.active .step-num { background:var(--primary); color:#fff; border-color:var(--primary); }
 .step-item.done .step-num { background:var(--primary); color:#fff; border-color:var(--primary); }
 .step-label { font-size:0.8rem; color:var(--text-muted); white-space:nowrap; }
@@ -49,12 +49,21 @@
 /* History */
 .pnl-positive { color:var(--success); font-weight:600; }
 .pnl-negative { color:var(--danger); font-weight:600; }
-.badge-neutral { background:rgba(100,116,139,0.12); color:#64748b; }
+.badge-neutral { background:var(--bg-surface); color:var(--text-muted); }
 .badge-pinned { background:rgba(240,185,11,0.12); color:#f0b90b; font-size:0.7rem; font-weight:600; padding:2px 6px; border-radius:4px; margin-left:0.35rem; }
 .tf-selector { display:flex; gap:0.25rem; }
 .tf-btn { padding:0.25rem 0.5rem; font-size:0.72rem; font-weight:600; border:1px solid var(--border); border-radius:6px; background:transparent; color:var(--text-muted); cursor:pointer; transition:all 0.15s; }
 .tf-btn:hover { color:var(--text); border-color:var(--text-muted); }
 .tf-btn.active { background:var(--primary); color:#fff; border-color:var(--primary); }
+
+/* Combo cards */
+.bt-combo-cards { display:flex; flex-direction:column; gap:0.5rem; }
+.bt-combo-card { display:flex; align-items:center; justify-content:space-between; padding:0.75rem 1rem; background:var(--bg-tertiary); border-radius:8px; border:1px solid var(--border); transition:border-color 0.15s; }
+.bt-combo-card:hover { border-color:var(--primary); }
+.bt-combo-card-info { flex:1; min-width:0; }
+.bt-combo-card-name { font-weight:600; font-size:0.9rem; }
+.bt-combo-card-detail { font-size:0.8rem; color:var(--text-muted); margin-top:0.15rem; }
+.bt-combo-card-actions { display:flex; gap:0.35rem; flex-shrink:0; margin-left:0.75rem; }
 </style>
 
 <div class="hero-banner">
@@ -88,8 +97,8 @@
             <div class="form-group">
               <label class="form-label">Symbol</label>
               <select id="bt-symbol" class="form-input">
-                <option value="BTCUSDT" selected>BTCUSDT</option>
-                <option value="ETHUSDT">ETHUSDT</option>
+                <option value="ETHUSDT" selected>ETHUSDT</option>
+                <option value="BTCUSDT">BTCUSDT</option>
               </select>
             </div>
             <div class="form-group">
@@ -118,39 +127,12 @@
       </div>
     </div>
 
-    <!-- Step 2: Strategy (Buy + Sell) -->
+    <!-- Step 2: Strategy Combos -->
     <div class="step-panel" data-step="2">
-      <div class="bt-columns">
-        <div class="bt-col">
-          <div class="bt-section-title">Buy Logic</div>
-          <div class="form-group" style="margin-bottom:0;">
-            <select class="form-input" id="bt-buy-logic" onchange="onBtBuyLogicChange()"></select>
-          </div>
-          <div class="bt-sub-params" id="bt-buy-cond-params" style="display:none;"></div>
-        </div>
-        <div class="bt-col bt-col-sizing">
-          <div class="bt-section-title">Buy Sizing</div>
-          <div class="form-group" style="margin-bottom:0;">
-            <select class="form-input" id="bt-sizing-mode" data-bt-side="buy" data-param="sizing_mode" data-type="select" onchange="onBtSizingChange()" disabled>
-              <option disabled selected>Select buy logic first</option>
-            </select>
-          </div>
-          <div class="bt-sub-params" id="bt-buy-sizing-params" style="display:none;"></div>
-        </div>
+      <div id="bt-combo-list">
+        <p style="color:var(--text-muted);text-align:center;padding:2rem 0;">No combos added yet. Click "+ Add Combo" to get started.</p>
       </div>
-      <div class="bt-columns" style="margin-top:0.5rem;">
-        <div class="bt-col">
-          <div class="bt-section-title">Sell Logic</div>
-          <div class="bt-sub-params" id="bt-sell-params" style="display:none;"></div>
-        </div>
-        <div class="bt-col bt-col-sizing">
-          <div class="bt-section-title">Sell Sizing</div>
-          <div class="form-group" style="margin-bottom:0;">
-            <select class="form-input" id="bt-sell-logic" onchange="onBtSellLogicChange()"></select>
-          </div>
-          <div class="bt-sub-params" id="bt-sell-sizing-params" style="display:none;"></div>
-        </div>
-      </div>
+      <button type="button" class="btn btn-primary btn-sm" onclick="addBtCombo()" style="margin-top:0.75rem;">+ Add Combo</button>
       <div class="step-nav">
         <button type="button" class="btn btn-outline" onclick="goToStep(1)">Back</button>
         <button type="button" class="btn btn-primary" onclick="goToStep(3)">Next</button>
@@ -168,6 +150,93 @@
   </form>
 </section>
 
+<!-- Backtest Combo Wizard Modal -->
+<div id="bt-combo-modal" class="modal-overlay" style="display:none;">
+  <div class="modal-content modal-wizard">
+    <h3 id="bt-combo-modal-title">Add Combo</h3>
+
+    <!-- Stepper -->
+    <div class="wizard-stepper" id="bt-combo-wizard-stepper">
+      <div class="wizard-step active" data-step="1" data-color="primary" onclick="btWizardGoTo(1)">
+        <div class="wizard-step-circle">1</div>
+        <div class="wizard-step-label">General</div>
+      </div>
+      <div class="wizard-connector" data-after="1"></div>
+      <div class="wizard-step" data-step="2" data-color="success" onclick="btWizardGoTo(2)">
+        <div class="wizard-step-circle">2</div>
+        <div class="wizard-step-label">Buy Logic</div>
+      </div>
+      <div class="wizard-connector" data-after="2"></div>
+      <div class="wizard-step" data-step="3" data-color="teal" onclick="btWizardGoTo(3)">
+        <div class="wizard-step-circle">3</div>
+        <div class="wizard-step-label">Buy Sizing</div>
+      </div>
+      <div class="wizard-connector" data-after="3"></div>
+      <div class="wizard-step" data-step="4" data-color="danger" onclick="btWizardGoTo(4)">
+        <div class="wizard-step-circle">4</div>
+        <div class="wizard-step-label">Sell Logic</div>
+      </div>
+    </div>
+
+    <!-- Wizard Panels -->
+    <div class="wizard-body">
+      <!-- Step 1: General -->
+      <div class="wizard-panel active" data-panel="1">
+        <div class="combo-section">
+          <div class="form-group">
+            <label class="form-label">Combo Name</label>
+            <input type="text" id="bt-combo-name" class="form-input" placeholder="e.g. BTC DCA + Trailing Stop">
+          </div>
+          <div class="form-group" style="margin-top:0.5rem;">
+            <label class="form-label">Reference Combo (optional)</label>
+            <select id="bt-combo-reference" class="form-input">
+              <option value="">None</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 2: Buy Strategy (condition params) -->
+      <div class="wizard-panel" data-panel="2">
+        <div class="combo-section">
+          <div class="form-group">
+            <label class="form-label">Buy Logic</label>
+            <select id="bt-combo-buy-logic" class="form-input" onchange="renderBtComboParams('buy')"></select>
+          </div>
+          <div id="bt-combo-buy-cond-params"></div>
+        </div>
+      </div>
+
+      <!-- Step 3: Buy Sizing -->
+      <div class="wizard-panel" data-panel="3">
+        <div class="combo-section">
+          <div id="bt-combo-buy-sizing-params"></div>
+        </div>
+      </div>
+
+      <!-- Step 4: Sell Strategy + Sizing -->
+      <div class="wizard-panel" data-panel="4">
+        <div class="combo-section">
+          <div class="form-group">
+            <label class="form-label">Sell Logic</label>
+            <select id="bt-combo-sell-logic" class="form-input" onchange="renderBtComboParams('sell')"></select>
+          </div>
+          <div id="bt-combo-sell-cond-params"></div>
+          <div id="bt-combo-sell-sizing-params" style="margin-top:0.5rem;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Wizard Navigation -->
+    <div class="wizard-nav">
+      <button class="btn btn-outline btn-sm" id="bt-wiz-prev" onclick="btWizardPrev()" style="display:none;">Previous</button>
+      <button class="btn btn-outline btn-sm" onclick="closeBtComboModal()">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="bt-wiz-next" onclick="btWizardNext()">Next</button>
+      <button class="btn btn-primary btn-sm" id="bt-wiz-save" onclick="saveBtCombo()" style="display:none;">Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- History -->
 <section class="dashboard-section" style="margin-top:1.5rem;">
   <div class="section-header">
@@ -177,7 +246,7 @@
         <button class="tf-btn active" data-filter="all" onclick="filterHistory('all', this)">All</button>
         <button class="tf-btn" data-filter="pinned" onclick="filterHistory('pinned', this)">Pinned</button>
       </div>
-      <button class="btn btn-outline btn-sm" onclick="loadBacktestHistory()">Refresh</button>
+      <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger);" onclick="openDeleteAllModal()">Delete All</button>
     </div>
   </div>
   <div class="table-wrapper">
@@ -199,6 +268,29 @@
     </table>
   </div>
 </section>
+
+<!-- Delete All Confirmation Modal -->
+<div class="modal" id="delete-all-modal" style="display:none;">
+  <div class="modal-dialog" style="max-width:400px;">
+    <div class="modal-header">
+      <h3 class="modal-title">Delete All Backtests</h3>
+      <button class="modal-close" onclick="closeDeleteAllModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p style="color:var(--text-muted);margin-bottom:1rem;">선택한 백테스트 기록을 모두 삭제합니다. 이 작업은 되돌릴 수 없습니다.</p>
+      <p id="delete-all-count" style="font-size:0.9rem;font-weight:600;margin-bottom:1rem;"></p>
+      <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;font-size:0.875rem;">
+        <input type="checkbox" id="delete-all-exclude-pinned" checked style="width:auto;">
+        핀 고정된 리포트 제외
+      </label>
+    </div>
+    <div class="modal-footer" style="display:flex;gap:0.5rem;justify-content:flex-end;">
+      <button class="btn btn-outline" onclick="closeDeleteAllModal()">Cancel</button>
+      <button class="btn btn-danger" id="delete-all-confirm-btn" onclick="submitDeleteAll()">Delete</button>
+    </div>
+  </div>
+</div>
+<div class="modal-backdrop" id="delete-all-backdrop" style="display:none;" onclick="closeDeleteAllModal()"></div>
 {% endblock %}
 
 {% block scripts %}
@@ -210,19 +302,33 @@ let _currentStep = 1;
 let _historyFilter = 'all';
 let _historyData = [];
 
+// Combo state
+let _btCombos = [];
+let _btComboEditIndex = -1;
+let _btWizardStep = 1;
+const _BT_WIZARD_STEPS = 4;
+const _BT_CHECK_SVG = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5L6.5 11.5L12.5 5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
 // ============================================================
 //  Stepper Navigation
 // ============================================================
 function goToStep(step) {
   if (step < 1 || step > 3) return;
+  // Validate forward navigation
+  if (step > _currentStep) {
+    if (_currentStep <= 2 && step >= 3 && _btCombos.length === 0) {
+      showToast('Add at least one combo before proceeding', 'error');
+      return;
+    }
+  }
   _currentStep = step;
 
   document.querySelectorAll('.step-panel').forEach(p => p.classList.remove('active'));
   const panel = document.querySelector(`.step-panel[data-step="${step}"]`);
   if (panel) panel.classList.add('active');
 
-  const items = document.querySelectorAll('.step-item');
-  const connectors = document.querySelectorAll('.step-connector');
+  const items = document.querySelectorAll('#stepper .step-item');
+  const connectors = document.querySelectorAll('#stepper .step-connector');
   items.forEach((item, i) => {
     const s = i + 1;
     item.classList.remove('active', 'done');
@@ -247,148 +353,160 @@ async function loadBtLogics() {
     ]);
     if (buyResp.ok) _btBuyLogics = await buyResp.json();
     if (sellResp.ok) _btSellLogics = await sellResp.json();
-
-    // Populate buy dropdown
-    const buyEl = document.getElementById('bt-buy-logic');
-    buyEl.innerHTML = _btBuyLogics.map(b =>
-      `<option value="${b.name}">${escapeHtml(b.display_name)}</option>`
-    ).join('');
-    onBtBuyLogicChange();
-
-    // Populate sell dropdown
-    const sellEl = document.getElementById('bt-sell-logic');
-    sellEl.innerHTML = _btSellLogics.map(s =>
-      `<option value="${s.name}">${escapeHtml(s.display_name)}</option>`
-    ).join('');
-    onBtSellLogicChange();
   } catch (e) {
     console.error('Failed to load logics', e);
   }
 }
 
 // ============================================================
-//  Buy Logic change
+//  Combo List Rendering
 // ============================================================
-function onBtBuyLogicChange() {
-  const selEl = document.getElementById('bt-buy-logic');
-  if (!selEl) return;
-  const meta = _btBuyLogics.find(l => l.name === selEl.value);
-  const condContainer = document.getElementById('bt-buy-cond-params');
-  const sizingSelect = document.getElementById('bt-sizing-mode');
-  const sizingContainer = document.getElementById('bt-buy-sizing-params');
+function renderBtComboList() {
+  const container = document.getElementById('bt-combo-list');
+  if (!container) return;
 
-  if (!meta) {
-    if (condContainer) { condContainer.innerHTML = ''; condContainer.style.display = 'none'; }
-    if (sizingSelect) { sizingSelect.innerHTML = '<option disabled>N/A</option>'; sizingSelect.disabled = true; }
-    if (sizingContainer) { sizingContainer.innerHTML = ''; sizingContainer.style.display = 'none'; }
+  if (_btCombos.length === 0) {
+    container.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:2rem 0;">No combos added yet. Click "+ Add Combo" to get started.</p>';
     return;
   }
 
-  const tunableParams = meta.tunable_params || {};
-  const defaults = meta.default_params || {};
-  const condParams = {};
-  const sizingSubParams = {};
-  let sizingModeSpec = null;
-  for (const [key, spec] of Object.entries(tunableParams)) {
-    if (key === 'sizing_mode' && spec.group === 'sizing') { sizingModeSpec = spec; }
-    else if (spec.group === 'sizing') { sizingSubParams[key] = spec; }
-    else { condParams[key] = spec; }
-  }
+  let html = '<div class="bt-combo-cards">';
+  _btCombos.forEach((combo, i) => {
+    const buyMeta = _btBuyLogics.find(l => l.name === combo.buy_logic_name);
+    const sellMeta = _btSellLogics.find(l => l.name === combo.sell_logic_name);
+    const buyLabel = buyMeta ? buyMeta.display_name : combo.buy_logic_name;
+    const sellLabel = sellMeta ? sellMeta.display_name : combo.sell_logic_name;
+    const refText = combo.reference_combo_name ? ` &middot; Ref: ${escapeHtml(combo.reference_combo_name)}` : '';
 
-  const commonOpts = {
-    defaults, current: {}, side: 'buy',
-    inputId: (key) => `bt-buy-${key}`,
-    dataAttrs: (key) => `data-bt-side="buy"`,
-    onToggle: () => `toggleBtBuyDeps(this)`,
-    showUnit: true,
+    html += `<div class="bt-combo-card">
+      <div class="bt-combo-card-info">
+        <div class="bt-combo-card-name">${escapeHtml(combo.name)}</div>
+        <div class="bt-combo-card-detail">Buy: ${escapeHtml(buyLabel)} &middot; Sell: ${escapeHtml(sellLabel)}${refText}</div>
+      </div>
+      <div class="bt-combo-card-actions">
+        <button class="btn btn-outline btn-sm" onclick="editBtCombo(${i})">Edit</button>
+        <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger);" onclick="deleteBtCombo(${i})">Delete</button>
+      </div>
+    </div>`;
+  });
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+// ============================================================
+//  Combo CRUD
+// ============================================================
+function addBtCombo() {
+  _btComboEditIndex = -1;
+  document.getElementById('bt-combo-modal-title').textContent = 'Add Combo';
+  document.getElementById('bt-combo-name').value = '';
+  _populateBtLogicSelects();
+  _populateBtReferenceSelect('');
+  renderBtComboParams('buy');
+  renderBtComboParams('sell');
+  document.getElementById('bt-combo-modal').style.display = 'flex';
+  _btWizardStep = 1;
+  _btWizardUpdateUI('forward');
+}
+
+function editBtCombo(index) {
+  const combo = _btCombos[index];
+  if (!combo) return;
+  _btComboEditIndex = index;
+  document.getElementById('bt-combo-modal-title').textContent = 'Edit Combo';
+  document.getElementById('bt-combo-name').value = combo.name;
+  _populateBtLogicSelects(combo.buy_logic_name, combo.sell_logic_name);
+  _populateBtReferenceSelect(combo.reference_combo_name || '', index);
+  renderBtComboParams('buy', combo.buy_params);
+  renderBtComboParams('sell', combo.sell_params);
+  document.getElementById('bt-combo-modal').style.display = 'flex';
+  _btWizardStep = 1;
+  _btWizardUpdateUI('forward');
+}
+
+function deleteBtCombo(index) {
+  _btCombos.splice(index, 1);
+  renderBtComboList();
+}
+
+function saveBtCombo() {
+  const name = document.getElementById('bt-combo-name').value.trim();
+  if (!name) { showToast('Name is required', 'error'); return; }
+
+  const buyLogic = document.getElementById('bt-combo-buy-logic').value;
+  const sellLogic = document.getElementById('bt-combo-sell-logic').value;
+  if (!buyLogic) { showToast('Select a buy logic', 'error'); return; }
+  if (!sellLogic) { showToast('Select a sell logic', 'error'); return; }
+
+  const buyParams = _collectParamValues('[data-btc-side="buy"]');
+  const sellParams = _collectParamValues('[data-btc-side="sell"]');
+  const refName = document.getElementById('bt-combo-reference').value || null;
+
+  const combo = {
+    name,
+    buy_logic_name: buyLogic,
+    buy_params: buyParams,
+    sell_logic_name: sellLogic,
+    sell_params: sellParams,
+    reference_combo_name: refName,
   };
 
-  // Condition params
-  if (condContainer) {
-    if (Object.keys(condParams).length > 0) {
-      condContainer.innerHTML = _renderParamsHtml({ ...commonOpts, tunableParams: condParams });
-      condContainer.style.display = 'block';
-    } else {
-      condContainer.innerHTML = '';
-      condContainer.style.display = 'none';
-    }
-  }
-
-  // Sizing mode dropdown
-  if (sizingSelect && sizingModeSpec) {
-    const curVal = defaults.sizing_mode || sizingModeSpec.options[0].value;
-    sizingSelect.innerHTML = sizingModeSpec.options.map(o =>
-      `<option value="${o.value}" ${o.value === curVal ? 'selected' : ''}>${escapeHtml(o.label)}</option>`
-    ).join('');
-    sizingSelect.disabled = false;
-    onBtSizingChange();
-  } else if (sizingSelect) {
-    sizingSelect.innerHTML = '<option disabled selected>No sizing options</option>';
-    sizingSelect.disabled = true;
-    if (sizingContainer) { sizingContainer.innerHTML = ''; sizingContainer.style.display = 'none'; }
-  }
-}
-
-// ============================================================
-//  Sizing mode change
-// ============================================================
-function onBtSizingChange() {
-  const sizingSelect = document.getElementById('bt-sizing-mode');
-  const sizingContainer = document.getElementById('bt-buy-sizing-params');
-  const buyEl = document.getElementById('bt-buy-logic');
-  if (!sizingSelect || !sizingContainer || !buyEl) return;
-
-  const meta = _btBuyLogics.find(l => l.name === buyEl.value);
-  if (!meta) { sizingContainer.innerHTML = ''; sizingContainer.style.display = 'none'; return; }
-
-  const tunableParams = meta.tunable_params || {};
-  const defaults = meta.default_params || {};
-  const sizingSubParams = {};
-  for (const [key, spec] of Object.entries(tunableParams)) {
-    if (spec.group === 'sizing' && key !== 'sizing_mode') sizingSubParams[key] = spec;
-  }
-
-  if (Object.keys(sizingSubParams).length > 0) {
-    sizingContainer.innerHTML = _renderParamsHtml({
-      tunableParams: sizingSubParams, defaults, current: {}, side: 'buy',
-      inputId: (key) => `bt-buy-${key}`,
-      dataAttrs: (key) => `data-bt-side="buy"`,
-      onToggle: () => `toggleBtBuyDeps(this)`,
-      showUnit: true,
-    });
-    _toggleDeps(sizingContainer, 'sizing_mode', sizingSelect.value);
-    sizingContainer.style.display = 'block';
+  if (_btComboEditIndex >= 0) {
+    _btCombos[_btComboEditIndex] = combo;
   } else {
-    sizingContainer.innerHTML = '';
-    sizingContainer.style.display = 'none';
+    _btCombos.push(combo);
   }
+
+  closeBtComboModal();
+  renderBtComboList();
+  showToast(_btComboEditIndex >= 0 ? 'Combo updated' : 'Combo added', 'success');
 }
 
-function toggleBtBuyDeps(selectEl) {
-  const c = document.getElementById('bt-buy-cond-params');
-  const s = document.getElementById('bt-buy-sizing-params');
-  if (c) _toggleDeps(c, selectEl.dataset.param, selectEl.value);
-  if (s) _toggleDeps(s, selectEl.dataset.param, selectEl.value);
+function closeBtComboModal() {
+  document.getElementById('bt-combo-modal').style.display = 'none';
 }
 
 // ============================================================
-//  Sell Logic change
+//  Combo Modal Helpers
 // ============================================================
-function onBtSellLogicChange() {
-  const selEl = document.getElementById('bt-sell-logic');
-  const condContainer = document.getElementById('bt-sell-params');
-  const sizingContainer = document.getElementById('bt-sell-sizing-params');
-  if (!selEl) return;
-  const meta = _btSellLogics.find(l => l.name === selEl.value);
+function _populateBtLogicSelects(buyVal, sellVal) {
+  const buySelect = document.getElementById('bt-combo-buy-logic');
+  const sellSelect = document.getElementById('bt-combo-sell-logic');
+  buySelect.innerHTML = _btBuyLogics.map(b =>
+    `<option value="${b.name}" ${b.name === buyVal ? 'selected' : ''}>${escapeHtml(b.display_name)}</option>`
+  ).join('');
+  sellSelect.innerHTML = _btSellLogics.map(s =>
+    `<option value="${s.name}" ${s.name === sellVal ? 'selected' : ''}>${escapeHtml(s.display_name)}</option>`
+  ).join('');
+}
+
+function _populateBtReferenceSelect(currentRef, excludeIndex) {
+  const select = document.getElementById('bt-combo-reference');
+  let html = '<option value="">None</option>';
+  _btCombos.forEach((c, i) => {
+    if (i === excludeIndex) return;
+    html += `<option value="${escapeHtml(c.name)}" ${c.name === currentRef ? 'selected' : ''}>${escapeHtml(c.name)}</option>`;
+  });
+  select.innerHTML = html;
+}
+
+function renderBtComboParams(side, existingParams) {
+  const logicName = document.getElementById(`bt-combo-${side}-logic`).value;
+  const logics = side === 'buy' ? _btBuyLogics : _btSellLogics;
+  const meta = logics.find(l => l.name === logicName);
+  const condContainer = document.getElementById(`bt-combo-${side}-cond-params`);
+  const sizingContainer = document.getElementById(`bt-combo-${side}-sizing-params`);
 
   if (!meta) {
-    if (condContainer) { condContainer.innerHTML = ''; condContainer.style.display = 'none'; }
-    if (sizingContainer) { sizingContainer.innerHTML = ''; sizingContainer.style.display = 'none'; }
+    if (condContainer) condContainer.innerHTML = '';
+    if (sizingContainer) sizingContainer.innerHTML = '';
     return;
   }
 
   const tunableParams = meta.tunable_params || {};
   const defaults = meta.default_params || {};
+  const current = existingParams || {};
+
   const condParams = {};
   const sizingParams = {};
   for (const [key, spec] of Object.entries(tunableParams)) {
@@ -397,43 +515,122 @@ function onBtSellLogicChange() {
   }
 
   const commonOpts = {
-    defaults, current: {}, side: 'sell',
-    inputId: (key) => `bt-sell-${key}`,
-    dataAttrs: (key) => `data-bt-side="sell"`,
-    onToggle: () => `toggleBtSellDeps(this)`,
+    defaults, current, side,
+    inputId: (key) => `btc-${side}-${key}`,
+    dataAttrs: (key) => `data-btc-side="${side}"`,
+    onToggle: () => `toggleBtComboDeps(this,'${side}')`,
     showUnit: true,
   };
 
   if (condContainer) {
     if (Object.keys(condParams).length > 0) {
       condContainer.innerHTML = _renderParamsHtml({ ...commonOpts, tunableParams: condParams });
-      condContainer.style.display = 'block';
     } else {
       condContainer.innerHTML = '';
-      condContainer.style.display = 'none';
     }
   }
 
   if (sizingContainer) {
     if (Object.keys(sizingParams).length > 0) {
       sizingContainer.innerHTML = _renderParamsHtml({ ...commonOpts, tunableParams: sizingParams });
-      sizingContainer.style.display = 'block';
     } else {
-      sizingContainer.innerHTML = '<div style="color:var(--text-muted);font-size:0.8rem;padding:0.25rem 0;">No sizing params</div>';
-      sizingContainer.style.display = 'block';
+      sizingContainer.innerHTML = '<div class="wizard-empty-state">No sizing options for this strategy.</div>';
     }
   }
 }
 
-function toggleBtSellDeps(selectEl) {
-  const c = document.getElementById('bt-sell-params');
-  const s = document.getElementById('bt-sell-sizing-params');
-  if (c) _toggleDeps(c, selectEl.dataset.param, selectEl.value);
-  if (s) _toggleDeps(s, selectEl.dataset.param, selectEl.value);
+function toggleBtComboDeps(selectEl, side) {
+  const condContainer = document.getElementById(`bt-combo-${side}-cond-params`);
+  const sizingContainer = document.getElementById(`bt-combo-${side}-sizing-params`);
+  if (condContainer) _toggleDeps(condContainer, selectEl.dataset.param, selectEl.value);
+  if (sizingContainer) _toggleDeps(sizingContainer, selectEl.dataset.param, selectEl.value);
 }
 
 // ============================================================
-//  Review (Step 5)
+//  Combo Wizard Navigation
+// ============================================================
+function btWizardNext() {
+  if (!_btValidateWizardStep(_btWizardStep)) return;
+  if (_btWizardStep < _BT_WIZARD_STEPS) {
+    _btWizardStep++;
+    _btWizardUpdateUI('forward');
+  }
+}
+
+function btWizardPrev() {
+  if (_btWizardStep > 1) {
+    _btWizardStep--;
+    _btWizardUpdateUI('backward');
+  }
+}
+
+function btWizardGoTo(target) {
+  if (target === _btWizardStep) return;
+  if (target < _btWizardStep) {
+    _btWizardStep = target;
+    _btWizardUpdateUI('backward');
+  } else {
+    for (let s = _btWizardStep; s < target; s++) {
+      if (!_btValidateWizardStep(s)) return;
+    }
+    _btWizardStep = target;
+    _btWizardUpdateUI('forward');
+  }
+}
+
+function _btWizardUpdateUI(direction) {
+  const stepper = document.getElementById('bt-combo-wizard-stepper');
+
+  stepper.querySelectorAll('.wizard-step').forEach(el => {
+    const s = parseInt(el.dataset.step);
+    el.classList.remove('active', 'completed');
+    const circle = el.querySelector('.wizard-step-circle');
+    if (s === _btWizardStep) {
+      el.classList.add('active');
+      circle.innerHTML = s;
+    } else if (s < _btWizardStep) {
+      el.classList.add('completed');
+      circle.innerHTML = _BT_CHECK_SVG;
+    } else {
+      circle.innerHTML = s;
+    }
+  });
+
+  stepper.querySelectorAll('.wizard-connector').forEach(el => {
+    const after = parseInt(el.dataset.after);
+    el.classList.toggle('completed', after < _btWizardStep);
+  });
+
+  // Scope panel updates to modal only
+  document.querySelectorAll('#bt-combo-modal .wizard-panel').forEach(el => {
+    const p = parseInt(el.dataset.panel);
+    el.classList.remove('active', 'slide-back');
+    if (p === _btWizardStep) {
+      el.classList.add('active');
+      if (direction === 'backward') el.classList.add('slide-back');
+    }
+  });
+
+  document.getElementById('bt-wiz-prev').style.display = _btWizardStep === 1 ? 'none' : '';
+  document.getElementById('bt-wiz-next').style.display = _btWizardStep === _BT_WIZARD_STEPS ? 'none' : '';
+  document.getElementById('bt-wiz-save').style.display = _btWizardStep === _BT_WIZARD_STEPS ? '' : 'none';
+}
+
+function _btValidateWizardStep(step) {
+  if (step === 1) {
+    const name = document.getElementById('bt-combo-name').value.trim();
+    if (!name) { showToast('Enter a combo name', 'error'); return false; }
+  }
+  if (step === 2) {
+    if (!document.getElementById('bt-combo-buy-logic').value) {
+      showToast('Select a buy logic', 'error'); return false;
+    }
+  }
+  return true;
+}
+
+// ============================================================
+//  Review (Step 3)
 // ============================================================
 function buildReview() {
   const el = document.getElementById('review-summary');
@@ -443,21 +640,47 @@ function buildReview() {
   const usdt = document.getElementById('bt-initial-usdt').value;
   const startD = document.getElementById('bt-start-date').value;
   const endD = document.getElementById('bt-end-date').value;
-  const buyLogic = document.getElementById('bt-buy-logic');
-  const sellLogic = document.getElementById('bt-sell-logic');
-  const sizingMode = document.getElementById('bt-sizing-mode');
-  const buyName = buyLogic ? buyLogic.options[buyLogic.selectedIndex]?.text || buyLogic.value : '-';
-  const sellName = sellLogic ? sellLogic.options[sellLogic.selectedIndex]?.text || sellLogic.value : '-';
-  const sizingText = sizingMode && !sizingMode.disabled ? sizingMode.options[sizingMode.selectedIndex]?.text || sizingMode.value : '-';
-
-  // Collect buy params display
-  const buyParams = _collectParamValues('[data-bt-side="buy"]');
-  if (sizingMode && !sizingMode.disabled) buyParams.sizing_mode = sizingMode.value;
-  const sellParams = _collectParamValues('[data-bt-side="sell"]');
 
   const renderParams = (params) => Object.entries(params).map(([k, v]) =>
     `<div class="review-item"><span class="label">${escapeHtml(k)}</span><span class="value">${escapeHtml(String(v))}</span></div>`
   ).join('');
+
+  let combosHtml = '';
+  if (_btCombos.length === 0) {
+    combosHtml = '<p style="color:var(--text-muted);">No combos configured.</p>';
+  } else {
+    combosHtml = _btCombos.map((combo, i) => {
+      const buyMeta = _btBuyLogics.find(l => l.name === combo.buy_logic_name);
+      const sellMeta = _btSellLogics.find(l => l.name === combo.sell_logic_name);
+      const buyLabel = buyMeta ? buyMeta.display_name : combo.buy_logic_name;
+      const sellLabel = sellMeta ? sellMeta.display_name : combo.sell_logic_name;
+      const refText = combo.reference_combo_name
+        ? `<div class="review-item"><span class="label">Reference</span><span class="value">${escapeHtml(combo.reference_combo_name)}</span></div>` : '';
+      const buyParamCount = Object.keys(combo.buy_params).length;
+      const sellParamCount = Object.keys(combo.sell_params).length;
+
+      return `<div style="padding:0.5rem 0;${i > 0 ? 'border-top:1px solid var(--border);margin-top:0.5rem;' : ''}">
+        <div style="font-weight:600;font-size:0.85rem;margin-bottom:0.25rem;">${escapeHtml(combo.name)}</div>
+        <div class="review-item"><span class="label">Buy Logic</span><span class="value">${escapeHtml(buyLabel)}</span></div>
+        <div class="review-item"><span class="label">Sell Logic</span><span class="value">${escapeHtml(sellLabel)}</span></div>
+        ${refText}
+        ${buyParamCount ? `<div style="margin-top:0.25rem;">
+          <button class="review-params-toggle" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            Buy Params (${buyParamCount})
+          </button>
+          <div class="review-params-body">${renderParams(combo.buy_params)}</div>
+        </div>` : ''}
+        ${sellParamCount ? `<div style="margin-top:0.15rem;">
+          <button class="review-params-toggle" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            Sell Params (${sellParamCount})
+          </button>
+          <div class="review-params-body">${renderParams(combo.sell_params)}</div>
+        </div>` : ''}
+      </div>`;
+    }).join('');
+  }
 
   el.innerHTML = `
     <div class="bt-col">
@@ -467,50 +690,15 @@ function buildReview() {
       <div class="review-item"><span class="label">Period</span><span class="value">${escapeHtml(startD || '-')} ~ ${escapeHtml(endD || '-')}</span></div>
     </div>
     <div class="bt-col bt-col-sizing">
-      <div class="bt-section-title">Strategy</div>
-      <div class="review-item"><span class="label">Buy Logic</span><span class="value">${escapeHtml(buyName)}</span></div>
-      <div class="review-item"><span class="label">Sizing Mode</span><span class="value">${escapeHtml(sizingText)}</span></div>
-      <div class="review-item"><span class="label">Sell Logic</span><span class="value">${escapeHtml(sellName)}</span></div>
-      ${Object.keys(buyParams).length ? `<div style="margin-top:0.5rem;border-top:1px solid var(--border);padding-top:0.25rem;">
-        <button class="review-params-toggle" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-          Buy Params (${Object.keys(buyParams).length})
-        </button>
-        <div class="review-params-body">${renderParams(buyParams)}</div>
-      </div>` : ''}
-      ${Object.keys(sellParams).length ? `<div style="margin-top:0.25rem;border-top:1px solid var(--border);padding-top:0.25rem;">
-        <button class="review-params-toggle" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-          Sell Params (${Object.keys(sellParams).length})
-        </button>
-        <div class="review-params-body">${renderParams(sellParams)}</div>
-      </div>` : ''}
+      <div class="bt-section-title">Combos (${_btCombos.length})</div>
+      ${combosHtml}
     </div>
   `;
 }
 
 // ============================================================
-//  Collect & Run
+//  Run Backtest
 // ============================================================
-function _collectConfig() {
-  const buyEl = document.getElementById('bt-buy-logic');
-  const sellEl = document.getElementById('bt-sell-logic');
-  const sizingEl = document.getElementById('bt-sizing-mode');
-  if (!buyEl || !sellEl) return null;
-
-  const buyParams = _collectParamValues('[data-bt-side="buy"]');
-  // Include sizing_mode from standalone dropdown
-  if (sizingEl && !sizingEl.disabled) buyParams.sizing_mode = sizingEl.value;
-
-  return {
-    name: 'backtest',
-    buy_logic_name: buyEl.value,
-    buy_params: buyParams,
-    sell_logic_name: sellEl.value,
-    sell_params: _collectParamValues('[data-bt-side="sell"]'),
-  };
-}
-
 async function startBacktest() {
   const symbol = document.getElementById('bt-symbol').value;
   const initialUsdt = parseFloat(document.getElementById('bt-initial-usdt').value) || 10000;
@@ -523,8 +711,7 @@ async function startBacktest() {
   const endTsMs = new Date(endDate + 'T23:59:59').getTime();
   if (startTsMs >= endTsMs) { showToast('Start date must be before end date', 'error'); return; }
 
-  const config = _collectConfig();
-  if (!config) { showToast('Select buy and sell logics', 'error'); return; }
+  if (_btCombos.length === 0) { showToast('Add at least one combo', 'error'); return; }
 
   const btn = document.getElementById('bt-run-btn');
   btn.disabled = true;
@@ -534,7 +721,7 @@ async function startBacktest() {
     const resp = await apiFetch('/api/backtest/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
-      body: JSON.stringify({ symbol, start_ts_ms: startTsMs, end_ts_ms: endTsMs, initial_usdt: initialUsdt, combos: [config] }),
+      body: JSON.stringify({ symbol, start_ts_ms: startTsMs, end_ts_ms: endTsMs, initial_usdt: initialUsdt, combos: _btCombos }),
     });
     if (!resp.ok) { const err = await resp.json().catch(() => ({})); throw new Error(err.detail || 'Failed to start backtest'); }
     const data = await resp.json();
@@ -645,6 +832,57 @@ async function deleteBacktest(runId) {
     if (resp.ok) { showToast('Deleted', 'success'); loadBacktestHistory(); }
     else { const err = await resp.json().catch(() => ({})); showToast('Error: ' + (err.detail || 'Delete failed'), 'error'); }
   } catch (e) { showToast('Network error: ' + e.message, 'error'); }
+}
+
+function openDeleteAllModal() {
+  const excludePinned = document.getElementById('delete-all-exclude-pinned');
+  excludePinned.checked = true;
+  _updateDeleteAllCount();
+  excludePinned.onchange = _updateDeleteAllCount;
+  document.getElementById('delete-all-modal').style.display = 'flex';
+  document.getElementById('delete-all-backdrop').style.display = 'block';
+}
+
+function closeDeleteAllModal() {
+  document.getElementById('delete-all-modal').style.display = 'none';
+  document.getElementById('delete-all-backdrop').style.display = 'none';
+}
+
+function _updateDeleteAllCount() {
+  const excludePinned = document.getElementById('delete-all-exclude-pinned').checked;
+  const targets = _historyData.filter(r =>
+    r.status !== 'RUNNING' && r.status !== 'PENDING' && (!excludePinned || !r.pinned)
+  );
+  const countEl = document.getElementById('delete-all-count');
+  countEl.textContent = `삭제 대상: ${targets.length}개`;
+  document.getElementById('delete-all-confirm-btn').disabled = targets.length === 0;
+}
+
+async function submitDeleteAll() {
+  const excludePinned = document.getElementById('delete-all-exclude-pinned').checked;
+  const targets = _historyData.filter(r =>
+    r.status !== 'RUNNING' && r.status !== 'PENDING' && (!excludePinned || !r.pinned)
+  );
+  if (!targets.length) { showToast('삭제할 항목이 없습니다.', 'error'); return; }
+  const btn = document.getElementById('delete-all-confirm-btn');
+  btn.disabled = true;
+  btn.textContent = 'Deleting...';
+  let ok = 0, fail = 0;
+  for (const r of targets) {
+    try {
+      const resp = await apiFetch('/api/backtest/' + r.id, {
+        method: 'DELETE',
+        headers: { 'X-CSRFToken': getCsrfToken() },
+      });
+      if (resp.ok) ok++; else fail++;
+    } catch (_) { fail++; }
+  }
+  btn.textContent = 'Delete';
+  btn.disabled = false;
+  closeDeleteAllModal();
+  if (fail === 0) showToast(`${ok}개 삭제 완료`, 'success');
+  else showToast(`${ok}개 삭제, ${fail}개 실패`, 'error');
+  loadBacktestHistory();
 }
 
 // ============================================================

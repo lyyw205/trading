@@ -51,6 +51,14 @@ async function apiFetch(url, options = {}) {
   if (options.headers) {
     merged.headers = { ...options.headers };
   }
+  // Auto-inject CSRF token for mutating requests
+  const method = (merged.method || 'GET').toUpperCase();
+  if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
+    merged.headers = merged.headers || {};
+    if (!merged.headers['X-CSRFToken']) {
+      merged.headers['X-CSRFToken'] = getCsrfToken();
+    }
+  }
   const response = await fetch(url, merged);
   if (response.status === 401) {
     window.location.href = '/login';
@@ -64,8 +72,11 @@ function getCsrfToken() {
   if (meta && meta.content) return meta.content;
   const cookies = document.cookie.split(';');
   for (const c of cookies) {
-    const [k, v] = c.trim().split('=');
-    if (k === 'csrftoken') return decodeURIComponent(v);
+    const idx = c.indexOf('=');
+    if (idx === -1) continue;
+    const k = c.substring(0, idx).trim();
+    const v = c.substring(idx + 1).trim();
+    if (k === 'csrftoken') return v;
   }
   return '';
 }
@@ -593,6 +604,12 @@ function _renderCombosPanel(accountId) {
     if (bpKeys.length) paramsHtml += bpKeys.map(k => '<span>' + escapeHtml(k) + ': <strong>' + escapeHtml(String(combo.buy_params[k])) + '</strong></span>').join('');
     if (spKeys.length) paramsHtml += spKeys.map(k => '<span>' + escapeHtml(k) + ': <strong>' + escapeHtml(String(combo.sell_params[k])) + '</strong></span>').join('');
 
+    const symbolsHtml = (combo.symbols && combo.symbols.length)
+      ? '<div style="display:flex;flex-wrap:wrap;gap:0.25rem;margin-top:0.4rem;">' +
+        combo.symbols.map(s => `<span class="symbol-tag">${escapeHtml(s)}</span>`).join('') +
+        '</div>'
+      : '';
+
     return `<div class="combo-card">
       <div class="combo-card-header">
         <div class="combo-card-name">
@@ -610,6 +627,7 @@ function _renderCombosPanel(accountId) {
           <span class="combo-logic-pill combo-logic-buy"><span class="combo-logic-dot"></span> Buy: ${escapeHtml(buyMeta.display_name || combo.buy_logic_name)}</span>
           <span class="combo-logic-pill combo-logic-sell"><span class="combo-logic-dot"></span> Sell: ${escapeHtml(sellMeta.display_name || combo.sell_logic_name)}</span>
         </div>
+        ${symbolsHtml}
         ${paramsHtml ? '<div class="combo-card-params">' + paramsHtml + '</div>' : ''}
       </div>
     </div>`;
@@ -723,10 +741,53 @@ function comboWizardGoTo(target) {
   }
 }
 
+/* ============================================================
+   Multi-Symbol Tag Management
+   ============================================================ */
+let _comboSymbols = [];
+
+function addComboSymbol() {
+  const input = document.getElementById('combo-symbol-input');
+  const symbol = input.value.trim().toUpperCase();
+  if (!symbol) return;
+  if (!symbol.endsWith('USDT') && !symbol.endsWith('BTC') && !symbol.endsWith('ETH')) {
+    showToast('Invalid symbol format (e.g. ETHUSDT)', 'error');
+    return;
+  }
+  if (_comboSymbols.includes(symbol)) {
+    input.value = '';
+    return;
+  }
+  _comboSymbols.push(symbol);
+  input.value = '';
+  renderComboSymbolTags();
+}
+
+function addComboSymbolDirect(symbol) {
+  if (_comboSymbols.includes(symbol)) return;
+  _comboSymbols.push(symbol);
+  renderComboSymbolTags();
+}
+
+function removeComboSymbol(symbol) {
+  _comboSymbols = _comboSymbols.filter(s => s !== symbol);
+  renderComboSymbolTags();
+}
+
+function renderComboSymbolTags() {
+  const container = document.getElementById('combo-symbol-tags');
+  if (!container) return;
+  container.innerHTML = _comboSymbols.map(s =>
+    `<span class="symbol-tag">${escapeHtml(s)}<button class="symbol-tag-remove" onclick="removeComboSymbol('${escapeHtml(s)}')">&times;</button></span>`
+  ).join('');
+}
+
 function showCreateComboModal() {
   document.getElementById('combo-modal-title').textContent = 'New Combo';
   document.getElementById('combo-edit-id').value = '';
   document.getElementById('combo-name').value = '';
+  _comboSymbols = [];
+  renderComboSymbolTags();
   _populateLogicSelects();
   _populateReferenceSelect('');
   renderComboConditionParams('buy');
@@ -746,6 +807,8 @@ function editCombo(comboId) {
   document.getElementById('combo-modal-title').textContent = 'Edit Combo';
   document.getElementById('combo-edit-id').value = comboId;
   document.getElementById('combo-name').value = combo.name;
+  _comboSymbols = Array.isArray(combo.symbols) ? combo.symbols.slice() : [];
+  renderComboSymbolTags();
   _populateLogicSelects(combo.buy_logic_name, combo.sell_logic_name);
   _populateReferenceSelect(combo.reference_combo_id || '', comboId);
   // Logic type cannot be changed on edit
@@ -872,7 +935,9 @@ async function saveCombo() {
     : '/api/accounts/' + ACCOUNT_ID + '/combos';
   const method = isEdit ? 'PUT' : 'POST';
 
-  const body = { name, buy_params: buyParams, sell_params: sellParams };
+  if (_comboSymbols.length === 0) { showToast('At least one symbol is required', 'error'); return; }
+
+  const body = { name, buy_params: buyParams, sell_params: sellParams, symbols: _comboSymbols.slice() };
   if (!isEdit) {
     body.buy_logic_name = document.getElementById('combo-buy-logic').value;
     body.sell_logic_name = document.getElementById('combo-sell-logic').value;
@@ -1178,6 +1243,17 @@ function fmt(val, decimals) {
 function escapeHtml(str) {
   if (str == null) return '';
   return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function formatComboSymbols(symbols, fallbackSymbol) {
+  const list = (symbols && symbols.length) ? symbols : (fallbackSymbol ? [fallbackSymbol] : []);
+  if (!list.length) return '<span class="text-muted">-</span>';
+  const MAX_SHOW = 5;
+  const shown = list.slice(0, MAX_SHOW).map(s => escapeHtml(s)).join(', ');
+  if (list.length > MAX_SHOW) {
+    return shown + ` <span class="text-muted">외 ${list.length - MAX_SHOW}개</span>`;
+  }
+  return shown;
 }
 
 function showToast(msg, type) {

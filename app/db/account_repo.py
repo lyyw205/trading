@@ -25,7 +25,12 @@ class AccountRepository:
 
     async def get_by_owner(self, owner_id: UUID) -> list[TradingAccount]:
         """Return all accounts belonging to a given owner."""
-        stmt = select(TradingAccount).where(TradingAccount.owner_id == owner_id)
+        from sqlalchemy.orm import selectinload
+        stmt = (
+            select(TradingAccount)
+            .where(TradingAccount.owner_id == owner_id)
+            .options(selectinload(TradingAccount.trading_combos))
+        )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
@@ -72,9 +77,12 @@ class AccountRepository:
         return list(result.scalars().all())
 
     async def get_all_accounts_with_owner(self) -> list[TradingAccount]:
-        """Return all accounts with owner relationship eagerly loaded."""
+        """Return all accounts with owner and trading_combos eagerly loaded."""
         from sqlalchemy.orm import selectinload
-        stmt = select(TradingAccount).options(selectinload(TradingAccount.owner))
+        stmt = select(TradingAccount).options(
+            selectinload(TradingAccount.owner),
+            selectinload(TradingAccount.trading_combos),
+        )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 

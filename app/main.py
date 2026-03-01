@@ -265,6 +265,35 @@ class LazyAuthMiddleware:
 app.add_middleware(LazyAuthMiddleware)
 app.add_middleware(RequestIdMiddleware)
 
+
+# No-cache middleware for HTML pages (prevents stale template serving)
+class NoCacheHTMLMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_wrapper(message):
+            if message["type"] == "http.response.start":
+                headers = dict(message.get("headers", []))
+                ct = headers.get(b"content-type", b"")
+                if b"text/html" in ct:
+                    extra = [
+                        (b"cache-control", b"no-cache, no-store, must-revalidate"),
+                        (b"pragma", b"no-cache"),
+                        (b"expires", b"0"),
+                    ]
+                    message["headers"] = list(message.get("headers", [])) + extra
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)
+
+
+app.add_middleware(NoCacheHTMLMiddleware)
+
 # Include API routers
 app.include_router(health_router)
 app.include_router(auth_router)

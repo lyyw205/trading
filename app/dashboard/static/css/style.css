@@ -73,6 +73,9 @@
   --table-border: rgba(255, 255, 255, 0.06);
   --table-head-bg: rgba(255, 255, 255, 0.03);
 
+  /* Border — generic alias */
+  --border: rgba(255, 255, 255, 0.06);
+
   /* Chip */
   --chip-active-bg: var(--primary-light);
   --chip-active-text: #5ba0f8;
@@ -138,6 +141,8 @@
 
   --chip-active-bg: rgba(49, 130, 246, 0.08);
   --chip-active-text: #3182f6;
+
+  --border: #e5e8eb;
 
   --shadow: 0 0 1px rgba(0, 27, 55, 0.08), 0 1px 3px rgba(0, 27, 55, 0.05);
   --shadow-md: 0 0 1px rgba(0, 27, 55, 0.06), 0 4px 12px rgba(0, 27, 55, 0.06);

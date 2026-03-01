@@ -12,6 +12,7 @@ from app.db.price_repo import get_candles
 from app.db.session import get_trading_session
 from app.dependencies import get_owned_account, limiter
 from app.models.core_btc_history import CoreBtcHistory
+from app.models.fill import Fill
 from app.models.lot import Lot
 from app.models.order import Order
 from app.schemas.dashboard import (
@@ -208,3 +209,83 @@ async def get_price_candles(
             d["volume"] = float(c.volume)
         result.append(d)
     return result
+
+
+@router.get("/{account_id}/asset_status")
+@limiter.limit("120/minute")
+async def get_asset_status(
+    request: Request,
+    account=Depends(get_owned_account),
+    session: AsyncSession = Depends(get_trading_session),
+):
+    """Return asset balances, reserve pool, pending earnings, and total invested."""
+    # Position-based balances (base asset qty as "btc_balance")
+    pos_repo = PositionRepository(session)
+    position = await pos_repo.get(account.id, account.symbol)
+    base_qty = float(position.qty) if position else 0.0
+    cost_basis = float(position.cost_basis_usdt) if position else 0.0
+
+    # Current price for USDT valuation
+    engine = request.app.state.trading_engine
+    price_collector = engine._price_collector
+    cur_price = await price_collector.get_price(account.symbol)
+
+    # Reserve pool
+    account_state = AccountStateManager(account.id, session)
+    reserve_qty = await account_state.get_reserve_qty()
+    reserve_cost = await account_state.get_reserve_cost_usdt()
+
+    # Pending earnings
+    pending_earnings = await account_state.get_pending_earnings()
+
+    # Total invested = cost basis of open lots
+    stmt = select(func.coalesce(func.sum(Lot.buy_price * Lot.buy_qty), 0)).where(
+        Lot.account_id == account.id, Lot.status == "OPEN"
+    )
+    result = await session.execute(stmt)
+    total_invested = float(result.scalar_one())
+
+    # USDT balance estimate: if we know position, usdt = cost_basis portion not in open lots
+    # Simple approach: show base asset value as btc_balance, cost_basis as usdt equivalent
+    reserve_pct = round(reserve_cost / total_invested * 100, 1) if total_invested > 0 else 0
+
+    return {
+        "btc_balance": base_qty,
+        "usdt_balance": round(base_qty * cur_price, 2) if cur_price > 0 else 0,
+        "reserve_pool_usdt": reserve_cost,
+        "reserve_pool_pct": reserve_pct,
+        "pending_earnings_usdt": pending_earnings,
+        "total_invested_usdt": round(total_invested, 2),
+    }
+
+
+@router.get("/{account_id}/trade_events")
+@limiter.limit("120/minute")
+async def get_trade_events(
+    request: Request,
+    limit: int = Query(default=200, le=500),
+    account=Depends(get_owned_account),
+    session: AsyncSession = Depends(get_trading_session),
+):
+    """Return recent fills as chart markers (time, side, price)."""
+    stmt = (
+        select(Fill)
+        .where(Fill.account_id == account.id)
+        .order_by(Fill.trade_time_ms.desc())
+        .limit(limit)
+    )
+    result = await session.execute(stmt)
+    fills = result.scalars().all()
+
+    events = []
+    for f in fills:
+        if not f.trade_time_ms:
+            continue
+        events.append({
+            "time": f.trade_time_ms // 1000,  # lightweight-charts expects unix seconds
+            "side": (f.side or "").lower(),
+            "price": round(float(f.price), 2) if f.price else "",
+        })
+    # Sort ascending for chart markers
+    events.sort(key=lambda e: e["time"])
+    return events
