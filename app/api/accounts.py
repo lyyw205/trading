@@ -91,6 +91,10 @@ async def update_account(
             account.api_key_encrypted = encryption.encrypt(val)
         elif field == "api_secret" and val:
             account.api_secret_encrypted = encryption.encrypt(val)
+        elif field == "owner_id" and val:
+            if user.get("role") != "admin":
+                raise HTTPException(status_code=403, detail="Only admin can change owner")
+            account.owner_id = val
         elif hasattr(account, field):
             setattr(account, field, val)
     await session.commit()

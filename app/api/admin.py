@@ -314,6 +314,42 @@ async def admin_list_lots(
 
 
 # ============================================================
+#  Strategy Catalog
+# ============================================================
+@router.get("/strategies")
+async def admin_list_strategies(
+    admin: dict = Depends(require_admin),
+    session: AsyncSession = Depends(get_trading_session),
+):
+    """List all registered buy/sell strategies with adoption counts."""
+    from app.strategies.registry import BuyLogicRegistry, SellLogicRegistry
+
+    # Count combos per buy/sell logic name
+    buy_counts_stmt = (
+        select(TradingCombo.buy_logic_name, sa_func.count().label("cnt"))
+        .group_by(TradingCombo.buy_logic_name)
+    )
+    sell_counts_stmt = (
+        select(TradingCombo.sell_logic_name, sa_func.count().label("cnt"))
+        .group_by(TradingCombo.sell_logic_name)
+    )
+    buy_result = await session.execute(buy_counts_stmt)
+    sell_result = await session.execute(sell_counts_stmt)
+    buy_counts = {row[0]: row[1] for row in buy_result.all()}
+    sell_counts = {row[0]: row[1] for row in sell_result.all()}
+
+    buy_strategies = [
+        {**s, "category": "buy", "adoption_count": buy_counts.get(s["name"], 0)}
+        for s in BuyLogicRegistry.list_all()
+    ]
+    sell_strategies = [
+        {**s, "category": "sell", "adoption_count": sell_counts.get(s["name"], 0)}
+        for s in SellLogicRegistry.list_all()
+    ]
+    return {"buy": buy_strategies, "sell": sell_strategies}
+
+
+# ============================================================
 #  Combos / Strategies — cross-account
 # ============================================================
 @router.get("/combos")

@@ -48,6 +48,7 @@ class BaseBuyLogic(ABC):
 
     def __init__(self):
         self._last_order_ts: float = 0.0
+        self._sim_time: float | None = None  # 백테스트용 시뮬레이션 시각
 
     async def pre_tick(
         self,
@@ -76,11 +77,14 @@ class BaseBuyLogic(ABC):
     def validate_params(self, params: dict[str, Any]) -> dict[str, Any]:
         return {**self.default_params, **params}
 
+    def _now(self) -> float:
+        return self._sim_time if self._sim_time is not None else time.time()
+
     def _cooldown_ok(self, cooldown_sec: float) -> bool:
-        return (time.time() - self._last_order_ts) >= cooldown_sec
+        return (self._now() - self._last_order_ts) >= cooldown_sec
 
     def _touch_order(self) -> None:
-        self._last_order_ts = time.time()
+        self._last_order_ts = self._now()
 
 
 class BaseSellLogic(ABC):
@@ -94,6 +98,7 @@ class BaseSellLogic(ABC):
 
     def __init__(self):
         self._last_order_ts: float = 0.0
+        self._sim_time: float | None = None
 
     @abstractmethod
     async def tick(
@@ -111,8 +116,11 @@ class BaseSellLogic(ABC):
     def validate_params(self, params: dict[str, Any]) -> dict[str, Any]:
         return {**self.default_params, **params}
 
+    def _now(self) -> float:
+        return self._sim_time if self._sim_time is not None else time.time()
+
     def _cooldown_ok(self, cooldown_sec: float) -> bool:
-        return (time.time() - self._last_order_ts) >= cooldown_sec
+        return (self._now() - self._last_order_ts) >= cooldown_sec
 
     def _touch_order(self) -> None:
-        self._last_order_ts = time.time()
+        self._last_order_ts = self._now()

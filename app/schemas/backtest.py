@@ -85,5 +85,6 @@ class BacktestListItem(BaseModel):
     status: str
     pnl_pct: float | None = None
     created_at: datetime
+    pinned: bool = False
 
     model_config = {"from_attributes": True}

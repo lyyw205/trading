@@ -28,6 +28,7 @@ class AccountUpdate(BaseModel):
     loop_interval_sec: int | None = Field(None, ge=10, le=3600)
     order_cooldown_sec: int | None = Field(None, ge=1, le=300)
     is_active: bool | None = None
+    owner_id: UUID | None = None
 
 
 class AccountResponse(BaseModel):

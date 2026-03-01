@@ -187,7 +187,7 @@ class LotStackingBuy(BaseBuyLogic):
             await state.clear_keys(*_PENDING_KEYS)
             return True
 
-        now_ms = int(time.time() * 1000)
+        now_ms = int(self._now() * 1000)
         if pending_time_ms > 0 and (now_ms - pending_time_ms) > _PENDING_TIMEOUT_MS:
             logger.warning("lot_stacking_buy: pending buy order %s timed out, cancelling", order_id)
             try:
@@ -235,7 +235,7 @@ class LotStackingBuy(BaseBuyLogic):
         bought_qty = float(order_data.get("executedQty", 0))
         spent_usdt = float(order_data.get("cummulativeQuoteQty", 0))
         order_id = int(order_data.get("orderId", 0))
-        update_time_ms = int(order_data.get("updateTime", 0)) or int(time.time() * 1000)
+        update_time_ms = int(order_data.get("updateTime", 0)) or int(self._now() * 1000)
 
         base_fee_qty = extract_base_commission_qty(order_data, ctx.base_asset)
         bought_qty_net = bought_qty - base_fee_qty
@@ -411,7 +411,7 @@ class LotStackingBuy(BaseBuyLogic):
 
         await repos.order.upsert_order(ctx.account_id, order_resp)
         placed_order_id = int(order_resp.get("orderId", 0))
-        placed_time_ms = int(order_resp.get("transactTime", 0)) or int(time.time() * 1000)
+        placed_time_ms = int(order_resp.get("transactTime", 0)) or int(self._now() * 1000)
 
         await state.set("pending_order_id", placed_order_id)
         await state.set("pending_time_ms", placed_time_ms)

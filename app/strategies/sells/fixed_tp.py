@@ -124,7 +124,7 @@ class FixedTpSell(BaseSellLogic):
             sell_qty_filled = float(sell_order_data.get("executedQty", 0))
             sell_revenue = float(sell_order_data.get("cummulativeQuoteQty", 0))
             sell_price = sell_revenue / sell_qty_filled if sell_qty_filled > 0 else target_price
-            sell_time_ms = int(sell_order_data.get("updateTime", 0)) or int(time.time() * 1000)
+            sell_time_ms = int(sell_order_data.get("updateTime", 0)) or int(self._now() * 1000)
 
             fee_usdt = extract_fee_usdt(sell_order_data, ctx.quote_asset)
             cost_usdt = lot.buy_qty * lot.buy_price
@@ -203,7 +203,7 @@ class FixedTpSell(BaseSellLogic):
 
         await repos.order.upsert_order(ctx.account_id, sell_resp)
         sell_order_id = int(sell_resp.get("orderId", 0))
-        sell_time_ms = int(sell_resp.get("transactTime", 0)) or int(time.time() * 1000)
+        sell_time_ms = int(sell_resp.get("transactTime", 0)) or int(self._now() * 1000)
 
         await repos.lot.set_sell_order(
             account_id=ctx.account_id,

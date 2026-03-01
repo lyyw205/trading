@@ -3,123 +3,181 @@
 {% block title %}Strategies - Crypto Multi-Trader{% endblock %}
 
 {% block content %}
+<style>
+.dashboard-section {
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+}
+.strategy-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1rem;
+}
+.strategy-card-name {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--text);
+  font-family: var(--font-mono);
+}
+.strategy-card-display {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 0.1rem;
+}
+.strategy-card-desc {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.55;
+  margin-top: 0.75rem;
+}
+.strategy-card-footer {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--card-border, var(--border));
+  flex-wrap: wrap;
+}
+.strategy-stat {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+.strategy-stat strong {
+  color: var(--text);
+  font-weight: 700;
+}
+.strategy-stat svg { width: 14px; height: 14px; flex-shrink: 0; }
+.params-toggle {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  border: none;
+  background: none;
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  transition: color 0.15s, background 0.15s;
+}
+.params-toggle:hover { color: var(--primary); background: var(--primary-light); }
+.params-toggle svg { transition: transform 0.2s; }
+.params-toggle.open svg { transform: rotate(180deg); }
+.params-list {
+  display: none;
+  width: 100%;
+  padding: 0.4rem 0.65rem;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md, 8px);
+  font-size: 0.72rem;
+  margin-top: 0.25rem;
+}
+.params-list.open { display: block; }
+.param-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.25rem 0;
+}
+.param-row + .param-row { border-top: 1px solid rgba(255,255,255,0.04); }
+.param-key { color: var(--text-muted); font-family: var(--font-mono); }
+.param-val { font-weight: 600; color: var(--text); font-family: var(--font-mono); }
+</style>
+
 <div class="hero-banner">
-  <h1 class="page-title">Strategy Overview</h1>
-  <p class="hero-subtitle">Cross-account trading combo configurations and performance.</p>
+  <h1 class="page-title">Strategy Catalog</h1>
+  <p class="hero-subtitle">Registered buy & sell strategies with adoption statistics.</p>
 </div>
 
 <section class="dashboard-section">
   <div class="section-header">
-    <h2 class="section-title">Trading Combos</h2>
-    <button class="btn btn-outline btn-sm" onclick="loadCombos()">Refresh</button>
+    <h2 class="section-title">Buy Strategies</h2>
   </div>
-
-  <div class="tune-grid" style="margin-bottom:1rem;">
-    <div class="form-group">
-      <label class="form-label">Account</label>
-      <select id="filter-account" class="form-input" onchange="loadCombos()">
-        <option value="">All Accounts</option>
-      </select>
-    </div>
-    <div class="form-group">
-      <label class="form-label">Status</label>
-      <select id="filter-enabled" class="form-input" onchange="loadCombos()">
-        <option value="">All</option>
-        <option value="true">Enabled</option>
-        <option value="false">Disabled</option>
-      </select>
-    </div>
+  <div class="strategy-grid" id="buy-strategies">
+    <div class="table-empty">Loading...</div>
   </div>
+</section>
 
-  <div class="table-wrapper">
-    <table class="data-table" id="combos-table">
-      <thead>
-        <tr>
-          <th>Account</th>
-          <th>Combo Name</th>
-          <th>Buy Logic</th>
-          <th>Sell Logic</th>
-          <th>Status</th>
-          <th>Open Lots</th>
-          <th>Invested</th>
-          <th>Created</th>
-        </tr>
-      </thead>
-      <tbody id="combos-tbody">
-        <tr><td colspan="8" class="table-empty">Loading...</td></tr>
-      </tbody>
-    </table>
+<section class="dashboard-section" style="margin-top:1.5rem;">
+  <div class="section-header">
+    <h2 class="section-title">Sell Strategies</h2>
+  </div>
+  <div class="strategy-grid" id="sell-strategies">
+    <div class="table-empty">Loading...</div>
   </div>
 </section>
 {% endblock %}
 
 {% block scripts %}
 <script>
-async function loadAccountOptions() {
-  try {
-    const resp = await apiFetch('/api/admin/accounts');
-    if (!resp.ok) return;
-    const accounts = await resp.json();
-    const sel = document.getElementById('filter-account');
-    accounts.forEach(a => {
-      const opt = document.createElement('option');
-      opt.value = a.id;
-      opt.textContent = a.name || a.id;
-      sel.appendChild(opt);
-    });
-  } catch (e) {}
+function toggleParams(btn) {
+  btn.classList.toggle('open');
+  btn.nextElementSibling.classList.toggle('open');
 }
 
-async function loadCombos() {
-  const tbody = document.getElementById('combos-tbody');
-  if (!tbody) return;
+function renderStrategyCard(s) {
+  const isBuy = s.category === 'buy';
+  const iconClass = isBuy ? 'kpi-icon-success' : 'kpi-icon-danger';
+  const typeLabel = isBuy ? 'BUY' : 'SELL';
 
-  const accountId = document.getElementById('filter-account').value;
-  const enabled = document.getElementById('filter-enabled').value;
+  const params = s.default_params || {};
+  const paramKeys = Object.keys(params);
+  const paramsHtml = paramKeys.length ? `
+    <button class="params-toggle" onclick="toggleParams(this)">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      ${paramKeys.length} defaults
+    </button>
+    <div class="params-list">
+      ${paramKeys.map(k => `<div class="param-row"><span class="param-key">${escapeHtml(k)}</span><span class="param-val">${escapeHtml(String(params[k]))}</span></div>`).join('')}
+    </div>` : '';
 
-  let url = '/api/admin/combos?';
-  if (accountId) url += `account_id=${accountId}&`;
-  if (enabled) url += `enabled=${enabled}&`;
+  return `
+    <div class="kpi-card">
+      <div class="strategy-card-name">${escapeHtml(s.name)}</div>
+      <div class="strategy-card-display">${escapeHtml(s.display_name || '')}</div>
+      <div class="strategy-card-desc">${escapeHtml(s.description || 'No description')}</div>
+      <div class="strategy-card-footer">
+        <div class="strategy-stat">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          <strong>${s.adoption_count}</strong> combo${s.adoption_count !== 1 ? 's' : ''}
+        </div>
+        ${paramsHtml}
+      </div>
+    </div>`;
+}
 
+async function loadStrategies() {
   try {
-    const resp = await apiFetch(url);
+    const resp = await apiFetch('/api/admin/strategies');
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const combos = await resp.json();
+    const data = await resp.json();
 
-    if (!combos.length) {
-      tbody.innerHTML = '<tr><td colspan="8" class="table-empty">No combos found</td></tr>';
-      return;
+    const buyGrid = document.getElementById('buy-strategies');
+    const sellGrid = document.getElementById('sell-strategies');
+
+    if (data.buy && data.buy.length) {
+      buyGrid.innerHTML = data.buy.map(renderStrategyCard).join('');
+    } else {
+      buyGrid.innerHTML = '<div class="table-empty">No buy strategies registered</div>';
     }
 
-    tbody.innerHTML = combos.map(c => {
-      const statusBadge = c.is_enabled
-        ? '<span class="status-badge badge-success">Enabled</span>'
-        : '<span class="status-badge badge-danger">Disabled</span>';
-      const lotsClass = c.open_lots > 0 ? 'style="font-weight:600;"' : 'style="color:var(--text-muted);"';
-      return `<tr>
-        <td><a href="/accounts/${c.account_id}">${escapeHtml(c.account_name)}</a></td>
-        <td style="font-weight:500;">${escapeHtml(c.name)}</td>
-        <td><span class="status-badge badge-info">${escapeHtml(c.buy_logic_name)}</span></td>
-        <td><span class="status-badge badge-warning">${escapeHtml(c.sell_logic_name)}</span></td>
-        <td>${statusBadge}</td>
-        <td ${lotsClass}>${c.open_lots}</td>
-        <td>${c.total_invested > 0 ? '$' + fmt(c.total_invested, 2) : '-'}</td>
-        <td style="font-size:0.8rem;color:var(--text-muted);">${new Date(c.created_at).toLocaleDateString()}</td>
-      </tr>`;
-    }).join('');
+    if (data.sell && data.sell.length) {
+      sellGrid.innerHTML = data.sell.map(renderStrategyCard).join('');
+    } else {
+      sellGrid.innerHTML = '<div class="table-empty">No sell strategies registered</div>';
+    }
   } catch (e) {
-    tbody.innerHTML = '<tr><td colspan="8" class="table-empty error-text">Failed to load combos</td></tr>';
+    document.getElementById('buy-strategies').innerHTML = '<div class="table-empty error-text">Failed to load: ' + escapeHtml(e.message) + '</div>';
+    document.getElementById('sell-strategies').innerHTML = '';
   }
 }
 
-document.addEventListener('DOMContentLoaded', async () => {
-  await loadAccountOptions();
-  loadCombos();
-});
+document.addEventListener('DOMContentLoaded', loadStrategies);
 </script>
-
-<style>
-.badge-info { background: var(--info-light, rgba(49,130,246,0.12)); color: var(--info, #3182f6); }
-.badge-warning { background: rgba(234,179,8,0.15); color: #ca8a04; }
-</style>
 {% endblock %}

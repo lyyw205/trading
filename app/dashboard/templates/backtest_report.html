@@ -3,9 +3,50 @@
 {% block title %}Backtest Report - Crypto Multi-Trader{% endblock %}
 
 {% block content %}
-<div class="page-header">
-  <a href="/admin" class="back-link">&larr; Back to Admin</a>
-  <h1 class="page-title">Backtest Report</h1>
+<style>
+.tf-selector { display:flex; gap:0.25rem; }
+.tf-btn { padding:0.25rem 0.5rem; font-size:0.72rem; font-weight:600; border:1px solid var(--border); border-radius:6px; background:transparent; color:var(--text-muted); cursor:pointer; transition:all 0.15s; }
+.tf-btn:hover { color:var(--text); border-color:var(--text-muted); }
+.tf-btn.active { background:var(--primary); color:#fff; border-color:var(--primary); }
+/* Trade overlay markers */
+.chart-container { position:relative; }
+.trade-overlay { position:absolute; inset:0; pointer-events:none; z-index:3; }
+.trade-line { position:absolute; width:1px; background:rgba(255,255,255,0.25); }
+.trade-dot { position:absolute; width:6px; height:6px; border-radius:999px; border:1.5px solid var(--card-bg, #0b0e11); }
+.trade-dot.buy { background:#0ecb81; }
+.trade-dot.sell { background:#f6465d; }
+.trade-label { position:absolute; font-size:9px; font-weight:700; padding:1px 4px; border-radius:4px; color:#0b0e11; white-space:nowrap; opacity:0.7; pointer-events:auto; cursor:default; transition:opacity 0.15s; }
+.trade-label:hover { opacity:1; }
+.trade-label.buy { background:#0ecb81; }
+.trade-label.sell { background:#f6465d; }
+/* Trade tooltip */
+.chart-tooltip { position:fixed; pointer-events:auto; padding:8px 10px; border-radius:10px; background:rgba(12,16,20,0.96); border:1px solid var(--border); color:var(--text); font-size:12px; line-height:1.35; box-shadow:0 6px 18px rgba(0,0,0,0.45); z-index:9999; white-space:pre-line; display:none; max-height:50vh; overflow-y:auto; overscroll-behavior:contain; }
+.chart-tooltip .tt-head { display:flex; gap:6px; align-items:baseline; margin-bottom:6px; }
+.chart-tooltip .tt-title { font-weight:500; color:var(--text-muted); }
+.chart-tooltip .tt-time { font-weight:700; }
+.chart-tooltip .tt-time.buy, .chart-tooltip .tt-title.buy { color:#0ecb81; }
+.chart-tooltip .tt-time.sell, .chart-tooltip .tt-title.sell { color:#f6465d; }
+.chart-tooltip .tt-body { display:grid; grid-template-columns:max-content 1fr; column-gap:5px; row-gap:2px; }
+.chart-tooltip .tt-row { display:contents; }
+.chart-tooltip .tt-key { color:var(--text-muted); }
+.chart-tooltip .tt-val { font-variant-numeric:tabular-nums; text-align:left; }
+/* Strategy params - category layout */
+.param-cat { margin-bottom: 0.75rem; }
+.param-cat:last-child { margin-bottom: 0; }
+.param-cat-label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--primary, #f0b90b); margin-bottom: 0.35rem; padding-bottom: 0.2rem; border-bottom: 1px solid var(--border, #1e2329); }
+.param-row { display: flex; justify-content: space-between; align-items: center; padding: 0.25rem 0; font-size: 0.82rem; }
+.param-key { color: var(--text-muted, #848e9c); }
+.param-val { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text, #eaecef); }
+</style>
+<div class="page-header" style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap;">
+  <div style="flex:1;">
+    <a href="/admin/backtest" class="back-link">&larr; Back to Backtest</a>
+    <h1 class="page-title">Backtest Report</h1>
+  </div>
+  <button class="btn btn-outline btn-sm" id="bt-pin-btn" onclick="togglePin()" style="display:none;" title="Pin this report">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+    <span id="bt-pin-label">Pin</span>
+  </button>
 </div>
 
 <!-- Summary Cards -->
@@ -23,8 +64,20 @@
 <section class="dashboard-section">
   <div class="section-header">
     <h2 class="section-title">Price Chart &amp; Trades</h2>
+    <div class="tf-selector" id="tf-selector">
+      <button class="tf-btn active" data-tf="1">1m</button>
+      <button class="tf-btn" data-tf="5">5m</button>
+      <button class="tf-btn" data-tf="15">15m</button>
+      <button class="tf-btn" data-tf="60">1H</button>
+      <button class="tf-btn" data-tf="240">4H</button>
+      <button class="tf-btn" data-tf="720">12H</button>
+      <button class="tf-btn" data-tf="1440">1D</button>
+      <button class="tf-btn" data-tf="10080">1W</button>
+    </div>
   </div>
-  <div id="bt-price-chart" class="chart-container"></div>
+  <div id="bt-price-chart" class="chart-container">
+    <div class="trade-overlay" id="trade-overlay"></div>
+  </div>
 </section>
 
 <!-- Equity Curve -->
@@ -93,6 +146,12 @@ async function loadBacktestReport(runId) {
     renderPriceChart(report);
     renderEquityCurve(report);
     renderTradeLog(report);
+    // Show pin button
+    const pinBtn = document.getElementById('bt-pin-btn');
+    if (pinBtn) {
+      pinBtn.style.display = '';
+      checkPinStatus(runId);
+    }
   } catch (e) {
     document.getElementById('bt-summary').innerHTML =
       '<p class="error-text">Failed to load report: ' + escapeHtml(e.message) + '</p>';
@@ -107,7 +166,10 @@ function renderSummary(report) {
   if (infoEl) {
     const startD = new Date(cfg.start_ts_ms).toLocaleDateString();
     const endD = new Date(cfg.end_ts_ms).toLocaleDateString();
-    infoEl.textContent = cfg.symbol + ' | ' + cfg.strategies.join(', ') + ' | ' + startD + ' ~ ' + endD;
+    const stratLabel = cfg.combos
+      ? cfg.combos.map(c => c.name || c.buy_logic_name).join(', ')
+      : (cfg.strategies || []).join(', ') || '-';
+    infoEl.textContent = cfg.symbol + ' | ' + stratLabel + ' | ' + startD + ' ~ ' + endD;
   }
 
   if (!s) {
@@ -135,6 +197,7 @@ function renderSummary(report) {
     <div class="health-card">
       <div class="health-card-label">Total Trades</div>
       <div class="health-card-value">${s.total_trades}</div>
+      <div class="asset-sub">${s.buy_trades || 0}B / ${s.sell_trades || 0}S</div>
     </div>
     <div class="health-card">
       <div class="health-card-label">Win Rate</div>
@@ -157,92 +220,354 @@ function renderStrategyParams(report) {
   if (!container) return;
 
   const cfg = report.config;
-  const params = cfg.strategy_params || {};
-  const strategies = cfg.strategies || [];
 
-  if (!strategies.length) {
-    container.innerHTML = '<p class="error-text">No strategies</p>';
-    return;
-  }
-
-  // Readable labels for param keys
+  // Readable labels
   const labels = {
+    buy_logic: 'Buy Logic', sell_logic: 'Sell Logic', reference: 'Reference Combo',
     drop_pct: 'Drop %', tp_pct: 'TP %', buy_usdt: 'Buy USDT',
     prebuy_pct: 'Pre-buy %', cancel_rebound_pct: 'Cancel Rebound %',
     recenter_pct: 'Recenter %', recenter_ema_n: 'Recenter EMA N',
     recenter_enabled: 'Recenter Enabled', min_trade_usdt: 'Min Trade USDT',
     use_fixed_usdt_reference: 'Fixed USDT Ref',
     enable_pct: 'Enable %', step_pct: 'Step %',
+    sizing_mode: 'Sizing Mode', buy_balance_pct: 'Balance %',
+    max_buy_usdt: 'Max Buy USDT', base_price_update_mode: 'Base Price Mode',
+    plan_x_pct: 'Plan X %',
   };
 
-  container.innerHTML = strategies.map(strat => {
-    const p = params[strat] || {};
-    const entries = Object.entries(p);
-    const title = strat === 'lot_stacking' ? 'LOT Stacking' : strat === 'trend_buy' ? 'TREND Buy' : strat;
+  // Category definitions: [category_label, [...keys]]
+  const categories = [
+    ['Strategy', ['buy_logic', 'sell_logic', 'reference']],
+    ['Sizing', ['sizing_mode', 'buy_usdt', 'buy_balance_pct', 'plan_x_pct', 'max_buy_usdt', 'min_trade_usdt']],
+    ['Buy Conditions', ['drop_pct', 'prebuy_pct', 'cancel_rebound_pct', 'enable_pct', 'step_pct']],
+    ['Recenter', ['recenter_enabled', 'recenter_pct', 'recenter_ema_n', 'use_fixed_usdt_reference']],
+    ['Sell (TP)', ['tp_pct', 'base_price_update_mode']],
+  ];
 
-    if (!entries.length) {
+  function fmtVal(v) {
+    if (typeof v === 'boolean') return v ? 'Yes' : 'No';
+    return String(v);
+  }
+
+  function renderComboCard(combo) {
+    const title = combo.name || combo.buy_logic_name;
+    const allParams = {
+      buy_logic: combo.buy_logic_name,
+      sell_logic: combo.sell_logic_name,
+      ...(combo.buy_params || {}),
+      ...(combo.sell_params || {}),
+    };
+    if (combo.reference_combo_name) allParams.reference = combo.reference_combo_name;
+
+    const grouped = categories.map(([cat, keys]) => {
+      const items = keys
+        .filter(k => allParams[k] !== undefined && allParams[k] !== null)
+        .map(k => [labels[k] || k, fmtVal(allParams[k])]);
+      return items.length ? [cat, items] : null;
+    }).filter(Boolean);
+
+    // Collect uncategorized keys
+    const categorized = new Set(categories.flatMap(([, keys]) => keys));
+    const extra = Object.entries(allParams)
+      .filter(([k]) => !categorized.has(k))
+      .map(([k, v]) => [labels[k] || k, fmtVal(v)]);
+    if (extra.length) grouped.push(['Other', extra]);
+
+    if (!grouped.length) {
       return `<div class="tune-panel">
         <h3 class="tune-panel-title">${escapeHtml(title)}</h3>
         <p style="color: var(--text-muted); font-size: 0.85rem;">Default parameters used</p>
       </div>`;
     }
 
-    const grid = entries.map(([k, v]) => {
-      const label = labels[k] || k;
-      const display = typeof v === 'boolean' ? (v ? 'Yes' : 'No') : v;
-      return `<div class="form-group">
-        <span class="form-label">${escapeHtml(label)}</span>
-        <span style="font-weight: 600;">${escapeHtml(String(display))}</span>
-      </div>`;
+    const sections = grouped.map(([cat, items]) => {
+      const rows = items.map(([label, val]) =>
+        `<div class="param-row"><span class="param-key">${escapeHtml(label)}</span><span class="param-val">${escapeHtml(val)}</span></div>`
+      ).join('');
+      return `<div class="param-cat"><div class="param-cat-label">${escapeHtml(cat)}</div>${rows}</div>`;
     }).join('');
 
-    return `<div class="tune-panel">
-      <h3 class="tune-panel-title">${escapeHtml(title)}</h3>
-      <div class="tune-grid">${grid}</div>
-    </div>`;
+    return `<div class="tune-panel"><h3 class="tune-panel-title">${escapeHtml(title)}</h3>${sections}</div>`;
+  }
+
+  // Combo-based format
+  if (cfg.combos && cfg.combos.length) {
+    container.innerHTML = cfg.combos.map(renderComboCard).join('');
+    return;
+  }
+
+  // Legacy strategy-based format
+  const params = cfg.strategy_params || {};
+  const strategies = cfg.strategies || [];
+  if (!strategies.length) {
+    container.innerHTML = '<p style="color: var(--text-muted);">No strategy parameters</p>';
+    return;
+  }
+  container.innerHTML = strategies.map(strat => {
+    const title = strat === 'lot_stacking' ? 'LOT Stacking' : strat === 'trend_buy' ? 'TREND Buy' : strat;
+    const fakeCombo = { name: title, buy_logic_name: strat, sell_logic_name: '-', buy_params: params[strat] || {}, sell_params: {} };
+    return renderComboCard(fakeCombo);
   }).join('');
 }
 
-function renderPriceChart(report) {
+// Aggregate 1m candles into larger timeframes
+function aggregateCandles(candles1m, tfMinutes) {
+  if (tfMinutes <= 1) return candles1m;
+  const intervalSec = tfMinutes * 60;
+  const groups = {};
+  for (const c of candles1m) {
+    const bucket = Math.floor(c.time / intervalSec) * intervalSec;
+    if (!groups[bucket]) {
+      groups[bucket] = { time: bucket, open: c.open, high: c.high, low: c.low, close: c.close };
+    } else {
+      const g = groups[bucket];
+      if (c.high > g.high) g.high = c.high;
+      if (c.low < g.low) g.low = c.low;
+      g.close = c.close;
+    }
+  }
+  return Object.values(groups).sort((a, b) => a.time - b.time);
+}
+
+let _priceChart = null;
+let _candleSeries = null;
+let _reportCache = null;
+
+function renderPriceChart(report, tfMinutes) {
   const container = document.getElementById('bt-price-chart');
   if (!container || !report.candles || !report.candles.length) return;
+  _reportCache = report;
+  tfMinutes = tfMinutes || 1;
+
+  const candles = aggregateCandles(report.candles, tfMinutes);
+
+  // Dispose previous chart if exists
+  if (_priceChart) {
+    _priceChart.remove();
+    _priceChart = null;
+    _candleSeries = null;
+  }
 
   const theme = getChartTheme();
-  const chart = LightweightCharts.createChart(container, {
+  _priceChart = LightweightCharts.createChart(container, {
     ...theme,
     width: container.clientWidth,
     height: container.clientHeight || 400,
   });
 
-  const candleSeries = chart.addCandlestickSeries({
-    upColor: '#16a34a', downColor: '#dc2626',
-    borderUpColor: '#16a34a', borderDownColor: '#dc2626',
-    wickUpColor: '#16a34a', wickDownColor: '#dc2626',
+  _candleSeries = _priceChart.addCandlestickSeries({
+    upColor: '#0ecb81', downColor: '#f6465d',
+    borderUpColor: '#0ecb81', borderDownColor: '#f6465d',
+    wickUpColor: '#0ecb81', wickDownColor: '#f6465d',
   });
 
-  candleSeries.setData(report.candles);
+  _candleSeries.setData(candles);
+  _priceChart.timeScale().fitContent();
 
-  // Trade markers
-  if (report.trade_log && report.trade_log.length) {
-    const markers = report.trade_log
-      .filter(t => t.ts_ms)
-      .map(t => ({
-        time: Math.floor(t.ts_ms / 1000),
-        position: t.side === 'BUY' ? 'belowBar' : 'aboveBar',
-        color: t.side === 'BUY' ? '#16a34a' : '#dc2626',
-        shape: t.side === 'BUY' ? 'arrowUp' : 'arrowDown',
-        text: t.side === 'BUY' ? 'B' : 'S',
-      }))
-      .sort((a, b) => a.time - b.time);
-    if (markers.length) candleSeries.setMarkers(markers);
-  }
-
-  chart.timeScale().fitContent();
+  // Render trade overlay markers (defer to ensure chart layout is complete)
+  const renderOverlay = () => _renderTradeOverlay(report.trade_log, tfMinutes);
+  requestAnimationFrame(() => requestAnimationFrame(renderOverlay));
+  _priceChart.timeScale().subscribeVisibleTimeRangeChange(renderOverlay);
+  _priceChart.timeScale().subscribeVisibleLogicalRangeChange(renderOverlay);
 
   window.addEventListener('resize', () => {
-    chart.applyOptions({ width: container.clientWidth });
+    if (_priceChart) {
+      _priceChart.applyOptions({ width: container.clientWidth });
+      renderOverlay();
+    }
   });
 }
+
+let _tradeTooltip = null;
+let _ttHideTimer = null;
+
+function _getTradeTooltip() {
+  if (_tradeTooltip) return _tradeTooltip;
+  _tradeTooltip = document.createElement('div');
+  _tradeTooltip.className = 'chart-tooltip';
+  _tradeTooltip.id = 'trade-tooltip';
+  document.body.appendChild(_tradeTooltip);
+  // Keep tooltip visible while hovering over it
+  _tradeTooltip.addEventListener('mouseenter', () => {
+    if (_ttHideTimer) { clearTimeout(_ttHideTimer); _ttHideTimer = null; }
+  });
+  _tradeTooltip.addEventListener('mouseleave', () => {
+    _tradeTooltip.style.display = 'none';
+  });
+  return _tradeTooltip;
+}
+
+function _attachTradeTooltip(label, trades, x, labelY) {
+  label.addEventListener('mouseenter', () => {
+    if (_ttHideTimer) { clearTimeout(_ttHideTimer); _ttHideTimer = null; }
+    const tooltip = _getTradeTooltip();
+    let html = '';
+    trades.forEach((t, i) => {
+      const d = new Date(t.ts_ms);
+      const dateStr = d.toLocaleDateString('ko-KR', { month:'2-digit', day:'2-digit' });
+      const timeStr = d.toLocaleTimeString('ko-KR', { hour:'2-digit', minute:'2-digit', hour12:false });
+      const sideLabel = t.side === 'buy' ? 'BUY' : 'SELL';
+      if (i > 0) html += '<div style="border-top:1px solid rgba(255,255,255,0.08); margin:4px 0;"></div>';
+      html += `<div class="tt-head"><span class="tt-title ${t.side}">${sideLabel}</span><span class="tt-time ${t.side}">${dateStr} ${timeStr}</span></div>`;
+      html += '<div class="tt-body">';
+      html += `<div class="tt-row"><span class="tt-key">Price</span><span class="tt-val">${t.price.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</span></div>`;
+      if (t.qty) html += `<div class="tt-row"><span class="tt-key">Amount</span><span class="tt-val">${parseFloat(t.qty).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:4})}</span></div>`;
+      html += '</div>';
+    });
+    tooltip.innerHTML = html;
+    tooltip.style.display = 'block';
+
+    const lRect = label.getBoundingClientRect();
+    const tW = tooltip.offsetWidth || 140;
+    const tH = tooltip.offsetHeight || 80;
+    let left = lRect.right + 6;
+    if (left + tW > window.innerWidth - 10) left = lRect.left - tW - 6;
+    let top = lRect.top - 8;
+    if (top + tH > window.innerHeight - 10) top = window.innerHeight - tH - 10;
+    if (top < 4) top = 4;
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${top}px`;
+  });
+
+  label.addEventListener('mouseleave', () => {
+    // Delay hide so user can move cursor to tooltip
+    _ttHideTimer = setTimeout(() => {
+      const tooltip = _getTradeTooltip();
+      tooltip.style.display = 'none';
+      _ttHideTimer = null;
+    }, 150);
+  });
+}
+
+function _renderTradeOverlay(tradeLog, tfMinutes) {
+  const overlay = document.getElementById('trade-overlay');
+  if (!overlay || !_priceChart || !_candleSeries) return;
+  overlay.innerHTML = '';
+  if (!tradeLog || !tradeLog.length) return;
+
+  const container = document.getElementById('bt-price-chart');
+  if (!container) return;
+  const rect = container.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return;
+
+  const range = _priceChart.timeScale().getVisibleRange();
+  const intervalSec = (tfMinutes || 1) * 60;
+
+  // Build candle lookup for high/low
+  const candleMap = {};
+  if (_reportCache && _reportCache.candles) {
+    const agg = aggregateCandles(_reportCache.candles, tfMinutes || 1);
+    agg.forEach(c => { candleMap[c.time] = c; });
+  }
+
+  const allEvents = tradeLog
+    .filter(t => t.ts_ms && t.price)
+    .map(t => ({
+      time: Math.floor(Math.floor(t.ts_ms / 1000) / intervalSec) * intervalSec,
+      price: parseFloat(t.price),
+      side: (t.side || '').toUpperCase() === 'BUY' || t.side === 'BUY' ? 'buy' : 'sell',
+      qty: t.quote_qty || t.qty || '',
+      ts_ms: t.ts_ms,
+    }))
+    .filter(ev => !range || (ev.time >= range.from && ev.time <= range.to));
+
+  // Group by candle time
+  const grouped = {};
+  allEvents.forEach(ev => {
+    const key = ev.time;
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push(ev);
+  });
+
+  Object.entries(grouped).forEach(([timeKey, trades]) => {
+    const time = Number(timeKey);
+    const x = _priceChart.timeScale().timeToCoordinate(time);
+    if (x === null || x < 0 || x > rect.width) return;
+
+    const candle = candleMap[time];
+    const buys = trades.filter(t => t.side === 'buy');
+    const sells = trades.filter(t => t.side === 'sell');
+
+    // Render buy group (below candle)
+    if (buys.length) {
+      const avgPrice = buys.reduce((s, t) => s + t.price, 0) / buys.length;
+      const dotY = _candleSeries.priceToCoordinate(avgPrice);
+      if (dotY !== null && dotY >= 0 && dotY <= rect.height) {
+        const lowY = _candleSeries.priceToCoordinate(candle ? candle.low : avgPrice);
+        const anchorY = lowY !== null ? lowY : dotY;
+
+        const dot = document.createElement('div');
+        dot.className = 'trade-dot buy';
+        dot.style.left = `${x - 3}px`;
+        dot.style.top = `${dotY - 3}px`;
+        overlay.appendChild(dot);
+
+        const labelOffset = 14;
+        const labelY = anchorY + labelOffset;
+        const line = document.createElement('div');
+        line.className = 'trade-line';
+        line.style.left = `${x}px`;
+        line.style.top = `${anchorY}px`;
+        line.style.height = `${Math.max(0, labelY - anchorY)}px`;
+        overlay.appendChild(line);
+
+        const label = document.createElement('div');
+        label.className = 'trade-label buy';
+        label.textContent = buys.length > 1 ? `B${buys.length}` : 'B';
+        overlay.appendChild(label);
+        const labelWidth = label.offsetWidth || 16;
+        label.style.left = `${x - (labelWidth / 2)}px`;
+        label.style.top = `${labelY}px`;
+
+        _attachTradeTooltip(label, buys, x, labelY);
+      }
+    }
+
+    // Render sell group (above candle)
+    if (sells.length) {
+      const avgPrice = sells.reduce((s, t) => s + t.price, 0) / sells.length;
+      const dotY = _candleSeries.priceToCoordinate(avgPrice);
+      if (dotY !== null && dotY >= 0 && dotY <= rect.height) {
+        const highY = _candleSeries.priceToCoordinate(candle ? candle.high : avgPrice);
+        const anchorY = highY !== null ? highY : dotY;
+
+        const dot = document.createElement('div');
+        dot.className = 'trade-dot sell';
+        dot.style.left = `${x - 3}px`;
+        dot.style.top = `${dotY - 3}px`;
+        overlay.appendChild(dot);
+
+        const labelOffset = 14;
+        const labelY = anchorY - labelOffset - 12;
+        const line = document.createElement('div');
+        line.className = 'trade-line';
+        line.style.left = `${x}px`;
+        line.style.top = `${labelY + 12}px`;
+        line.style.height = `${Math.max(0, anchorY - (labelY + 12))}px`;
+        overlay.appendChild(line);
+
+        const label = document.createElement('div');
+        label.className = 'trade-label sell';
+        label.textContent = sells.length > 1 ? `S${sells.length}` : 'S';
+        overlay.appendChild(label);
+        const labelWidth = label.offsetWidth || 16;
+        label.style.left = `${x - (labelWidth / 2)}px`;
+        label.style.top = `${labelY}px`;
+
+        _attachTradeTooltip(label, sells, x, labelY);
+      }
+    }
+  });
+}
+
+// Timeframe selector click handler
+document.getElementById('tf-selector')?.addEventListener('click', (e) => {
+  const btn = e.target.closest('.tf-btn');
+  if (!btn || !_reportCache) return;
+  document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderPriceChart(_reportCache, parseInt(btn.dataset.tf));
+});
 
 function renderEquityCurve(report) {
   const container = document.getElementById('bt-equity-chart');
@@ -302,6 +627,63 @@ function renderTradeLog(report) {
 function fmtNum(val, decimals) {
   if (val == null) return '-';
   return Number(val).toFixed(decimals);
+}
+
+let _isPinned = false;
+
+async function checkPinStatus(runId) {
+  try {
+    const resp = await apiFetch('/api/backtest/list');
+    if (!resp.ok) return;
+    const runs = await resp.json();
+    const run = runs.find(r => r.id === runId);
+    if (run && run.pinned) {
+      _isPinned = true;
+      _updatePinUI();
+    }
+  } catch (e) {}
+}
+
+function _updatePinUI() {
+  const btn = document.getElementById('bt-pin-btn');
+  const label = document.getElementById('bt-pin-label');
+  const svg = btn?.querySelector('svg');
+  if (!btn) return;
+  if (_isPinned) {
+    label.textContent = 'Pinned';
+    btn.style.color = '#f0b90b';
+    btn.style.borderColor = '#f0b90b';
+    if (svg) svg.setAttribute('fill', '#f0b90b');
+  } else {
+    label.textContent = 'Pin';
+    btn.style.color = '';
+    btn.style.borderColor = '';
+    if (svg) svg.setAttribute('fill', 'none');
+  }
+}
+
+async function togglePin() {
+  const btn = document.getElementById('bt-pin-btn');
+  if (!btn) return;
+  btn.disabled = true;
+  try {
+    const resp = await apiFetch('/api/backtest/' + BACKTEST_ID + '/pin', {
+      method: 'POST',
+      headers: { 'X-CSRFToken': getCsrfToken() },
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.detail || 'Pin failed');
+    }
+    const data = await resp.json();
+    _isPinned = data.pinned;
+    _updatePinUI();
+    showToast(_isPinned ? 'Pinned' : 'Unpinned', 'success');
+  } catch (e) {
+    showToast('Error: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
 }
 </script>
 {% endblock %}

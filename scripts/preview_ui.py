@@ -37,6 +37,9 @@ from datetime import datetime, timedelta
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import json
+from pathlib import Path
+
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -353,6 +356,8 @@ SAMPLE_ADMIN_OVERVIEW = {
 # ============================================================
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SAVED_DIR = Path(PROJECT_ROOT) / "data" / "backtests"
+SAVED_DIR.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title="[SAMPLE_DATA] UI Preview")
 
@@ -921,7 +926,11 @@ def _generate_backtest_candles(start_ts_ms: int, end_ts_ms: int) -> list[dict]:
 
 
 def _generate_mock_result(start_ts_ms: int, end_ts_ms: int, strategies: list, strategy_params: dict):
-    """[SAMPLE_DATA] Generate a mock completed backtest result."""
+    """[SAMPLE_DATA] Generate a mock completed backtest result.
+
+    Trades are spread across the full date range and use prices
+    derived from the candle data so markers align with the chart.
+    """
     initial = 10000.0
     pnl_pct = round(random.uniform(-5, 15), 2)
     final_value = round(initial * (1 + pnl_pct / 100), 2)
@@ -929,21 +938,38 @@ def _generate_mock_result(start_ts_ms: int, end_ts_ms: int, strategies: list, st
     winning = random.randint(int(total_trades * 0.4), int(total_trades * 0.8))
     losing = total_trades - winning
 
+    # Pre-generate candle prices for trade price lookup
+    candles = _generate_backtest_candles(start_ts_ms, end_ts_ms)
+    duration = end_ts_ms - start_ts_ms
+
     trade_log = []
-    ts = start_ts_ms
-    for i in range(total_trades):
+    # Distribute trades evenly across the full date range
+    trade_timestamps = sorted(
+        start_ts_ms + random.randint(0, max(1, duration))
+        for _ in range(total_trades)
+    )
+    for i, ts in enumerate(trade_timestamps):
         side = "BUY" if i % 2 == 0 else "SELL"
-        price = round(random.uniform(90000, 100000), 2)
+        # Find the candle closest to this trade timestamp
+        candle_idx = min(
+            int((ts - start_ts_ms) / 300_000),
+            len(candles) - 1,
+        )
+        candle_idx = max(0, candle_idx)
+        base_price = candles[candle_idx]["close"]
+        # Small offset from candle price for realism
+        price = round(base_price * (1 + random.uniform(-0.003, 0.003)), 2)
         qty = round(random.uniform(0.0005, 0.003), 6)
+        # Snap trade ts to a 5m boundary so it aligns with candle times
+        snapped_ts = (ts // 300_000) * 300_000
         trade_log.append({
-            "ts_ms": ts,
+            "ts_ms": snapped_ts,
             "side": side,
             "price": str(price),
             "qty": str(qty),
             "quote_qty": str(round(price * qty, 2)),
             "strategy": random.choice(strategies),
         })
-        ts += random.randint(300_000, 3_600_000)
 
     equity_curve = []
     eq_val = initial
@@ -987,6 +1013,7 @@ async def api_backtest_run(request: Request):
     entry = {
         "id": run_id,
         "symbol": body.get("symbol", "BTCUSDT"),
+        "combos": body.get("combos"),
         "strategies": strategies,
         "strategy_params": strategy_params,
         "initial_usdt": initial_usdt,
@@ -998,6 +1025,32 @@ async def api_backtest_run(request: Request):
         "result": result,
     }
     _mock_backtests.insert(0, entry)
+
+    # Auto-save to JSON
+    candles = _generate_backtest_candles(start_ts_ms, end_ts_ms)
+    saved_data = {
+        "id": run_id,
+        "saved_at": datetime.now().isoformat(),
+        "pinned": False,
+        "config": {
+            "symbol": entry["symbol"],
+            "combos": entry.get("combos"),
+            "strategies": strategies,
+            "strategy_params": strategy_params,
+            "initial_usdt": initial_usdt,
+            "start_ts_ms": start_ts_ms,
+            "end_ts_ms": end_ts_ms,
+        },
+        "summary": result["summary"],
+        "trade_log": result["trade_log"],
+        "equity_curve": result["equity_curve"],
+        "candles": candles,
+    }
+    try:
+        (SAVED_DIR / f"{run_id}.json").write_text(json.dumps(saved_data), encoding="utf-8")
+    except Exception:
+        pass
+
     return {"id": run_id, "status": "COMPLETED"}
 
 
@@ -1012,7 +1065,7 @@ async def api_backtest_status(run_id: str):
 
 @app.get("/api/backtest/{run_id}/report")
 async def api_backtest_report(run_id: str):
-    """[SAMPLE_DATA] Mock backtest report."""
+    """[SAMPLE_DATA] Mock backtest report — falls back to saved JSON file."""
     for bt in _mock_backtests:
         if bt["id"] == run_id:
             candles = _generate_backtest_candles(bt["start_ts_ms"], bt["end_ts_ms"])
@@ -1031,16 +1084,43 @@ async def api_backtest_report(run_id: str):
                 "equity_curve": bt["result"]["equity_curve"],
                 "candles": candles,
             }
+    # Fallback: load from saved JSON file
+    saved_path = SAVED_DIR / f"{run_id}.json"
+    if saved_path.exists():
+        data = json.loads(saved_path.read_text(encoding="utf-8"))
+        return {
+            "id": data.get("id", run_id),
+            "config": data.get("config", {}),
+            "summary": data.get("summary"),
+            "trade_log": data.get("trade_log"),
+            "equity_curve": data.get("equity_curve"),
+            "candles": data.get("candles"),
+        }
     return JSONResponse({"detail": "Not found"}, status_code=404)
 
 
 @app.get("/api/backtest/list")
 async def api_backtest_list():
-    """[SAMPLE_DATA] Mock backtest history list."""
-    return [
-        {
+    """[SAMPLE_DATA] Mock backtest history list (includes saved reports)."""
+    # Build pinned lookup from JSON files
+    pinned_map = {}
+    for f in SAVED_DIR.glob("*.json"):
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            rid = data.get("id", f.stem)
+            pinned_map[rid] = data.get("pinned", False)
+        except Exception:
+            pass
+
+    # In-memory runs
+    seen_ids = set()
+    items = []
+    for bt in _mock_backtests:
+        seen_ids.add(bt["id"])
+        items.append({
             "id": bt["id"],
             "symbol": bt["symbol"],
+            "combos": bt.get("combos"),
             "strategies": bt["strategies"],
             "initial_usdt": bt["initial_usdt"],
             "start_ts_ms": bt["start_ts_ms"],
@@ -1048,9 +1128,35 @@ async def api_backtest_list():
             "status": bt["status"],
             "pnl_pct": bt.get("pnl_pct"),
             "created_at": bt["created_at"],
-        }
-        for bt in _mock_backtests
-    ]
+            "pinned": pinned_map.get(bt["id"], False),
+        })
+
+    # Append saved-only reports (not already in memory)
+    for f in sorted(SAVED_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            rid = data.get("id", f.stem)
+            if rid in seen_ids:
+                continue
+            cfg = data.get("config", {})
+            summary = data.get("summary", {})
+            items.append({
+                "id": rid,
+                "symbol": cfg.get("symbol"),
+                "strategies": cfg.get("strategies"),
+                "combos": cfg.get("combos"),
+                "initial_usdt": cfg.get("initial_usdt"),
+                "start_ts_ms": cfg.get("start_ts_ms"),
+                "end_ts_ms": cfg.get("end_ts_ms"),
+                "status": "COMPLETED",
+                "pnl_pct": summary.get("pnl_pct") if summary else None,
+                "created_at": data.get("saved_at"),
+                "pinned": data.get("pinned", False),
+            })
+        except Exception:
+            pass
+
+    return items
 
 
 @app.delete("/api/backtest/{run_id}")
@@ -1058,6 +1164,30 @@ async def api_backtest_delete(run_id: str):
     """[SAMPLE_DATA] Mock delete backtest."""
     global _mock_backtests
     _mock_backtests = [bt for bt in _mock_backtests if bt["id"] != run_id]
+    return {"status": "deleted", "id": run_id}
+
+
+# ---- [SAMPLE_DATA] Pin endpoint (JSON file storage) ----
+
+@app.post("/api/backtest/{run_id}/pin")
+async def api_backtest_pin(run_id: str):
+    """Toggle pinned status of a backtest report."""
+    saved_path = SAVED_DIR / f"{run_id}.json"
+    if not saved_path.exists():
+        return JSONResponse({"detail": "Saved report not found"}, status_code=404)
+    data = json.loads(saved_path.read_text(encoding="utf-8"))
+    data["pinned"] = not data.get("pinned", False)
+    saved_path.write_text(json.dumps(data), encoding="utf-8")
+    return {"status": "ok", "id": run_id, "pinned": data["pinned"]}
+
+
+@app.delete("/api/backtest/saved/{run_id}")
+async def api_backtest_saved_delete(run_id: str):
+    """Delete a saved backtest JSON file."""
+    saved_path = SAVED_DIR / f"{run_id}.json"
+    if not saved_path.exists():
+        return JSONResponse({"detail": "Saved report not found"}, status_code=404)
+    saved_path.unlink()
     return {"status": "deleted", "id": run_id}
 
 

@@ -22,6 +22,9 @@ class BacktestClient(ExchangeClient):
     ):
         self.symbol = symbol
         self._current_price: float = 0.0
+        self._candle_low: float = 0.0
+        self._candle_high: float = 0.0
+        self._sim_time_ms: int = 0
         self._balances: dict[str, dict] = {
             "USDT": {"free": initial_balance_usdt, "locked": 0.0},
             "BTC": {"free": initial_balance_btc, "locked": 0.0},
@@ -43,20 +46,41 @@ class BacktestClient(ExchangeClient):
         self._current_price = price
         self._check_order_fills()
 
+    def set_candle(self, close: float, low: float, high: float, ts_ms: int) -> None:
+        """Set candle data for realistic fill simulation."""
+        self._current_price = close
+        self._candle_low = low
+        self._candle_high = high
+        self._sim_time_ms = ts_ms
+        self._check_order_fills()
+
+    def _time_ms(self) -> int:
+        return self._sim_time_ms if self._sim_time_ms else int(time.time() * 1000)
+
     def _check_order_fills(self) -> None:
-        """Check if any open orders should be filled at the current price."""
+        """Check if any open orders should be filled at the current price.
+
+        Uses candle low for BUY fills and candle high for SELL fills
+        when candle data is available, for realistic simulation.
+        """
         remaining: list[dict] = []
+        buy_check = self._candle_low if self._candle_low > 0 else self._current_price
+        sell_check = self._candle_high if self._candle_high > 0 else self._current_price
+
         for order in self._open_orders:
             filled = False
             order_price = float(order["price"])
-            if order["side"] == "BUY" and self._current_price <= order_price or order["side"] == "SELL" and self._current_price >= order_price:
+            if (order["side"] == "BUY" and buy_check <= order_price) or \
+               (order["side"] == "SELL" and sell_check >= order_price):
                 filled = True
 
             if filled:
-                order["status"] = "FILLED"
-                order["executedQty"] = order["origQty"]
                 qty = float(order["origQty"])
                 px = float(order["price"])
+                order["status"] = "FILLED"
+                order["executedQty"] = order["origQty"]
+                order["cummulativeQuoteQty"] = str(qty * px)
+                order["updateTime"] = self._time_ms()
                 asset = order["symbol"].replace("USDT", "")
 
                 if order["side"] == "BUY":
@@ -87,7 +111,7 @@ class BacktestClient(ExchangeClient):
                         "quoteQty": str(qty * px),
                         "commission": "0",
                         "commissionAsset": "BNB",
-                        "time": int(time.time() * 1000),
+                        "time": self._time_ms(),
                         "isBuyer": order["side"] == "BUY",
                     }
                 )
@@ -224,7 +248,7 @@ class BacktestClient(ExchangeClient):
             "executedQty": "0",
             "cummulativeQuoteQty": "0",
             "timeInForce": "GTC",
-            "transactTime": int(time.time() * 1000),
+            "transactTime": self._time_ms(),
         }
         self._open_orders.append(order)
         self._check_order_fills()
@@ -268,7 +292,7 @@ class BacktestClient(ExchangeClient):
             "executedQty": "0",
             "cummulativeQuoteQty": "0",
             "timeInForce": "GTC",
-            "transactTime": int(time.time() * 1000),
+            "transactTime": self._time_ms(),
         }
         self._open_orders.append(order)
         self._check_order_fills()

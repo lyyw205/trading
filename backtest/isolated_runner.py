@@ -3,35 +3,43 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 from uuid import UUID, uuid4
 
-from sqlalchemy import select, update
+import pyarrow.compute as pc
+import pyarrow.parquet as pq
+from sqlalchemy import update
 
-from app.db.session import TradingSessionLocal, engine_trading
-from app.models.price_candle import PriceCandle5m, PriceCandle1m
+from app.db.session import TradingSessionLocal  # results/status 저장용
 from app.models.backtest_run import BacktestRun
-from app.models.user import UserProfile
-from app.models.account import TradingAccount
 from app.exchange.backtest_client import BacktestClient
 from app.strategies.registry import BuyLogicRegistry, SellLogicRegistry
-from app.strategies.state_store import StrategyStateStore
-from app.services.account_state_manager import AccountStateManager
+import app.strategies.buys  # noqa: F401 — trigger @register decorators
+import app.strategies.sells  # noqa: F401
+from backtest.mem_stores import (
+    InMemoryAccountStateManager,
+    InMemoryLotRepository,
+    InMemoryOrderRepository,
+    InMemoryStateStore,
+)
 
 logger = logging.getLogger(__name__)
 
-# Concurrency limiter: max 3 simultaneous backtests
-_semaphore = asyncio.Semaphore(3)
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+
+# Concurrency limiter: 1 at a time (module-level patch for trend.py requires serialization)
+_semaphore = asyncio.Semaphore(1)
 
 MAX_CANDLES = 100_000
 EQUITY_SAMPLE_INTERVAL = 12  # every 12 candles = 1 hour for 5m candles
 
 
 class IsolatedBacktestRunner:
-    """Transaction-rollback isolated backtest runner.
+    """In-memory backtest runner.
 
-    All intermediate data (synthetic accounts, orders, lots, strategy state)
-    is written inside a single PG transaction that is rolled back at the end.
-    Only the final results are persisted to backtest_runs in a separate transaction.
+    All intermediate data (orders, lots, strategy state) lives in pure-dict
+    in-memory stores — no DB transactions during candle replay.
+    Only config loading (1x) and result saving (1x) touch the DB.
     """
 
     async def run(self, run_id: UUID) -> dict:
@@ -60,7 +68,7 @@ class IsolatedBacktestRunner:
             return {"error": "No combo configurations"}
 
         # Mark as RUNNING
-        await self._update_status(run_id, "RUNNING", started_at=datetime.now(timezone.utc))
+        await self._update_status(run_id, "RUNNING", started_at=datetime.utcnow())
 
         try:
             # ----------------------------------------------------------------
@@ -120,135 +128,132 @@ class IsolatedBacktestRunner:
                     combo["reference_combo_id"] = None
 
             # ----------------------------------------------------------------
-            # 4. Isolated transaction: replay candles
+            # 4. In-memory replay (DB 연결 불필요)
             # ----------------------------------------------------------------
             client = BacktestClient(symbol=symbol, initial_balance_usdt=initial_usdt)
             account_id = uuid4()
             equity_curve: list[dict] = []
 
-            # Use a raw connection to control transaction manually
-            async with engine_trading.connect() as conn:
-                # Begin transaction (auto-started by asyncpg)
-                async with conn.begin() as txn:
-                    # Create a session bound to this connection
-                    from sqlalchemy.ext.asyncio import AsyncSession
-                    session = AsyncSession(bind=conn, expire_on_commit=False)
+            # Shared in-memory stores
+            shared_backing: dict[str, str] = {}
+            lot_repo = InMemoryLotRepository()
+            order_repo = InMemoryOrderRepository()
+            shared_asm = InMemoryAccountStateManager(account_id, shared_backing)
 
-                    # Insert synthetic user + account for FK satisfaction
-                    await self._insert_synthetic_rows(
-                        session, user_id, account_id, symbol
-                    )
-                    await session.flush()
+            # Module-level patch: trend.py의 lazy import가 InMemoryStateStore 사용
+            import app.strategies.state_store as _ss_mod
+            _original_ss = _ss_mod.StrategyStateStore
+            _ss_mod.StrategyStateStore = (
+                lambda aid, scope, session: InMemoryStateStore(aid, scope, shared_backing)
+            )
 
-                    # Replay candles
-                    from app.db.lot_repo import LotRepository
-                    from app.db.order_repo import OrderRepository
-                    from app.db.position_repo import PositionRepository
-                    from app.strategies.base import RepositoryBundle, StrategyContext
+            try:
+                from app.strategies.base import RepositoryBundle, StrategyContext
 
-                    base_asset = symbol.replace("USDT", "")
+                base_asset = symbol.replace("USDT", "")
 
-                    for i, candle in enumerate(candles):
-                        price = float(candle["close"])
-                        ts_ms = candle["ts_ms"]
-                        client.set_price(price)
+                for i, candle in enumerate(candles):
+                    price = float(candle["close"])
+                    ts_ms = candle["ts_ms"]
+                    sim_time = ts_ms / 1000.0  # ms → seconds for cooldown
+                    candle_low = float(candle["low"])
+                    candle_high = float(candle["high"])
+                    client.set_candle(close=price, low=candle_low, high=candle_high, ts_ms=ts_ms)
 
-                        for combo in combos:
-                            combo_id = combo["combo_id"]
-                            buy_logic = combo["buy_logic"]
-                            sell_logic = combo["sell_logic"]
+                    for combo in combos:
+                        combo_id = combo["combo_id"]
+                        buy_logic = combo["buy_logic"]
+                        sell_logic = combo["sell_logic"]
+                        buy_logic._sim_time = sim_time
+                        sell_logic._sim_time = sim_time
 
-                            state = StrategyStateStore(account_id, str(combo_id), session)
-                            shared = AccountStateManager(account_id, session)
-                            prefix = f"bt_{combo['name'][:8]}_"
+                        state = InMemoryStateStore(account_id, str(combo_id), shared_backing)
+                        prefix = f"bt_{combo['name'][:8]}_"
 
-                            repos = RepositoryBundle(
-                                lot=LotRepository(session),
-                                order=OrderRepository(session),
-                                position=PositionRepository(session),
-                                price=None,
+                        repos = RepositoryBundle(
+                            lot=lot_repo,
+                            order=order_repo,
+                            position=None,
+                            price=None,
+                        )
+
+                        # Build buy params (inject reference_combo_id)
+                        buy_params = {**buy_logic.default_params, **combo["buy_params"]}
+                        if combo["reference_combo_id"]:
+                            buy_params["_reference_combo_id"] = str(combo["reference_combo_id"])
+
+                        buy_ctx = StrategyContext(
+                            account_id=account_id,
+                            symbol=symbol,
+                            base_asset=base_asset,
+                            quote_asset="USDT",
+                            current_price=price,
+                            params=buy_params,
+                            client_order_prefix=prefix,
+                        )
+
+                        # 0. pre_tick
+                        try:
+                            await buy_logic.pre_tick(buy_ctx, state, client, repos, combo_id)
+                        except Exception as exc:
+                            logger.warning(
+                                "Backtest pre_tick error (combo=%s, price=%.2f): %s",
+                                combo["name"], price, exc,
                             )
 
-                            # Build buy params (inject reference_combo_id)
-                            buy_params = {**buy_logic.default_params, **combo["buy_params"]}
-                            if combo["reference_combo_id"]:
-                                buy_params["_reference_combo_id"] = str(combo["reference_combo_id"])
-
-                            buy_ctx = StrategyContext(
-                                account_id=account_id,
-                                symbol=symbol,
-                                base_asset=base_asset,
-                                quote_asset="USDT",
-                                current_price=price,
-                                params=buy_params,
-                                client_order_prefix=prefix,
+                        # 1. sell
+                        sell_params = {**sell_logic.default_params, **combo["sell_params"]}
+                        sell_ctx = StrategyContext(
+                            account_id=account_id,
+                            symbol=symbol,
+                            base_asset=base_asset,
+                            quote_asset="USDT",
+                            current_price=price,
+                            params=sell_params,
+                            client_order_prefix=prefix,
+                        )
+                        open_lots = await lot_repo.get_open_lots_by_combo(
+                            account_id, symbol, combo_id,
+                        )
+                        try:
+                            await sell_logic.tick(sell_ctx, state, client, shared_asm, repos, open_lots)
+                        except Exception as exc:
+                            logger.warning(
+                                "Backtest sell tick error (combo=%s, price=%.2f): %s",
+                                combo["name"], price, exc,
                             )
 
-                            # 0. pre_tick
-                            try:
-                                await buy_logic.pre_tick(buy_ctx, state, client, repos, combo_id)
-                            except Exception as exc:
-                                logger.warning(
-                                    "Backtest pre_tick error (combo=%s, price=%.2f): %s",
-                                    combo["name"], price, exc,
-                                )
-
-                            # 1. sell
-                            sell_params = {**sell_logic.default_params, **combo["sell_params"]}
-                            sell_ctx = StrategyContext(
-                                account_id=account_id,
-                                symbol=symbol,
-                                base_asset=base_asset,
-                                quote_asset="USDT",
-                                current_price=price,
-                                params=sell_params,
-                                client_order_prefix=prefix,
+                        # 2. buy
+                        try:
+                            await buy_logic.tick(buy_ctx, state, client, shared_asm, repos, combo_id)
+                        except Exception as exc:
+                            logger.warning(
+                                "Backtest buy tick error (combo=%s, price=%.2f): %s",
+                                combo["name"], price, exc,
                             )
-                            open_lots = await LotRepository(session).get_open_lots_by_combo(
-                                account_id, symbol, combo_id,
-                            )
-                            try:
-                                await sell_logic.tick(sell_ctx, state, client, shared, repos, open_lots)
-                            except Exception as exc:
-                                logger.warning(
-                                    "Backtest sell tick error (combo=%s, price=%.2f): %s",
-                                    combo["name"], price, exc,
-                                )
 
-                            # 2. buy
-                            try:
-                                await buy_logic.tick(buy_ctx, state, client, shared, repos, combo_id)
-                            except Exception as exc:
-                                logger.warning(
-                                    "Backtest buy tick error (combo=%s, price=%.2f): %s",
-                                    combo["name"], price, exc,
-                                )
+                    # Sample equity curve periodically
+                    if i % EQUITY_SAMPLE_INTERVAL == 0:
+                        eq_val = self._calc_equity(client, price, base_asset)
+                        equity_curve.append({"ts_ms": ts_ms, "value": round(eq_val, 2)})
 
-                        await session.flush()
+                # Final equity point
+                final_price = float(candles[-1]["close"])
+                final_equity = self._calc_equity(client, final_price, base_asset)
+                if not equity_curve or equity_curve[-1]["ts_ms"] != candles[-1]["ts_ms"]:
+                    equity_curve.append({
+                        "ts_ms": candles[-1]["ts_ms"],
+                        "value": round(final_equity, 2),
+                    })
 
-                        # Sample equity curve periodically
-                        if i % EQUITY_SAMPLE_INTERVAL == 0:
-                            eq_val = self._calc_equity(client, price, base_asset)
-                            equity_curve.append({"ts_ms": ts_ms, "value": round(eq_val, 2)})
+                # Collect results
+                results = self._collect_results(
+                    client, candles, initial_usdt, equity_curve, base_asset
+                )
 
-                    # Final equity point
-                    final_price = float(candles[-1]["close"])
-                    final_equity = self._calc_equity(client, final_price, base_asset)
-                    if not equity_curve or equity_curve[-1]["ts_ms"] != candles[-1]["ts_ms"]:
-                        equity_curve.append({
-                            "ts_ms": candles[-1]["ts_ms"],
-                            "value": round(final_equity, 2),
-                        })
-
-                    # Collect results before rollback
-                    results = self._collect_results(
-                        client, candles, initial_usdt, equity_curve, base_asset
-                    )
-
-                    await session.close()
-
-                    # ROLLBACK — all intermediate data vanishes
-                    await txn.rollback()
+            finally:
+                # Module-level patch 복원 필수
+                _ss_mod.StrategyStateStore = _original_ss
 
             # ----------------------------------------------------------------
             # 5. Save results to backtest_runs (separate transaction)
@@ -269,87 +274,52 @@ class IsolatedBacktestRunner:
     async def _load_candles(
         self, symbol: str, start_ts_ms: int, end_ts_ms: int
     ) -> list[dict]:
-        """Load candles from production DB as plain dicts (read-only).
+        """Load candles from local Parquet file.
 
         Prefers 1m candles for higher resolution; falls back to 5m.
+        Files expected at: data/{SYMBOL}_1m.parquet, data/{SYMBOL}_5m.parquet
         """
-        async with TradingSessionLocal() as session:
-            # Try 1m candles first (higher resolution)
-            stmt_1m = (
-                select(
-                    PriceCandle1m.ts_ms,
-                    PriceCandle1m.open,
-                    PriceCandle1m.high,
-                    PriceCandle1m.low,
-                    PriceCandle1m.close,
-                    PriceCandle1m.volume,
-                )
-                .where(
-                    PriceCandle1m.symbol == symbol,
-                    PriceCandle1m.ts_ms >= start_ts_ms,
-                    PriceCandle1m.ts_ms <= end_ts_ms,
-                )
-                .order_by(PriceCandle1m.ts_ms)
-            )
-            result = await session.execute(stmt_1m)
-            rows = result.all()
+        for interval in ("1m", "5m"):
+            parquet_path = DATA_DIR / f"{symbol}_{interval}.parquet"
+            if not parquet_path.exists():
+                logger.debug("Parquet not found: %s", parquet_path)
+                continue
 
-            # Fall back to 5m if no 1m data
-            if not rows:
-                stmt_5m = (
-                    select(
-                        PriceCandle5m.ts_ms,
-                        PriceCandle5m.open,
-                        PriceCandle5m.high,
-                        PriceCandle5m.low,
-                        PriceCandle5m.close,
-                        PriceCandle5m.volume,
-                    )
-                    .where(
-                        PriceCandle5m.symbol == symbol,
-                        PriceCandle5m.ts_ms >= start_ts_ms,
-                        PriceCandle5m.ts_ms <= end_ts_ms,
-                    )
-                    .order_by(PriceCandle5m.ts_ms)
-                )
-                result = await session.execute(stmt_5m)
-                rows = result.all()
+            table = pq.read_table(parquet_path)
+
+            # Filter by time range
+            mask = pc.and_(
+                pc.greater_equal(table.column("ts_ms"), start_ts_ms),
+                pc.less_equal(table.column("ts_ms"), end_ts_ms),
+            )
+            table = table.filter(mask)
+
+            if len(table) == 0:
+                logger.debug("No rows in range for %s", parquet_path)
+                continue
+
+            # Sort by ts_ms
+            indices = pc.sort_indices(table, sort_keys=[("ts_ms", "ascending")])
+            table = table.take(indices)
+
+            logger.info(
+                "Loaded %d candles from %s (%s)",
+                len(table), parquet_path.name, interval,
+            )
 
             return [
                 {
-                    "ts_ms": r.ts_ms,
-                    "open": float(r.open),
-                    "high": float(r.high),
-                    "low": float(r.low),
-                    "close": float(r.close),
-                    "volume": float(r.volume) if r.volume else 0.0,
+                    "ts_ms": int(row["ts_ms"]),
+                    "open": float(row["open"]),
+                    "high": float(row["high"]),
+                    "low": float(row["low"]),
+                    "close": float(row["close"]),
+                    "volume": float(row["volume"]) if row["volume"] else 0.0,
                 }
-                for r in rows
+                for row in table.to_pylist()
             ]
 
-    async def _insert_synthetic_rows(
-        self, session, user_id: UUID, account_id: UUID, symbol: str
-    ) -> None:
-        """Insert synthetic user_profile + trading_account for FK satisfaction."""
-        synthetic_user_id = uuid4()
-        session.add(UserProfile(
-            id=synthetic_user_id,
-            email=f"backtest-{account_id}@synthetic.local",
-            role="user",
-        ))
-        await session.flush()
-
-        session.add(TradingAccount(
-            id=account_id,
-            owner_id=synthetic_user_id,
-            name=f"Backtest {account_id}",
-            symbol=symbol,
-            base_asset=symbol.replace("USDT", ""),
-            quote_asset="USDT",
-            api_key_encrypted="backtest",
-            api_secret_encrypted="backtest",
-        ))
-        await session.flush()
+        return []
 
     def _calc_equity(self, client: BacktestClient, price: float, base_asset: str) -> float:
         """Calculate total portfolio value at current price."""
@@ -410,6 +380,8 @@ class IsolatedBacktestRunner:
                         gross_loss += abs(profit)
 
         total_trades = len(client._trades)
+        buy_trades = sum(1 for t in client._trades if t.get("side") == "BUY" or t.get("isBuyer"))
+        sell_trades = total_trades - buy_trades
         total_round_trips = winning + losing
         win_rate = (winning / total_round_trips * 100) if total_round_trips > 0 else 0.0
         profit_factor = (gross_profit / gross_loss) if gross_loss > 0 else float("inf") if gross_profit > 0 else 0.0
@@ -431,6 +403,8 @@ class IsolatedBacktestRunner:
             "pnl_usdt": round(pnl_usdt, 2),
             "pnl_pct": round(pnl_pct, 2),
             "total_trades": total_trades,
+            "buy_trades": buy_trades,
+            "sell_trades": sell_trades,
             "winning_trades": winning,
             "losing_trades": losing,
             "win_rate": round(win_rate, 2),
@@ -455,7 +429,7 @@ class IsolatedBacktestRunner:
                     result_summary=results["summary"],
                     trade_log=results["trade_log"],
                     equity_curve=results["equity_curve"],
-                    completed_at=datetime.now(timezone.utc),
+                    completed_at=datetime.utcnow(),
                 )
             )
             await session.execute(stmt)
@@ -470,7 +444,7 @@ class IsolatedBacktestRunner:
                 .values(
                     status="FAILED",
                     error_message=error_msg[:1000],
-                    completed_at=datetime.now(timezone.utc),
+                    completed_at=datetime.utcnow(),
                 )
             )
             await session.execute(stmt)

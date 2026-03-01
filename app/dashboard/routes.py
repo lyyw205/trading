@@ -6,11 +6,21 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 router = APIRouter(tags=["pages"])
 
 
+def _require_login(request: Request) -> tuple[dict | None, RedirectResponse | None]:
+    """Shared guard: redirect to /login if not authenticated."""
+    user = getattr(request.state, "user", None)
+    if not user:
+        return None, RedirectResponse(url="/login", status_code=302)
+    return user, None
+
+
 def _require_admin_page(request: Request) -> tuple[dict | None, RedirectResponse | None]:
     """Shared guard for admin SSR pages. Returns (user, redirect) tuple."""
     user = getattr(request.state, "user", None)
-    if not user or user.get("role") != "admin":
-        return None, RedirectResponse(url="/accounts", status_code=302)
+    if not user:
+        return None, RedirectResponse(url="/login", status_code=302)
+    if user.get("role") != "admin":
+        return None, RedirectResponse(url="/login", status_code=302)
     return user, None
 
 
@@ -22,14 +32,18 @@ async def login_page(request: Request):
 
 @router.get("/accounts", response_class=HTMLResponse)
 async def accounts_page(request: Request):
-    user = getattr(request.state, "user", None)
+    user, redirect = _require_admin_page(request)
+    if redirect:
+        return redirect
     templates = request.app.state.templates
     return templates.TemplateResponse("accounts.html", {"request": request, "user": user})
 
 
 @router.get("/accounts/{account_id}", response_class=HTMLResponse)
 async def account_detail_page(request: Request, account_id: str):
-    user = getattr(request.state, "user", None)
+    user, redirect = _require_login(request)
+    if redirect:
+        return redirect
     templates = request.app.state.templates
     return templates.TemplateResponse("account_detail.html", {
         "request": request,

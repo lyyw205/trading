@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+from datetime import datetime, timezone
+from pathlib import Path
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -22,6 +25,9 @@ from app.schemas.backtest import (
 )
 
 logger = logging.getLogger(__name__)
+
+SAVED_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "backtests"
+SAVED_DIR.mkdir(parents=True, exist_ok=True)
 
 router = APIRouter(prefix="/api/backtest", tags=["backtest"])
 
@@ -100,61 +106,39 @@ async def get_backtest_report(
             detail=f"Backtest is {run.status}, not COMPLETED",
         )
 
-    # Load candles for the chart
-    from app.models.price_candle import PriceCandle1m, PriceCandle5m
+    # Load candles from local Parquet for the chart
+    from backtest.isolated_runner import DATA_DIR
 
-    # Try 1m candles first (higher resolution)
-    stmt_1m = (
-        select(
-            PriceCandle1m.ts_ms,
-            PriceCandle1m.open,
-            PriceCandle1m.high,
-            PriceCandle1m.low,
-            PriceCandle1m.close,
-            PriceCandle1m.volume,
-        )
-        .where(
-            PriceCandle1m.symbol == run.symbol,
-            PriceCandle1m.ts_ms >= run.start_ts_ms,
-            PriceCandle1m.ts_ms <= run.end_ts_ms,
-        )
-        .order_by(PriceCandle1m.ts_ms)
-    )
-    candle_result = await session.execute(stmt_1m)
-    candle_rows = candle_result.all()
+    import pyarrow.compute as pc
+    import pyarrow.parquet as pq
 
-    # Fall back to 5m if no 1m data
-    if not candle_rows:
-        stmt_5m = (
-            select(
-                PriceCandle5m.ts_ms,
-                PriceCandle5m.open,
-                PriceCandle5m.high,
-                PriceCandle5m.low,
-                PriceCandle5m.close,
-                PriceCandle5m.volume,
-            )
-            .where(
-                PriceCandle5m.symbol == run.symbol,
-                PriceCandle5m.ts_ms >= run.start_ts_ms,
-                PriceCandle5m.ts_ms <= run.end_ts_ms,
-            )
-            .order_by(PriceCandle5m.ts_ms)
+    candles = []
+    for interval in ("1m", "5m"):
+        parquet_path = DATA_DIR / f"{run.symbol}_{interval}.parquet"
+        if not parquet_path.exists():
+            continue
+        table = pq.read_table(parquet_path)
+        mask = pc.and_(
+            pc.greater_equal(table.column("ts_ms"), run.start_ts_ms),
+            pc.less_equal(table.column("ts_ms"), run.end_ts_ms),
         )
-        candle_result = await session.execute(stmt_5m)
-        candle_rows = candle_result.all()
-
-    candles = [
-        {
-            "time": int(r.ts_ms / 1000),
-            "open": float(r.open),
-            "high": float(r.high),
-            "low": float(r.low),
-            "close": float(r.close),
-            "volume": float(r.volume) if r.volume else 0.0,
-        }
-        for r in candle_rows
-    ]
+        table = table.filter(mask)
+        if len(table) == 0:
+            continue
+        indices = pc.sort_indices(table, sort_keys=[("ts_ms", "ascending")])
+        table = table.take(indices)
+        candles = [
+            {
+                "time": int(row["ts_ms"] / 1000),
+                "open": float(row["open"]),
+                "high": float(row["high"]),
+                "low": float(row["low"]),
+                "close": float(row["close"]),
+                "volume": float(row["volume"]) if row["volume"] else 0.0,
+            }
+            for row in table.to_pylist()
+        ]
+        break
 
     config = BacktestConfigOut(
         symbol=run.symbol,
@@ -169,6 +153,9 @@ async def get_backtest_report(
     summary = None
     if run.result_summary:
         summary = BacktestSummaryOut(**run.result_summary)
+
+    # Auto-save to JSON on first view
+    _auto_save(run, candles)
 
     return BacktestReportResponse(
         id=run.id,
@@ -190,6 +177,16 @@ async def list_backtests(
     result = await session.execute(stmt)
     runs = result.scalars().all()
 
+    # Collect pinned status from JSON files
+    pinned_ids = set()
+    for f in SAVED_DIR.glob("*.json"):
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            if data.get("pinned"):
+                pinned_ids.add(f.stem)
+        except Exception:
+            pass
+
     items = []
     for r in runs:
         pnl_pct = None
@@ -207,6 +204,7 @@ async def list_backtests(
                 status=r.status,
                 pnl_pct=pnl_pct,
                 created_at=r.created_at,
+                pinned=str(r.id) in pinned_ids,
             )
         )
     return items
@@ -227,3 +225,67 @@ async def delete_backtest(
     await session.delete(run)
     await session.commit()
     return {"status": "deleted", "id": str(run_id)}
+
+
+# ---- Auto-save & pin (JSON file storage) ----
+
+
+def _saved_path(run_id: str) -> Path:
+    return SAVED_DIR / f"{run_id}.json"
+
+
+def _auto_save(run: BacktestRun, candles: list[dict]) -> None:
+    """Auto-save report to JSON on first view (idempotent)."""
+    path = _saved_path(str(run.id))
+    if path.exists():
+        return
+    data = {
+        "id": str(run.id),
+        "saved_at": datetime.now(timezone.utc).isoformat(),
+        "pinned": False,
+        "config": {
+            "symbol": run.symbol,
+            "combos": run.combos,
+            "strategies": list(run.strategies) if run.strategies else None,
+            "strategy_params": run.strategy_params,
+            "initial_usdt": float(run.initial_usdt),
+            "start_ts_ms": run.start_ts_ms,
+            "end_ts_ms": run.end_ts_ms,
+        },
+        "summary": run.result_summary,
+        "trade_log": run.trade_log,
+        "equity_curve": run.equity_curve,
+        "candles": candles,
+    }
+    try:
+        path.write_text(json.dumps(data), encoding="utf-8")
+    except Exception:
+        logger.warning("Failed to auto-save backtest %s", run.id)
+
+
+@router.post("/{run_id}/pin")
+async def toggle_pin(
+    run_id: str,
+    user: dict = Depends(require_admin),
+):
+    """Toggle pinned status of a saved backtest report."""
+    path = _saved_path(run_id)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Saved report not found")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["pinned"] = not data.get("pinned", False)
+    path.write_text(json.dumps(data), encoding="utf-8")
+    return {"status": "ok", "id": run_id, "pinned": data["pinned"]}
+
+
+@router.delete("/saved/{run_id}")
+async def delete_saved_report(
+    run_id: str,
+    user: dict = Depends(require_admin),
+):
+    """Delete a saved backtest JSON file."""
+    path = _saved_path(run_id)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Saved report not found")
+    path.unlink()
+    return {"status": "deleted", "id": run_id}
