@@ -19,6 +19,7 @@ class StrategyStateStore:
         self.account_id = account_id
         self.scope = scope
         self._session = session
+        self._cache: dict[str, str] | None = None
 
     @property
     def session(self) -> AsyncSession:
@@ -26,11 +27,18 @@ class StrategyStateStore:
         return self._session
 
     def with_scope(self, scope: str) -> StrategyStateStore:
-        """Create a store with the same session but different scope."""
+        """Create a store with the same session but different scope (cache not inherited)."""
         return StrategyStateStore(self.account_id, scope, self._session)
+
+    async def preload(self) -> None:
+        """Bulk-load all keys for this scope into the in-memory cache."""
+        self._cache = await self.get_all()
 
     async def get(self, key: str, default: str | None = None) -> str | None:
         """strategy_state에서 (account_id, scope, key)로 값 조회"""
+        if self._cache is not None:
+            val = self._cache.get(key)
+            return val if val is not None else default
         stmt = select(StrategyState.value).where(
             StrategyState.account_id == self.account_id,
             StrategyState.scope == self.scope,
@@ -59,17 +67,37 @@ class StrategyStateStore:
             return default
 
     async def set(self, key: str, value) -> None:
-        """strategy_state에 (account_id, scope, key) -> value upsert"""
+        """strategy_state에 (account_id, scope, key) -> value upsert (write-through cache)"""
+        str_value = str(value)
         stmt = pg_insert(StrategyState).values(
             account_id=self.account_id,
             scope=self.scope,
             key=key,
-            value=str(value),
+            value=str_value,
         ).on_conflict_do_update(
             index_elements=["account_id", "scope", "key"],
-            set_={"value": str(value)},
+            set_={"value": str_value},
         )
         await self._session.execute(stmt)
+        if self._cache is not None:
+            self._cache[key] = str_value
+
+    async def set_many(self, items: dict[str, object]) -> None:
+        """Batch upsert multiple keys in a single statement."""
+        if not items:
+            return
+        rows = [
+            {"account_id": self.account_id, "scope": self.scope, "key": k, "value": str(v)}
+            for k, v in items.items()
+        ]
+        stmt = pg_insert(StrategyState).values(rows).on_conflict_do_update(
+            index_elements=["account_id", "scope", "key"],
+            set_={"value": pg_insert(StrategyState).excluded.value},
+        )
+        await self._session.execute(stmt)
+        if self._cache is not None:
+            for k, v in items.items():
+                self._cache[k] = str(v)
 
     async def delete(self, key: str) -> None:
         stmt = delete(StrategyState).where(
@@ -78,11 +106,22 @@ class StrategyStateStore:
             StrategyState.key == key,
         )
         await self._session.execute(stmt)
+        if self._cache is not None:
+            self._cache.pop(key, None)
 
     async def clear_keys(self, *keys: str) -> None:
-        """여러 키 삭제 (pending 상태 정리 등)"""
-        for key in keys:
-            await self.delete(key)
+        """여러 키 삭제 — single batch DELETE (pending 상태 정리 등)"""
+        if not keys:
+            return
+        stmt = delete(StrategyState).where(
+            StrategyState.account_id == self.account_id,
+            StrategyState.scope == self.scope,
+            StrategyState.key.in_(keys),
+        )
+        await self._session.execute(stmt)
+        if self._cache is not None:
+            for key in keys:
+                self._cache.pop(key, None)
 
     async def get_all(self) -> dict[str, str]:
         """이 scope의 모든 키-값 조회"""

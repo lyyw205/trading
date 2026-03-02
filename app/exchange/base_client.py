@@ -52,3 +52,9 @@ class ExchangeClient(ABC):
 
     @abstractmethod
     async def get_free_balance(self, asset: str) -> float: ...
+
+    @abstractmethod
+    async def get_account_info(self) -> dict: ...
+
+    @abstractmethod
+    async def get_my_trades_from_id(self, symbol: str, from_id: int, limit: int = 1000) -> list[dict]: ...

@@ -184,16 +184,16 @@ function renderSummary(report) {
   document.getElementById('bt-summary').innerHTML = `
     <div class="health-card">
       <div class="health-card-label">Initial Value</div>
-      <div class="health-card-value">${fmtNum(cfg.initial_usdt, 2)} USDT</div>
+      <div class="health-card-value">${fmt(cfg.initial_usdt, 2)} USDT</div>
     </div>
     <div class="health-card">
       <div class="health-card-label">Final Value</div>
-      <div class="health-card-value">${fmtNum(s.final_value_usdt, 2)} USDT</div>
+      <div class="health-card-value">${fmt(s.final_value_usdt, 2)} USDT</div>
     </div>
     <div class="health-card">
       <div class="health-card-label">PnL</div>
-      <div class="health-card-value ${pnlClass}">${s.pnl_usdt >= 0 ? '+' : ''}${fmtNum(s.pnl_usdt, 2)} USDT</div>
-      <div class="asset-sub ${pnlClass}">${s.pnl_pct >= 0 ? '+' : ''}${fmtNum(s.pnl_pct, 2)}%</div>
+      <div class="health-card-value ${pnlClass}">${s.pnl_usdt >= 0 ? '+' : ''}${fmt(s.pnl_usdt, 2)} USDT</div>
+      <div class="asset-sub ${pnlClass}">${s.pnl_pct >= 0 ? '+' : ''}${fmt(s.pnl_pct, 2)}%</div>
     </div>
     <div class="health-card">
       <div class="health-card-label">Total Trades</div>
@@ -202,21 +202,21 @@ function renderSummary(report) {
     </div>
     <div class="health-card">
       <div class="health-card-label">Win Rate</div>
-      <div class="health-card-value">${fmtNum(s.win_rate, 1)}%</div>
+      <div class="health-card-value">${fmt(s.win_rate, 1)}%</div>
       <div class="asset-sub">${s.winning_trades}W / ${s.losing_trades}L</div>
     </div>
     <div class="health-card">
       <div class="health-card-label">Max Drawdown</div>
-      <div class="health-card-value ${ddClass}">${fmtNum(s.max_drawdown_pct, 2)}%</div>
+      <div class="health-card-value ${ddClass}">${fmt(s.max_drawdown_pct, 2)}%</div>
     </div>
     <div class="health-card">
       <div class="health-card-label">Profit Factor</div>
-      <div class="health-card-value">${s.profit_factor >= 999 ? '∞ (No Loss)' : fmtNum(s.profit_factor, 2)}</div>
+      <div class="health-card-value">${s.profit_factor >= 999 ? '∞ (No Loss)' : fmt(s.profit_factor, 2)}</div>
     </div>
     <div class="health-card">
       <div class="health-card-label">${cfg.symbol.replace('USDT','')} Qty Change</div>
-      <div class="health-card-value ${(s.qty_change_pct ?? 0) >= 0 ? 'pnl-positive' : 'pnl-negative'}">${s.qty_change_pct != null ? ((s.qty_change_pct >= 0 ? '+' : '') + fmtNum(s.qty_change_pct, 2) + '%') : '-'}</div>
-      <div class="asset-sub">${s.qty_before != null ? fmtNum(s.qty_before, 6) : '-'} → ${s.qty_after != null ? fmtNum(s.qty_after, 6) : '-'}</div>
+      <div class="health-card-value ${(s.qty_change_pct ?? 0) >= 0 ? 'pnl-positive' : 'pnl-negative'}">${s.qty_change_pct != null ? ((s.qty_change_pct >= 0 ? '+' : '') + fmt(s.qty_change_pct, 2) + '%') : '-'}</div>
+      <div class="asset-sub">${s.qty_before != null ? fmt(s.qty_before, 6) : '-'} → ${s.qty_after != null ? fmt(s.qty_after, 6) : '-'}</div>
     </div>
     <div class="health-card">
       <div class="health-card-label">Max Open Lots</div>
@@ -684,9 +684,9 @@ function _renderTradePage() {
       <td>${start + i + 1}</td>
       <td>${escapeHtml(time)}</td>
       <td class="${sideClass}">${escapeHtml(t.side || '-')}</td>
-      <td>${fmtNum(parseFloat(t.price || 0), 2)}</td>
-      <td>${fmtNum(parseFloat(t.qty || 0), 6)}</td>
-      <td>${fmtNum(parseFloat(t.quote_qty || 0), 2)}</td>
+      <td>${fmt(parseFloat(t.price || 0), 2)}</td>
+      <td>${fmt(parseFloat(t.qty || 0), 6)}</td>
+      <td>${fmt(parseFloat(t.quote_qty || 0), 2)}</td>
     </tr>`;
   }).join('');
 
@@ -699,11 +699,6 @@ function _renderTradePage() {
   if (info) info.textContent = `Page ${_tradeLogPage + 1} / ${totalPages}`;
   if (prevBtn) prevBtn.disabled = _tradeLogPage === 0;
   if (nextBtn) nextBtn.disabled = _tradeLogPage >= totalPages - 1;
-}
-
-function fmtNum(val, decimals) {
-  if (val == null) return '-';
-  return Number(val).toFixed(decimals);
 }
 
 let _isPinned = false;

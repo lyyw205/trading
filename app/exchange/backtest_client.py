@@ -303,6 +303,20 @@ class BacktestClient(ExchangeClient):
         self._check_order_fills()
         return dict(order)
 
+    async def get_account_info(self) -> dict:
+        return {
+            "balances": [
+                {"asset": asset, "free": str(bal["free"]), "locked": str(bal["locked"])}
+                for asset, bal in self._balances.items()
+            ],
+        }
+
+    async def get_my_trades_from_id(
+        self, symbol: str, from_id: int, limit: int = 1000
+    ) -> list[dict]:
+        trades = [t for t in self._trades if t["symbol"] == symbol and t["id"] >= from_id]
+        return trades[:limit]
+
     async def get_balance(self, asset: str) -> dict:
         bal = self._balances.get(asset, {"free": 0.0, "locked": 0.0})
         free = float(bal["free"])

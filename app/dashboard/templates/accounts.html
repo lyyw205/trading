@@ -1073,14 +1073,5 @@ async function loadEditOwnerDropdown(currentOwnerId) {
   });
 }
 
-// ============================================================
-//  escapeHtml (local fallback if main.js not yet loaded)
-// ============================================================
-if (typeof escapeHtml === 'undefined') {
-  window.escapeHtml = function escapeHtml(str) {
-    if (str == null) return '';
-    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-  };
-}
 </script>
 {% endblock %}

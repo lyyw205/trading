@@ -1,0 +1,53 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t trading-bot:${{ github.sha }} .
+
+      - name: Push to registry
+        run: |
+          echo "${{ secrets.REGISTRY_PASSWORD }}" | docker login ${{ secrets.REGISTRY_URL }} -u ${{ secrets.REGISTRY_USER }} --password-stdin
+          docker tag trading-bot:${{ github.sha }} ${{ secrets.REGISTRY_URL }}/trading-bot:${{ github.sha }}
+          docker tag trading-bot:${{ github.sha }} ${{ secrets.REGISTRY_URL }}/trading-bot:latest
+          docker push ${{ secrets.REGISTRY_URL }}/trading-bot:${{ github.sha }}
+          docker push ${{ secrets.REGISTRY_URL }}/trading-bot:latest
+
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          script: |
+            cd /opt/trading
+            docker compose pull
+            docker compose up -d --no-deps app
+            sleep 10
+            curl -f http://localhost:8000/health || (docker compose logs app --tail=50 && exit 1)
+
+      - name: Notify deployment status
+        if: always()
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: |
+          if [ -n "$DISCORD_WEBHOOK" ]; then
+            STATUS="${{ job.status }}"
+            COMMIT="${{ github.sha }}"
+            curl -s -X POST "$DISCORD_WEBHOOK" \
+              -H "Content-Type: application/json" \
+              -d "{\"content\": \"Deploy ${STATUS}: ${COMMIT::8} on main\"}" || true
+          fi

@@ -296,7 +296,7 @@ class LotStackingBuy(BaseBuyLogic):
         if not ctx.params.get("recenter_enabled", True):
             return
 
-        open_lots = await repos.lot.get_open_lots_by_combo(ctx.account_id, ctx.symbol, combo_id)
+        open_lots = ctx.open_lots if ctx.open_lots is not None else await repos.lot.get_open_lots_by_combo(ctx.account_id, ctx.symbol, combo_id)
         if open_lots:
             return
 
@@ -367,7 +367,7 @@ class LotStackingBuy(BaseBuyLogic):
 
         filters = await exchange.get_symbol_filters(ctx.symbol)
 
-        free_balance = await exchange.get_free_balance(ctx.quote_asset)
+        free_balance = ctx.free_balance if ctx.free_balance > 0 else await exchange.get_free_balance(ctx.quote_asset)
         sizing_round = await state.get_int("sizing_round", 1)
         plan_5th_amt = await state.get_float("plan_5th_amount", 0.0)
         total_buy_usdt = resolve_buy_usdt(
@@ -402,11 +402,13 @@ class LotStackingBuy(BaseBuyLogic):
         placed_order_id = int(order_resp.get("orderId", 0))
         placed_time_ms = int(order_resp.get("transactTime", 0)) or int(self._now() * 1000)
 
-        await state.set("pending_order_id", placed_order_id)
-        await state.set("pending_time_ms", placed_time_ms)
-        await state.set("pending_bucket_usdt", 0)
-        await state.set("pending_kind", "LOT")
-        await state.set("pending_trigger_price", trigger_adjusted)
+        await state.set_many({
+            "pending_order_id": placed_order_id,
+            "pending_time_ms": placed_time_ms,
+            "pending_bucket_usdt": 0,
+            "pending_kind": "LOT",
+            "pending_trigger_price": trigger_adjusted,
+        })
         self._touch_order()
 
         logger.info(

@@ -28,6 +28,8 @@ class StrategyContext:
     current_price: float
     params: dict[str, Any]
     client_order_prefix: str
+    free_balance: float = 0.0
+    open_lots: list | None = None
 
 
 @dataclass

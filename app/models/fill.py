@@ -13,6 +13,8 @@ class Fill(Base):
     __tablename__ = "fills"
     __table_args__ = (
         Index("idx_fills_account_time", "account_id", "trade_time_ms"),
+        Index("idx_fills_inserted_at", "inserted_at"),
+        Index("idx_fills_account_symbol", "account_id", "symbol"),
     )
 
     trade_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)

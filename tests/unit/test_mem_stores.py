@@ -67,7 +67,7 @@ class TestInMemoryStateStore:
         run(go())
 
     def test_clear_keys_sets_empty_string(self):
-        """clear_keys sets empty string, not deletes — matches DB behavior."""
+        """clear_keys deletes keys — matches DB batch DELETE behavior."""
         backing = {}
         store = InMemoryStateStore(uuid4(), "test", backing)
 
@@ -75,8 +75,8 @@ class TestInMemoryStateStore:
             await store.set("pending_order_id", "12345")
             await store.clear_keys("pending_order_id")
             val = await store.get("pending_order_id")
-            assert val == ""
-            # get_float on empty string returns default
+            assert val is None
+            # get_float on deleted key returns default
             fval = await store.get_float("pending_order_id", 0.0)
             assert fval == 0.0
 

@@ -56,3 +56,56 @@ THREADPOOL_UTILIZATION = Gauge(
     "threadpool_utilization_ratio",
     "ThreadPoolExecutor active/max thread ratio",
 )
+
+# Reconciliation
+RECON_DRIFT = Counter(
+    "reconciliation_drift_total",
+    "Reconciliation drift events detected",
+    ["account_id"],
+)
+
+RECON_RUNS = Counter(
+    "reconciliation_runs_total",
+    "Total reconciliation runs",
+    ["status"],  # ok, drift_detected, error
+)
+
+# Active accounts gauge
+ACTIVE_ACCOUNTS = Gauge(
+    "active_trading_accounts",
+    "Number of currently active trading accounts",
+)
+
+# Open lots
+OPEN_LOTS = Gauge(
+    "open_lots_total",
+    "Number of open lots",
+    ["account_id", "symbol"],
+)
+
+# Exchange API
+EXCHANGE_API_CALLS = Counter(
+    "exchange_api_calls_total",
+    "Exchange API calls",
+    ["method"],
+)
+
+EXCHANGE_API_ERRORS = Counter(
+    "exchange_api_errors_total",
+    "Exchange API errors",
+    ["method", "error_type"],
+)
+
+# DB retry
+DB_RETRY_ATTEMPTS = Counter(
+    "db_retry_attempts_total",
+    "Database connection retry attempts",
+    ["account_id"],
+)
+
+# Auto recovery
+AUTO_RECOVERY_ATTEMPTS = Counter(
+    "auto_recovery_attempts_total",
+    "Circuit breaker auto-recovery attempts",
+    ["account_id", "success"],
+)

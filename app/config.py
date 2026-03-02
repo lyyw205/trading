@@ -67,7 +67,7 @@ class GlobalConfig(BaseSettings):
     def encryption_key_list(self) -> list[str]:
         return [k.strip() for k in self.encryption_keys.split(",") if k.strip()]
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 
 @lru_cache

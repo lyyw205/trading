@@ -18,6 +18,7 @@ class Lot(Base):
         Index("idx_lots_open", "account_id", "symbol", "status"),
         Index("idx_lots_strategy", "account_id", "strategy_name", "status"),
         Index("idx_lots_combo", "account_id", "combo_id", "status"),
+        Index("idx_lots_buy_time", "buy_time"),
         CheckConstraint(f"status IN {LOT_STATUSES!r}", name="chk_lot_status"),
     )
 

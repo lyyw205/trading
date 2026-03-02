@@ -12,6 +12,7 @@ class Order(TimestampMixin, Base):
     __tablename__ = "orders"
     __table_args__ = (
         Index("idx_orders_status", "account_id", "status"),
+        Index("idx_orders_update_time", "update_time_ms"),
     )
 
     order_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)

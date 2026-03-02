@@ -91,6 +91,15 @@ class InMemoryStateStore:
     async def delete(self, key: str) -> None:
         self._backing.pop(self._prefix + key, None)
 
+    async def preload(self) -> None:
+        """No-op for in-memory store (already in memory)."""
+        pass
+
+    async def set_many(self, items: dict[str, object]) -> None:
+        """Batch set multiple keys."""
+        for k, v in items.items():
+            self._backing[self._prefix + k] = str(v)
+
     async def clear_keys(self, *keys: str) -> None:
         # DB 구현과 동일: 키 삭제
         for key in keys:
@@ -332,6 +341,17 @@ class InMemoryOrderRepository:
             raw_json=order_data,
         )
 
+    async def upsert_orders_batch(self, account_id: UUID, orders: list[dict]) -> None:
+        """Batch upsert — delegates to individual upsert_order (no DB overhead in memory)."""
+        for o in orders:
+            await self.upsert_order(account_id, o)
+
+    async def insert_fill(self, account_id: UUID, order_id: int, trade_data: dict) -> None:
+        """No-op for in-memory backtest (fills tracked via lot close)."""
+
+    async def insert_fills_batch(self, account_id: UUID, fills: list[tuple[int, dict]]) -> None:
+        """No-op for in-memory backtest (fills tracked via lot close)."""
+
     async def get_order(
         self, account_id: UUID, order_id: int
     ) -> MemOrder | None:
@@ -353,6 +373,9 @@ class InMemoryAccountStateManager:
         self._account_id = account_id
         self._store = InMemoryStateStore(account_id, "shared", backing)
         self._pending_earnings: float = 0.0
+
+    async def preload(self) -> None:
+        """No-op for in-memory store (already in memory)."""
 
     # ---- reserve (AccountStateManager와 동일 로직) ----
 

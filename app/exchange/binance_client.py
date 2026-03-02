@@ -144,6 +144,12 @@ class BinanceClient(ExchangeClient):
             kwargs["newClientOrderId"] = client_oid
         return self.client.order_limit_buy(**kwargs)
 
+    def _sync_get_account_info(self) -> dict:
+        return self.client.get_account()
+
+    def _sync_get_my_trades_from_id(self, symbol: str, from_id: int, limit: int = 1000) -> list[dict]:
+        return self.client.get_my_trades(symbol=symbol, fromId=from_id, limit=limit)
+
     def _sync_get_balance(self, asset: str) -> dict:
         with self._balance_lock:
             now = time.time()
@@ -224,3 +230,9 @@ class BinanceClient(ExchangeClient):
     async def get_free_balance(self, asset: str) -> float:
         bal = await self.get_balance(asset)
         return float(bal.get("free", 0.0))
+
+    async def get_account_info(self) -> dict:
+        return await asyncio.to_thread(self._sync_get_account_info)
+
+    async def get_my_trades_from_id(self, symbol: str, from_id: int, limit: int = 1000) -> list[dict]:
+        return await asyncio.to_thread(self._sync_get_my_trades_from_id, symbol, from_id, limit)

@@ -66,7 +66,37 @@ class AccountRepository:
                 circuit_breaker_failures=0,
                 circuit_breaker_disabled_at=None,
                 is_active=True,
+                auto_recovery_attempts=0,
             )
+        )
+        await self._session.execute(stmt)
+
+    async def get_circuit_breaker_tripped(self) -> list[TradingAccount]:
+        """Return accounts with active circuit breaker (disabled_at is set)."""
+        stmt = select(TradingAccount).where(
+            TradingAccount.circuit_breaker_disabled_at.is_not(None),
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def increment_auto_recovery_attempts(self, account_id: UUID) -> None:
+        """Increment auto_recovery_attempts and stamp last_auto_recovery_at."""
+        stmt = (
+            update(TradingAccount)
+            .where(TradingAccount.id == account_id)
+            .values(
+                auto_recovery_attempts=TradingAccount.auto_recovery_attempts + 1,
+                last_auto_recovery_at=datetime.now(UTC),
+            )
+        )
+        await self._session.execute(stmt)
+
+    async def reset_auto_recovery_on_success(self, account_id: UUID) -> None:
+        """Reset auto_recovery_attempts when a step succeeds."""
+        stmt = (
+            update(TradingAccount)
+            .where(TradingAccount.id == account_id)
+            .values(auto_recovery_attempts=0)
         )
         await self._session.execute(stmt)
 

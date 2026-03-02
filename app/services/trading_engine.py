@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import logging
 import random
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
@@ -22,6 +23,10 @@ if TYPE_CHECKING:
     from app.utils.encryption import EncryptionManager
 
 logger = logging.getLogger(__name__)
+
+_CB_RECOVERY_INTERVAL = 600  # check every 10 minutes
+_CB_COOLDOWN_SEC = 1800      # 30 min after trip before auto-recovery
+_CB_MAX_AUTO_RETRIES = 3     # max auto-recovery attempts
 
 
 class TradingEngine:
@@ -65,11 +70,15 @@ class TradingEngine:
             *[_start_with_jitter(acc, i) for i, acc in enumerate(accounts)]
         )
 
+        # Start background recovery loop
+        asyncio.create_task(self._circuit_breaker_recovery_loop())
+
     async def start_account(self, account_id: UUID):
         if account_id in self._tasks:
             return
-        # Phase 3-C: 서킷 브레이커 상태 확인 후 시작 차단
+        # Single session: circuit breaker check + combo symbols fetch
         symbol = None
+        combo_symbols: set[str] = set()
         async with TradingSessionLocal() as session:
             repo = AccountRepository(session)
             account = await repo.get_by_id(account_id)
@@ -78,8 +87,15 @@ class TradingEngine:
                 return
             if account:
                 symbol = account.symbol
-        # Subscribe combo symbols to kline WS stream
-        combo_symbols = await self._get_combo_symbols(account_id)
+            # Fetch combo symbols in the same session
+            stmt = select(TradingCombo.symbols).where(
+                TradingCombo.account_id == account_id,
+                TradingCombo.is_enabled.is_(True),
+            )
+            result = await session.execute(stmt)
+            for row in result.scalars():
+                if row:
+                    combo_symbols.update(s.lower() for s in row)
         if not combo_symbols and symbol:
             combo_symbols = {symbol.lower()}
         for s in combo_symbols:
@@ -90,6 +106,7 @@ class TradingEngine:
             price_collector=self._price_collector,
             rate_limiter=self._rate_limiter,
             encryption=self._encryption,
+            initial_symbols=combo_symbols,
         )
         self._traders[account_id] = trader
         self._tasks[account_id] = asyncio.create_task(
@@ -152,6 +169,33 @@ class TradingEngine:
             await self.stop_account(aid)
         # Stop WebSocket kline manager
         await self._kline_ws.stop()
+
+    async def _circuit_breaker_recovery_loop(self):
+        """Periodically check CB-tripped accounts and attempt auto-recovery."""
+        while True:
+            await asyncio.sleep(_CB_RECOVERY_INTERVAL)
+            try:
+                async with TradingSessionLocal() as session:
+                    repo = AccountRepository(session)
+                    tripped = await repo.get_circuit_breaker_tripped()
+                    for account in tripped:
+                        if not account.circuit_breaker_disabled_at:
+                            continue
+                        elapsed = (datetime.now(UTC) - account.circuit_breaker_disabled_at).total_seconds()
+                        if elapsed < _CB_COOLDOWN_SEC:
+                            continue
+                        if (account.auto_recovery_attempts or 0) >= _CB_MAX_AUTO_RETRIES:
+                            continue  # manual intervention needed
+                        logger.info("Auto-recovering CB-tripped account %s (attempt %d)", account.id, (account.auto_recovery_attempts or 0) + 1)
+                        await repo.reset_circuit_breaker(account.id)
+                        await repo.increment_auto_recovery_attempts(account.id)
+                        await session.commit()
+                        # Remove stale trader/task refs before restarting
+                        self._traders.pop(account.id, None)
+                        self._tasks.pop(account.id, None)
+                        await self.start_account(account.id)
+            except Exception as e:
+                logger.error("CB recovery loop error: %s", e)
 
     async def reload_account(self, account_id: UUID):
         await self.stop_account(account_id)

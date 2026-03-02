@@ -28,6 +28,10 @@ class AccountStateManager:
         self._session = session
         self._store = StrategyStateStore(account_id, scope="shared", session=session)
 
+    async def preload(self) -> None:
+        """Bulk-load the shared scope into cache to avoid per-key DB queries."""
+        await self._store.preload()
+
     @classmethod
     def _get_reserve_lock(cls, account_id: UUID) -> asyncio.Lock:
         if account_id not in cls._reserve_locks:

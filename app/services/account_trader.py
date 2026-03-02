@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import OperationalError
 
 from app.db.account_repo import AccountRepository
 from app.db.lot_repo import LotRepository
@@ -21,11 +22,14 @@ from app.models.lot import Lot
 from app.models.order import Order
 from app.models.trading_combo import TradingCombo
 from app.services.account_state_manager import AccountStateManager
+from app.services.alert_service import get_alert_service
 from app.services.buy_pause_manager import MIN_TRADE_USDT, BuyPauseManager
 from app.strategies.base import BaseBuyLogic, BaseSellLogic, RepositoryBundle, StrategyContext
 from app.strategies.registry import BuyLogicRegistry, SellLogicRegistry
 from app.strategies.state_store import StrategyStateStore
+from app.utils.error_classification import ErrorType, classify_error
 from app.utils.logging import current_account_id, current_cycle_id
+from app.utils.metrics import CIRCUIT_BREAKER_TRIPS, TRADING_CYCLE_DURATION
 from app.utils.symbol_parser import parse_symbol
 
 if TYPE_CHECKING:
@@ -52,6 +56,8 @@ class AccountTrader:
         price_collector: PriceCollector,
         rate_limiter: GlobalRateLimiter,
         encryption: EncryptionManager,
+        *,
+        initial_symbols: set[str] | None = None,
     ):
         self.account_id = account_id
         self._running = True
@@ -61,6 +67,7 @@ class AccountTrader:
         self._price_collector = price_collector
         self._rate_limiter = rate_limiter
         self._encryption = encryption
+        self._initial_symbols: set[str] = initial_symbols or set()
         self._consecutive_failures = 0
         self._last_success_at: float | None = None
         # Buy pause state (in-memory, synced from DB each step)
@@ -87,16 +94,9 @@ class AccountTrader:
             api_key = self._encryption.decrypt(account.api_key_encrypted)
             api_secret = self._encryption.decrypt(account.api_secret_encrypted)
             self._client = BinanceClient(api_key, api_secret, account.symbol)
-            # Register client for all combo symbols (BinanceClient methods accept explicit symbol)
-            combo_stmt = select(TradingCombo.symbols).where(
-                TradingCombo.account_id == self.account_id,
-                TradingCombo.is_enabled.is_(True),
-            )
-            combo_result = await session.execute(combo_stmt)
+            # Register client for pre-passed combo symbols (avoids redundant DB query)
             all_symbols = {account.symbol}
-            for row in combo_result.scalars():
-                if row:
-                    all_symbols.update(s.upper() for s in row)
+            all_symbols.update(s.upper() for s in self._initial_symbols)
             for sym in all_symbols:
                 self._price_collector.register_client(sym, self._client)
 
@@ -113,7 +113,21 @@ class AccountTrader:
         return self._sell_instances[key]
 
     async def step(self) -> int:
-        """Single trading cycle. Returns loop_interval_sec for run_forever."""
+        """Single trading cycle with DB retry. Returns loop_interval_sec."""
+        last_exc: OperationalError | None = None
+        for attempt in range(3):
+            try:
+                return await self._do_step()
+            except OperationalError as e:
+                last_exc = e
+                if attempt < 2:
+                    logger.warning("[%s] DB connection error (attempt %d/3): %s", self.account_id, attempt + 1, e)
+                    await asyncio.sleep(2 ** attempt)
+        raise last_exc
+
+    async def _do_step(self) -> int:
+        """Inner step logic. Returns loop_interval_sec for run_forever."""
+        start_time = time.perf_counter()
         # Generate cycle ID for correlation across logs
         cycle_id = uuid4().hex[:12]
         cycle_token = current_cycle_id.set(cycle_id)
@@ -191,15 +205,16 @@ class AccountTrader:
                 except Exception:
                     pass  # Sentry not configured
 
-                # --- Open lots snapshot (for sell detection) ---
-                open_lots_before_stmt = select(func.count()).select_from(Lot).where(
-                    Lot.account_id == self.account_id, Lot.status == "OPEN",
-                )
-                open_lots_before = (await session.execute(open_lots_before_stmt)).scalar_one()
+                # Track open lot count from per-combo fetches (avoids redundant COUNT query)
+                open_lots_count_before = 0
 
                 # Buy pause manager (shares step session)
                 pause_mgr = BuyPauseManager(self.account_id, session)
                 self._buy_pause_mgr = pause_mgr
+
+                # Single AccountStateManager for the entire cycle (preloaded shared scope)
+                account_state = AccountStateManager(self.account_id, session)
+                await account_state.preload()
 
                 for combo in combos:
                     # Get symbols from combo (fallback to account symbol)
@@ -224,8 +239,14 @@ class AccountTrader:
                         sell_logic = self._get_or_create_sell(combo.id, symbol, combo.sell_logic_name)
 
                         combo_state = StrategyStateStore(self.account_id, f"{combo.id}:{symbol}", session)
-                        account_state = AccountStateManager(self.account_id, session)
+                        await combo_state.preload()
                         prefix = f"CMT_{str(self.account_id)[:8]}_{str(combo.id)[:8]}_"
+
+                        # Pre-fetch open lots once for both buy and sell
+                        open_lots = await lot_repo.get_open_lots_by_combo(
+                            self.account_id, symbol, combo.id,
+                        )
+                        open_lots_count_before += len(open_lots)
 
                         # Buy params (inject reference_combo_id if set)
                         buy_params = buy_logic.validate_params(combo.buy_params or {})
@@ -240,6 +261,8 @@ class AccountTrader:
                             current_price=cur_price,
                             params=buy_params,
                             client_order_prefix=prefix,
+                            free_balance=free_balance if balance_ok else 0.0,
+                            open_lots=open_lots,
                         )
 
                         # 0. pre_tick: recenter (항상 실행 — PAUSED에서도 base_price 유지)
@@ -255,9 +278,8 @@ class AccountTrader:
                             current_price=cur_price,
                             params=sell_params,
                             client_order_prefix=prefix,
-                        )
-                        open_lots = await lot_repo.get_open_lots_by_combo(
-                            self.account_id, symbol, combo.id,
+                            free_balance=free_balance if balance_ok else 0.0,
+                            open_lots=open_lots,
                         )
                         await sell_logic.tick(sell_ctx, combo_state, self._client, account_state, repos, open_lots)
 
@@ -268,9 +290,12 @@ class AccountTrader:
                         if should_buy:
                             await buy_logic.tick(buy_ctx, combo_state, self._client, account_state, repos, combo.id)
 
-                # --- Sell detection: 로트 수 비교 ---
-                open_lots_after = (await session.execute(open_lots_before_stmt)).scalar_one()
-                sell_occurred = open_lots_after < open_lots_before
+                # --- Sell detection: compare open lot count before/after strategies ---
+                open_lots_after_stmt = select(func.count()).select_from(Lot).where(
+                    Lot.account_id == self.account_id, Lot.status == "OPEN",
+                )
+                open_lots_after = (await session.execute(open_lots_after_stmt)).scalar_one()
+                sell_occurred = open_lots_after < open_lots_count_before
                 self._has_open_positions = open_lots_after > 0
 
                 # 매도 발생 + PAUSED → 잔고 재체크
@@ -295,12 +320,19 @@ class AccountTrader:
                 self._consecutive_failures = 0
                 self._last_success_at = time.time()
                 await account_repo.update_last_success(self.account_id)
+                # Reset auto recovery counter on success
+                if account.auto_recovery_attempts and account.auto_recovery_attempts > 0:
+                    await account_repo.reset_auto_recovery_on_success(account_id=self.account_id)
                 await session.commit()
 
-                return account.loop_interval_sec if account.loop_interval_sec else 60
+                result = account.loop_interval_sec if account.loop_interval_sec else 60
         finally:
             current_account_id.reset(token)
             current_cycle_id.reset(cycle_token)
+            TRADING_CYCLE_DURATION.labels(account_id=str(self.account_id)).observe(
+                time.perf_counter() - start_time
+            )
+        return result
 
     async def _sync_orders_and_fills(
         self, account, symbols: set[str],
@@ -315,19 +347,29 @@ class AccountTrader:
         open_ids = await order_repo.get_recent_open_orders(self.account_id)
         synced_oids: set[int] = set()
 
-        # Step 1: Sync open orders per symbol from exchange
-        for symbol in symbols:
-            try:
-                await self._rate_limiter.acquire(weight=3)
-                ex_open = await self._client.get_open_orders(symbol)
-                for o in ex_open:
-                    await order_repo.upsert_order(self.account_id, o)
-                    oid = int(o["orderId"])
-                    synced_oids.add(oid)
-                    if oid not in open_ids:
-                        open_ids.append(oid)
-            except Exception as e:
-                logger.warning("[%s] Open orders sync failed for %s: %s", self.account_id, symbol, e)
+        # Step 1: Sync open orders per symbol from exchange (parallel fetch)
+        async def _fetch_open_orders(sym: str):
+            await self._rate_limiter.acquire(weight=3)
+            return sym, await self._client.get_open_orders(sym)
+
+        open_order_results = await asyncio.gather(
+            *[_fetch_open_orders(sym) for sym in symbols],
+            return_exceptions=True,
+        )
+        all_open_orders: list[dict] = []
+        for sym, result in zip(symbols, open_order_results, strict=False):
+            if isinstance(result, Exception):
+                logger.warning("[%s] Open orders sync failed for %s: %s", self.account_id, sym, result)
+                continue
+            _, ex_open = result
+            for o in ex_open:
+                all_open_orders.append(o)
+                oid = int(o["orderId"])
+                synced_oids.add(oid)
+                if oid not in open_ids:
+                    open_ids.append(oid)
+        if all_open_orders:
+            await order_repo.upsert_orders_batch(self.account_id, all_open_orders)
 
         # Step 2: Refresh tracked orders NOT already synced (parallel, use correct symbol from DB)
         to_refresh = [oid for oid in open_ids[:50] if oid not in synced_oids]
@@ -350,48 +392,62 @@ class AccountTrader:
                 *[_refresh_order(oid) for oid in to_refresh],
                 return_exceptions=True,
             )
-            for oid, res in zip(to_refresh, results):
+            for oid, res in zip(to_refresh, results, strict=False):
                 if isinstance(res, Exception):
                     logger.warning("[%s] Order %s sync failed: %s", self.account_id, oid, res)
 
-        # Step 3: Sync recent fills per symbol (parallel order lookups, track new fills)
+        # Step 3: Sync recent fills per symbol (parallel API fetch, sequential DB upsert)
+        async def _fetch_trades(sym: str):
+            await self._rate_limiter.acquire(weight=5)
+            return sym, await self._client.get_my_trades(sym)
+
+        trade_results = await asyncio.gather(
+            *[_fetch_trades(sym) for sym in symbols],
+            return_exceptions=True,
+        )
+
         symbols_with_new_fills: set[str] = set()
-        for symbol in symbols:
+        for sym, result in zip(symbols, trade_results, strict=False):
+            if isinstance(result, Exception):
+                logger.warning("[%s] Fills sync failed for %s: %s", self.account_id, sym, result)
+                continue
+            _, trades = result
             try:
-                await self._rate_limiter.acquire(weight=5)
-                trades = await self._client.get_my_trades(symbol)
                 seen_oids: set[int] = set()
                 unseen_oids: list[int] = []
+                fill_rows: list[tuple[int, dict]] = []
                 for t in trades:
                     oid = int(t.get("orderId", 0))
                     if oid > 0 and oid not in seen_oids and oid not in synced_oids:
                         seen_oids.add(oid)
                         unseen_oids.append(oid)
-                    await order_repo.insert_fill(self.account_id, oid, t)
+                    fill_rows.append((oid, t))
+                if fill_rows:
+                    await order_repo.insert_fills_batch(self.account_id, fill_rows)
 
                 if trades:
-                    symbols_with_new_fills.add(symbol)
+                    symbols_with_new_fills.add(sym)
 
                 # Parallel fetch for unseen order IDs
                 if unseen_oids:
-                    async def _fetch_fill_order(fill_oid: int, sym: str = symbol):
+                    async def _fetch_fill_order(fill_oid: int, fill_sym: str = sym):
                         await self._rate_limiter.acquire(weight=1)
-                        o = await self._client.get_order(fill_oid, sym)
+                        o = await self._client.get_order(fill_oid, fill_sym)
                         await order_repo.upsert_order(self.account_id, o)
 
                     fill_results = await asyncio.gather(
                         *[_fetch_fill_order(oid) for oid in unseen_oids],
                         return_exceptions=True,
                     )
-                    for oid, res in zip(unseen_oids, fill_results):
+                    for oid, res in zip(unseen_oids, fill_results, strict=False):
                         if isinstance(res, Exception):
                             logger.warning("[%s] Fill order %s sync failed: %s", self.account_id, oid, res)
             except Exception as e:
-                logger.warning("[%s] Fills sync failed for %s: %s", self.account_id, symbol, e)
+                logger.warning("[%s] Fills sync failed for %s: %s", self.account_id, sym, e)
 
-            # 4-6: Conditional recompute — only for symbols with new fills
-            if symbol in symbols_with_new_fills:
-                await position_repo.recompute_from_fills(self.account_id, symbol)
+        # 4-6: Conditional recompute — only for symbols with new fills
+        for sym in symbols_with_new_fills:
+            await position_repo.recompute_from_fills(self.account_id, sym)
 
     async def run_forever(self):
         """Main trading loop with circuit breaker and exponential backoff"""
@@ -422,8 +478,17 @@ class AccountTrader:
                 await asyncio.sleep(backoff)
                 continue
             except Exception as e:
-                self._consecutive_failures += 1
-                logger.error(f"[{self.account_id}] Loop error ({self._consecutive_failures}x): {e}")
+                err_type = classify_error(e)
+                if err_type == ErrorType.PERMANENT:
+                    logger.error("[%s] Permanent error, triggering CB: %s", self.account_id, e)
+                    self._consecutive_failures = 5  # immediate trip
+                elif err_type == ErrorType.RATE_LIMIT:
+                    logger.warning("[%s] Rate limited, backing off 120s: %s", self.account_id, e)
+                    await asyncio.sleep(120)
+                    continue
+                else:
+                    self._consecutive_failures += 1
+                    logger.error("[%s] Transient error (%dx): %s", self.account_id, self._consecutive_failures, e)
 
                 if self._consecutive_failures >= 5:
                     await self._disable_with_circuit_breaker()
@@ -455,7 +520,23 @@ class AccountTrader:
                 disabled_at=datetime.now(UTC),
             )
             await session.commit()
-        logger.critical(f"[{self.account_id}] Circuit breaker triggered: {self._consecutive_failures} consecutive failures")
+        logger.critical("[%s] Circuit breaker triggered: %d consecutive failures", self.account_id, self._consecutive_failures)
+
+        # Metrics
+        CIRCUIT_BREAKER_TRIPS.labels(account_id=str(self.account_id)).inc()
+
+        # Alert
+        try:
+            alert = get_alert_service()
+            await alert.send_critical(
+                f"Circuit Breaker triggered\n"
+                f"Account: {self.account_id}\n"
+                f"Consecutive failures: {self._consecutive_failures}\n"
+                f"Auto recovery will attempt in 30 minutes"
+            )
+        except Exception as alert_err:
+            logger.warning("[%s] Failed to send CB alert: %s", self.account_id, alert_err)
+
         self._running = False
 
     def stop(self):

@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import time
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy import func as sa_func
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.responses import Response
 
 from app.db.account_repo import AccountRepository
 from app.db.session import engine_trading, get_trading_session
@@ -22,17 +25,32 @@ from app.models.user import UserProfile
 from app.schemas.account import AccountResponse
 from app.schemas.auth import CreateUserRequest, ResetPasswordRequest, SetActiveRequest, SetRoleRequest
 from app.schemas.trade import OrderResponse
+from app.services.reconciliation import ReconciliationService
 from app.strategies.registry import BuyLogicRegistry, SellLogicRegistry
 from app.utils.logging import audit_log
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
+_active_accounts_cache: list | None = None
+_active_accounts_ts: float = 0.0
+_ACCOUNTS_TTL = 10.0  # seconds
+
+
+async def _get_active_accounts_cached(session: AsyncSession) -> list:
+    global _active_accounts_cache, _active_accounts_ts
+    now = time.monotonic()
+    if _active_accounts_cache is not None and (now - _active_accounts_ts) < _ACCOUNTS_TTL:
+        return _active_accounts_cache
+    repo = AccountRepository(session)
+    _active_accounts_cache = await repo.get_active_accounts()
+    _active_accounts_ts = now
+    return _active_accounts_cache
+
 
 @router.get("/accounts")
 @limiter.limit("60/minute")
 async def admin_list_accounts(request: Request, admin: dict = Depends(require_admin), session: AsyncSession = Depends(get_trading_session)):
-    repo = AccountRepository(session)
-    accounts = await repo.get_active_accounts()
+    accounts = await _get_active_accounts_cached(session)
     engine = request.app.state.trading_engine
     health = engine.get_account_health()
     return [{
@@ -65,8 +83,7 @@ async def admin_overview(request: Request, admin: dict = Depends(require_admin),
     engine = request.app.state.trading_engine
     total_users_result = await session.execute(select(sa_func.count(UserProfile.id)))
     total_users = total_users_result.scalar() or 0
-    repo = AccountRepository(session)
-    all_accounts = await repo.get_active_accounts()
+    all_accounts = await _get_active_accounts_cached(session)
     return {
         "total_users": total_users,
         "total_accounts": len(all_accounts),
@@ -146,8 +163,7 @@ async def admin_performance(
 ):
     """Aggregate KPIs across all accounts."""
     # All accounts
-    repo = AccountRepository(session)
-    all_accounts = await repo.get_active_accounts()
+    all_accounts = await _get_active_accounts_cached(session)
     total_accounts = len(all_accounts)
     active_accounts = request.app.state.trading_engine.active_account_count
 
@@ -644,20 +660,25 @@ async def admin_system_health(
     }
 
     # --- Candle counts ---
-    _CANDLE_TABLES = {
-        "price_candles_1m": text("SELECT symbol, count(*) FROM price_candles_1m GROUP BY symbol ORDER BY symbol"),
-        "price_candles_5m": text("SELECT symbol, count(*) FROM price_candles_5m GROUP BY symbol ORDER BY symbol"),
-        "price_candles_1h": text("SELECT symbol, count(*) FROM price_candles_1h GROUP BY symbol ORDER BY symbol"),
-        "price_candles_1d": text("SELECT symbol, count(*) FROM price_candles_1d GROUP BY symbol ORDER BY symbol"),
-    }
     candle_stats = []
-    for table_name, stmt in _CANDLE_TABLES.items():
-        try:
-            result = await session.execute(stmt)
-            for row in result.fetchall():
-                candle_stats.append({"table": table_name, "symbol": row[0], "count": row[1]})
-        except Exception:
-            pass
+    try:
+        union_sql = text(
+            "SELECT 'price_candles_1m' AS tbl, symbol, count(*) FROM price_candles_1m GROUP BY symbol "
+            "UNION ALL "
+            "SELECT 'price_candles_5m', symbol, count(*) FROM price_candles_5m GROUP BY symbol "
+            "UNION ALL "
+            "SELECT 'price_candles_1h', symbol, count(*) FROM price_candles_1h GROUP BY symbol "
+            "UNION ALL "
+            "SELECT 'price_candles_1d', symbol, count(*) FROM price_candles_1d GROUP BY symbol "
+            "ORDER BY tbl, symbol"
+        )
+        result = await session.execute(union_sql)
+        candle_stats = [
+            {"table": row[0], "symbol": row[1], "count": row[2]}
+            for row in result.fetchall()
+        ]
+    except Exception:
+        pass
 
     return {
         "database": {
@@ -670,3 +691,62 @@ async def admin_system_health(
         "engine": engine_status,
         "candles": candle_stats,
     }
+
+
+# ============================================================
+#  Reconciliation — exchange vs DB consistency
+# ============================================================
+@router.get("/reconciliation/{account_id}")
+@limiter.limit("10/minute")
+async def reconcile_account(
+    account_id: str,
+    request: Request,
+    admin: dict = Depends(require_admin),
+    session: AsyncSession = Depends(get_trading_session),
+):
+    """Manual reconciliation trigger for a specific account."""
+    try:
+        uid = UUID(account_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid account_id")
+
+    engine = request.app.state.trading_engine
+    trader = engine._traders.get(uid)
+    if not trader or not trader._client:
+        raise HTTPException(status_code=404, detail="Account not running or client not initialized")
+
+    service = ReconciliationService(session, trader._client)
+    result = await service.reconcile_account(uid)
+    return result.to_dict()
+
+
+@router.post("/reconciliation/{account_id}/repair/{symbol}")
+@limiter.limit("5/minute")
+async def repair_fill_gaps(
+    account_id: str,
+    symbol: str,
+    request: Request,
+    admin: dict = Depends(require_admin),
+    session: AsyncSession = Depends(get_trading_session),
+):
+    """Repair fill gaps for a specific account/symbol."""
+    try:
+        uid = UUID(account_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid account_id")
+
+    engine = request.app.state.trading_engine
+    trader = engine._traders.get(uid)
+    if not trader or not trader._client:
+        raise HTTPException(status_code=404, detail="Account not running or client not initialized")
+
+    service = ReconciliationService(session, trader._client)
+    count = await service.repair_fill_gaps(uid, symbol.upper())
+    await session.commit()
+    return {"status": "repaired", "fills_added": count, "symbol": symbol.upper()}
+
+
+@router.get("/metrics")
+async def prometheus_metrics(admin: dict = Depends(require_admin)):
+    """Prometheus metrics endpoint."""
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)

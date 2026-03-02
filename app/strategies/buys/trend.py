@@ -241,6 +241,7 @@ class TrendBuy(BaseBuyLogic):
             return
 
         ref_state = state.with_scope(str(ref_combo_id))
+        await ref_state.preload()
         lot_base_price = await ref_state.get_float("base_price", 0.0)
         if lot_base_price <= 0:
             return
@@ -279,7 +280,7 @@ class TrendBuy(BaseBuyLogic):
 
         filters = await exchange.get_symbol_filters(ctx.symbol)
 
-        free_balance = await exchange.get_free_balance(ctx.quote_asset)
+        free_balance = ctx.free_balance if ctx.free_balance > 0 else await exchange.get_free_balance(ctx.quote_asset)
         total_buy_usdt = resolve_buy_usdt(ctx.params, free_balance)
 
         if total_buy_usdt < min_trade_usdt:
@@ -311,10 +312,12 @@ class TrendBuy(BaseBuyLogic):
         placed_order_id = int(order_resp.get("orderId", 0))
         placed_time_ms = int(order_resp.get("transactTime", 0)) or int(self._now() * 1000)
 
-        await state.set("pending_order_id", placed_order_id)
-        await state.set("pending_time_ms", placed_time_ms)
-        await state.set("pending_bucket_usdt", 0)
-        await state.set("pending_trigger_price", trigger_adjusted)
+        await state.set_many({
+            "pending_order_id": placed_order_id,
+            "pending_time_ms": placed_time_ms,
+            "pending_bucket_usdt": 0,
+            "pending_trigger_price": trigger_adjusted,
+        })
         self._touch_order()
 
         logger.info(

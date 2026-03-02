@@ -33,6 +33,8 @@ class TradingAccount(TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     circuit_breaker_failures: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     circuit_breaker_disabled_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    auto_recovery_attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    last_auto_recovery_at: Mapped[datetime | None] = mapped_column(nullable=True)
     last_success_at: Mapped[datetime | None] = mapped_column(nullable=True)
     buy_pause_state: Mapped[str] = mapped_column(
         String(20), nullable=False, server_default=BuyPauseState.ACTIVE.value
