@@ -1,20 +1,11 @@
 {% extends "base.html" %}
 
-{% block title %}{% if user.get('role') == 'admin' %}Management{% else %}My Accounts{% endif %} - Crypto Multi-Trader{% endblock %}
+{% block title %}Management - Crypto Multi-Trader{% endblock %}
 
 {% block content %}
 <style>
-.toast { position: fixed; top: 1rem; right: 1rem; padding: 0.75rem 1.5rem; border-radius: 8px; z-index: 10000; font-size: 0.9rem; transition: opacity 0.3s; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
-.toast-success { background: var(--success); color: #fff; }
-.toast-error { background: var(--danger); color: #fff; }
-.badge-warning { background: var(--warning-light); color: var(--warning); }
-.badge-info { background: var(--info-light); color: var(--info); }
-.badge-buy-paused { background: var(--orange-light); color: var(--orange); }
-.badge-buy-throttled { background: var(--warning-light); color: var(--warning); }
-.actions-cell { display: flex; gap: 0.4rem; justify-content: flex-end; flex-wrap: wrap; align-items: center; }
-.actions-cell .btn { padding: 0.2rem 0.5rem; font-size: 0.78rem; line-height: 1.4; min-width: 4.5rem; text-align: center; box-sizing: border-box; }
+/* Page-specific overrides (base .toast, .actions-cell, .filter-bar in style.css) */
 .actions-cell .btn:disabled { color: var(--text-muted, #999) !important; border-color: var(--border, #ddd) !important; opacity: 0.5; cursor: not-allowed; pointer-events: none; }
-.filter-bar { margin-bottom: 1rem; display: flex; gap: 0.75rem; align-items: center; }
 .account-name-link { color: var(--primary); text-decoration: none; font-weight: 500; }
 .account-name-link:hover { text-decoration: underline; }
 #actions-modal .btn:disabled, #user-actions-modal .btn:disabled { color: var(--text-muted) !important; border-color: var(--border) !important; opacity: 0.4; cursor: not-allowed; }
@@ -34,21 +25,13 @@
 @media (max-width:480px) { .actions-grid { grid-auto-flow:row; grid-template-columns:repeat(3, 1fr); grid-auto-columns:unset; } }
 </style>
 
-<div id="accounts-container" data-role="{{ user.get('role', 'user') }}">
+<div id="accounts-container" data-role="admin">
 
-{% if user.get('role') == 'admin' %}
 <div class="hero-banner">
   <h1 class="page-title">Management</h1>
   <p class="hero-subtitle">Manage users and trading accounts in one place.</p>
 </div>
-{% else %}
-<div class="page-header">
-  <h1 class="page-title">My Accounts</h1>
-  <button class="btn btn-primary" onclick="openModal('add-account-modal')">+ Add Account</button>
-</div>
-{% endif %}
 
-{% if user.get('role') == 'admin' %}
 <!-- ============================================================
      Section 1 — Users
      ============================================================ -->
@@ -136,13 +119,6 @@
     </table>
   </div>
 </section>
-{% else %}
-<!-- User: summary + card grid -->
-<div id="user-summary" style="margin-bottom: 1rem;"></div>
-<div id="accounts-grid" class="accounts-grid">
-  <div class="loading-spinner">Loading accounts...</div>
-</div>
-{% endif %}
 
 </div><!-- #accounts-container -->
 
@@ -411,22 +387,11 @@ async function loadAccountsData() {
     const data = await resp.json();
     _allAccounts = data.accounts || data || [];
 
-    if (role === 'admin') {
-      populateOwnerFilter(_allAccounts);
-      renderAdminTable(_allAccounts);
-    } else {
-      renderUserSummary(_allAccounts);
-      renderUserCards(_allAccounts);
-    }
+    populateOwnerFilter(_allAccounts);
+    renderAdminTable(_allAccounts);
   } catch (e) {
-    const role2 = document.getElementById('accounts-container').dataset.role;
-    if (role2 === 'admin') {
-      const tbody = document.getElementById('accounts-tbody');
-      if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color:var(--danger);">Failed to load: ' + escapeHtml(e.message) + '</td></tr>';
-    } else {
-      const grid = document.getElementById('accounts-grid');
-      if (grid) grid.innerHTML = '<p class="error-text">Failed to load accounts: ' + escapeHtml(e.message) + '</p>';
-    }
+    const tbody = document.getElementById('accounts-tbody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color:var(--danger);">Failed to load: ' + escapeHtml(e.message) + '</td></tr>';
   }
 }
 
@@ -676,68 +641,6 @@ function renderAdminTable(accounts) {
 
 function filterAccounts() {
   renderAdminTable(_allAccounts);
-}
-
-// ============================================================
-//  User Rendering
-// ============================================================
-function renderUserSummary(accounts) {
-  const el = document.getElementById('user-summary');
-  if (!el) return;
-  const total = accounts.length;
-  const active = accounts.filter(a => a.is_active).length;
-  el.innerHTML = `
-    <div style="display:flex; gap:1rem; flex-wrap:wrap;">
-      <div class="card" style="padding:0.75rem 1.25rem; display:flex; gap:0.5rem; align-items:center; min-width:120px;">
-        <span style="font-size:1.5rem; font-weight:700; color:var(--primary);">${total}</span>
-        <span class="text-muted" style="font-size:0.875rem;">Total</span>
-      </div>
-      <div class="card" style="padding:0.75rem 1.25rem; display:flex; gap:0.5rem; align-items:center; min-width:120px;">
-        <span style="font-size:1.5rem; font-weight:700; color:var(--success);">${active}</span>
-        <span class="text-muted" style="font-size:0.875rem;">Active</span>
-      </div>
-    </div>`;
-}
-
-function renderUserCards(accounts) {
-  const grid = document.getElementById('accounts-grid');
-  if (!grid) return;
-  if (!accounts.length) {
-    grid.innerHTML = '<p class="text-muted">No accounts found. Add your first account.</p>';
-    return;
-  }
-
-  grid.innerHTML = accounts.map(acct => {
-    const isActive = acct.is_active;
-    const cbTripped = acct.circuit_breaker_tripped;
-    const isBuyPaused = acct.buy_pause_state === 'PAUSED';
-    const statusBadges = buildStatusBadges(acct);
-    const comboSymbols = acct.combo_symbols || [];
-    const symbolIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:28px;height:28px;"><circle cx="12" cy="12" r="10"/><path d="M9.5 8H14a2 2 0 0 1 0 4h-4.5m0-4v8m0-4H14a2 2 0 0 1 0 4H9.5m2-10v2m0 8v2"/></svg>';
-
-    // Encode account for edit modal safely via data attribute
-    const acctJson = escapeHtml(JSON.stringify(acct));
-
-    return `
-      <div class="account-card" onclick="window.location.href='/accounts/${acct.id}'" style="cursor:pointer;">
-        <div class="account-card-top">
-          <div class="account-card-icon">${symbolIcon}</div>
-          <div>
-            <div class="account-card-label">${escapeHtml(acct.name || acct.id)}</div>
-            <div class="account-card-symbol">${formatComboSymbols(comboSymbols, acct.symbol)}</div>
-          </div>
-        </div>
-        <div class="account-card-footer" style="margin-top:0.75rem;">
-          ${statusBadges}
-        </div>
-        <div class="actions-cell" style="margin-top:0.75rem; justify-content:flex-start;">
-          <button class="btn btn-sm btn-outline"
-            onclick="event.stopPropagation(); openActionsModal('${acct.id}')">
-            Actions
-          </button>
-        </div>
-      </div>`;
-  }).join('');
 }
 
 // ============================================================

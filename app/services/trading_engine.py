@@ -52,13 +52,18 @@ class TradingEngine:
             accounts = await repo.get_active_accounts()
 
         logger.info(f"Starting trading engine with {len(accounts)} active accounts")
-        for i, account in enumerate(accounts):
-            jitter = random.uniform(0, 3.0) + (i * 0.5)
+
+        async def _start_with_jitter(account, index):
+            jitter = random.uniform(0, 3.0) + (index * 0.5)
             await asyncio.sleep(jitter)
             try:
                 await self.start_account(account.id)
             except Exception as e:
                 logger.error(f"Failed to start account {account.id}: {e}")
+
+        await asyncio.gather(
+            *[_start_with_jitter(acc, i) for i, acc in enumerate(accounts)]
+        )
 
     async def start_account(self, account_id: UUID):
         if account_id in self._tasks:
@@ -181,5 +186,5 @@ class TradingEngine:
         """Public accessor for WebSocket kline manager status."""
         return {
             "healthy": self._kline_ws.is_healthy(),
-            "subscriptions": len(self._kline_ws._subscriptions),
+            "subscriptions": self._kline_ws.subscription_count,
         }

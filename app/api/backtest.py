@@ -49,6 +49,20 @@ async def run_backtest(
     # Serialize combo configs for storage
     combos_data = [c.model_dump() for c in req.combos]
 
+    # Check concurrent backtest limit (DB-based, crash-safe)
+    from sqlalchemy import func as sa_func
+    active_count_stmt = (
+        select(sa_func.count())
+        .select_from(BacktestRun)
+        .where(BacktestRun.status.in_(["RUNNING", "PENDING"]))
+    )
+    active_count = (await session.execute(active_count_stmt)).scalar_one()
+    if active_count >= MAX_CONCURRENT_BACKTESTS:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Maximum {MAX_CONCURRENT_BACKTESTS} concurrent backtests. Try again later.",
+        )
+
     run = BacktestRun(
         user_id=UUID(user["id"]),
         symbol=req.symbol,
@@ -64,7 +78,7 @@ async def run_backtest(
 
     run_id = run.id
 
-    # Check concurrent backtest limit
+    # Clean up finished tasks from tracking dict
     active = {k: t for k, t in _running_tasks.items() if not t.done()}
     _running_tasks.clear()
     _running_tasks.update(active)
@@ -127,39 +141,60 @@ async def get_backtest_report(
             detail=f"Backtest is {run.status}, not COMPLETED",
         )
 
-    # Load candles from local Parquet for the chart
-    import pyarrow.compute as pc
-    import pyarrow.parquet as pq
-
+    # Load candles from local Parquet for the chart (offload blocking I/O)
     from backtest.isolated_runner import DATA_DIR
 
-    candles = []
-    for interval in ("1m", "5m"):
-        parquet_path = DATA_DIR / f"{run.symbol}_{interval}.parquet"
-        if not parquet_path.exists():
-            continue
-        table = pq.read_table(parquet_path)
-        mask = pc.and_(
-            pc.greater_equal(table.column("ts_ms"), run.start_ts_ms),
-            pc.less_equal(table.column("ts_ms"), run.end_ts_ms),
-        )
-        table = table.filter(mask)
-        if len(table) == 0:
-            continue
-        indices = pc.sort_indices(table, sort_keys=[("ts_ms", "ascending")])
-        table = table.take(indices)
-        candles = [
-            {
-                "time": int(row["ts_ms"] / 1000),
-                "open": float(row["open"]),
-                "high": float(row["high"]),
-                "low": float(row["low"]),
-                "close": float(row["close"]),
-                "volume": float(row["volume"]) if row["volume"] else 0.0,
-            }
-            for row in table.to_pylist()
-        ]
-        break
+    _MAX_CHART_CANDLES = 2000
+
+    def _load_candles() -> list[dict]:
+        import pyarrow.compute as pc
+        import pyarrow.parquet as pq
+
+        for interval in ("1m", "5m"):
+            parquet_path = DATA_DIR / f"{run.symbol}_{interval}.parquet"
+            if not parquet_path.exists():
+                continue
+            table = pq.read_table(parquet_path)
+            mask = pc.and_(
+                pc.greater_equal(table.column("ts_ms"), run.start_ts_ms),
+                pc.less_equal(table.column("ts_ms"), run.end_ts_ms),
+            )
+            table = table.filter(mask)
+            if len(table) == 0:
+                continue
+            indices = pc.sort_indices(table, sort_keys=[("ts_ms", "ascending")])
+            table = table.take(indices)
+            rows = [
+                {
+                    "time": int(row["ts_ms"] / 1000),
+                    "open": float(row["open"]),
+                    "high": float(row["high"]),
+                    "low": float(row["low"]),
+                    "close": float(row["close"]),
+                    "volume": float(row["volume"]) if row["volume"] else 0.0,
+                }
+                for row in table.to_pylist()
+            ]
+            # Downsample OHLCV if too many candles for the chart
+            if len(rows) > _MAX_CHART_CANDLES:
+                n = len(rows)
+                bucket_size = -(-n // _MAX_CHART_CANDLES)  # ceil division
+                aggregated = []
+                for i in range(0, n, bucket_size):
+                    bucket = rows[i : i + bucket_size]
+                    aggregated.append({
+                        "time": bucket[0]["time"],
+                        "open": bucket[0]["open"],
+                        "high": max(c["high"] for c in bucket),
+                        "low": min(c["low"] for c in bucket),
+                        "close": bucket[-1]["close"],
+                        "volume": sum(c["volume"] for c in bucket),
+                    })
+                return aggregated
+            return rows
+        return []
+
+    candles = await asyncio.to_thread(_load_candles)
 
     config = BacktestConfigOut(
         symbol=run.symbol,
@@ -175,8 +210,21 @@ async def get_backtest_report(
     if run.result_summary:
         summary = BacktestSummaryOut(**run.result_summary)
 
-    # Auto-save to JSON on first view
-    _auto_save(run, candles)
+    # Auto-save to JSON on first view (offload blocking I/O to thread)
+    await asyncio.to_thread(_auto_save, run, candles)
+
+    # Check pinned status from saved file
+    def _is_pinned() -> bool:
+        path = _saved_path(str(run.id))
+        if not path.exists():
+            return False
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return bool(data.get("pinned", False))
+        except Exception:
+            return False
+
+    pinned = await asyncio.to_thread(_is_pinned)
 
     return BacktestReportResponse(
         id=run.id,
@@ -185,6 +233,7 @@ async def get_backtest_report(
         trade_log=run.trade_log,
         equity_curve=run.equity_curve,
         candles=candles,
+        pinned=pinned,
     )
 
 
@@ -297,10 +346,15 @@ async def toggle_pin(
     path = _saved_path(str(run_id))
     if not path.exists():
         raise HTTPException(status_code=404, detail="Saved report not found")
-    data = json.loads(path.read_text(encoding="utf-8"))
-    data["pinned"] = not data.get("pinned", False)
-    path.write_text(json.dumps(data), encoding="utf-8")
-    return {"status": "ok", "id": run_id, "pinned": data["pinned"]}
+
+    def _toggle() -> bool:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        data["pinned"] = not data.get("pinned", False)
+        path.write_text(json.dumps(data), encoding="utf-8")
+        return data["pinned"]
+
+    pinned = await asyncio.to_thread(_toggle)
+    return {"status": "ok", "id": run_id, "pinned": pinned}
 
 
 @router.delete("/saved/{run_id}")
@@ -312,5 +366,5 @@ async def delete_saved_report(
     path = _saved_path(str(run_id))
     if not path.exists():
         raise HTTPException(status_code=404, detail="Saved report not found")
-    path.unlink()
+    await asyncio.to_thread(path.unlink)
     return {"status": "deleted", "id": run_id}

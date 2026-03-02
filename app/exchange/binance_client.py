@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+import threading
 import time
 
 import binance.client
@@ -21,6 +22,7 @@ class BinanceClient(ExchangeClient):
         self._filters_cache: dict[str, SymbolFilters] = {}
         self._balance_cache: dict[str, dict] = {}
         self._balance_cache_ts: float = 0.0
+        self._balance_lock = threading.Lock()
         self._sync_time_offset()
 
     # ------------------------------------------------------------------
@@ -143,14 +145,15 @@ class BinanceClient(ExchangeClient):
         return self.client.order_limit_buy(**kwargs)
 
     def _sync_get_balance(self, asset: str) -> dict:
-        now = time.time()
-        if now - self._balance_cache_ts > 5.0:
-            account = self.client.get_account()
-            self._balance_cache = {
-                bal["asset"]: bal for bal in account["balances"]
-            }
-            self._balance_cache_ts = now
-        bal = self._balance_cache.get(asset)
+        with self._balance_lock:
+            now = time.time()
+            if now - self._balance_cache_ts > 5.0:
+                account = self.client.get_account()
+                self._balance_cache = {
+                    bal["asset"]: bal for bal in account["balances"]
+                }
+                self._balance_cache_ts = now
+            bal = self._balance_cache.get(asset)
         if bal:
             free = float(bal["free"])
             locked = float(bal["locked"])

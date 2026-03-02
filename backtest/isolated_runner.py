@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -68,7 +68,7 @@ class IsolatedBacktestRunner:
             return {"error": "No combo configurations"}
 
         # Mark as RUNNING
-        await self._update_status(run_id, "RUNNING", started_at=datetime.utcnow())
+        await self._update_status(run_id, "RUNNING", started_at=datetime.now(UTC))
 
         try:
             # ----------------------------------------------------------------
@@ -146,13 +146,6 @@ class IsolatedBacktestRunner:
             order_repo = InMemoryOrderRepository()
             shared_asm = InMemoryAccountStateManager(account_id, shared_backing)
 
-            # Module-level patch: trend.py의 lazy import가 InMemoryStateStore 사용
-            import app.strategies.state_store as _ss_mod
-            _original_ss = _ss_mod.StrategyStateStore
-            _ss_mod.StrategyStateStore = (
-                lambda aid, scope, session: InMemoryStateStore(aid, scope, shared_backing)
-            )
-
             # Suppress strategy info/debug logs during replay (huge perf hit)
             _strat_logger = logging.getLogger("app.strategies")
             _orig_strat_level = _strat_logger.level
@@ -160,8 +153,9 @@ class IsolatedBacktestRunner:
 
             try:
                 from app.strategies.base import RepositoryBundle, StrategyContext
+                from app.utils.symbol_parser import parse_symbol as _parse_symbol
 
-                base_asset = symbol.replace("USDT", "")
+                base_asset = _parse_symbol(symbol)[0]
 
                 # Pre-create per-combo objects (avoid allocation inside hot loop)
                 combo_ctxs = []
@@ -293,8 +287,6 @@ class IsolatedBacktestRunner:
                 )
 
             finally:
-                # Module-level patch 복원 필수
-                _ss_mod.StrategyStateStore = _original_ss
                 _strat_logger.setLevel(_orig_strat_level)
 
             # ----------------------------------------------------------------
@@ -349,12 +341,12 @@ class IsolatedBacktestRunner:
                 len(table), parquet_path.name, interval,
             )
 
-            # Column-wise extraction: avoids creating ~500K dicts via to_pylist()
+            # Column-wise extraction via zero-copy numpy
             return {
-                "ts_ms": [int(v) for v in table.column("ts_ms").to_pylist()],
-                "close": [float(v) for v in table.column("close").to_pylist()],
-                "low": [float(v) for v in table.column("low").to_pylist()],
-                "high": [float(v) for v in table.column("high").to_pylist()],
+                "ts_ms": table.column("ts_ms").to_numpy(zero_copy_only=False),
+                "close": table.column("close").to_numpy(zero_copy_only=False).astype(float),
+                "low": table.column("low").to_numpy(zero_copy_only=False).astype(float),
+                "high": table.column("high").to_numpy(zero_copy_only=False).astype(float),
             }
 
         return None
@@ -484,7 +476,7 @@ class IsolatedBacktestRunner:
                     result_summary=results["summary"],
                     trade_log=results["trade_log"],
                     equity_curve=results["equity_curve"],
-                    completed_at=datetime.utcnow(),
+                    completed_at=datetime.now(UTC),
                 )
             )
             await session.execute(stmt)
@@ -499,7 +491,7 @@ class IsolatedBacktestRunner:
                 .values(
                     status="FAILED",
                     error_message=error_msg[:1000],
-                    completed_at=datetime.utcnow(),
+                    completed_at=datetime.now(UTC),
                 )
             )
             await session.execute(stmt)

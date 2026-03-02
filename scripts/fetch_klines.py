@@ -7,7 +7,7 @@ Usage:
 
 import argparse
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pyarrow as pa
@@ -61,8 +61,8 @@ def load_existing(parquet_path: Path) -> tuple[pa.Table | None, int | None]:
 def generate_month_ranges(start_ms: int, end_ms: int) -> list[tuple[str, str]]:
     """시작~끝 사이를 월 단위 (start_str, end_str) 리스트로 분할."""
     ranges = []
-    current = datetime.fromtimestamp(start_ms / 1000, tz=timezone.utc)
-    end_dt = datetime.fromtimestamp(end_ms / 1000, tz=timezone.utc)
+    current = datetime.fromtimestamp(start_ms / 1000, tz=UTC)
+    end_dt = datetime.fromtimestamp(end_ms / 1000, tz=UTC)
 
     while current < end_dt:
         month_start = current
@@ -89,7 +89,7 @@ def fetch_klines(symbol: str, interval: str, years: int) -> None:
 
     client = Client()  # public endpoint, API 키 불필요
 
-    now_ms = int(datetime.now(tz=timezone.utc).timestamp() * 1000)
+    now_ms = int(datetime.now(tz=UTC).timestamp() * 1000)
     default_start_ms = now_ms - (years * 365 * 24 * 60 * 60 * 1000)
 
     existing_table, last_ts = load_existing(parquet_path)

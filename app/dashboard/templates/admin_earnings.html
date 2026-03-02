@@ -110,7 +110,7 @@ async function loadEarnings() {
         ? '<span class="status-badge badge-success">Manual</span>'
         : `<span class="status-badge badge-info">${escapeHtml(h.source)}</span>`;
       return `<tr>
-        <td><a href="/accounts/${h.account_id}">${escapeHtml(h.account_name)}</a></td>
+        <td><a href="/accounts/${encodeURIComponent(h.account_id)}">${escapeHtml(h.account_name)}</a></td>
         <td>${escapeHtml(h.symbol)}</td>
         <td>${fmt(h.btc_qty, 8)}</td>
         <td>$${fmt(h.cost_usdt, 2)}</td>
@@ -143,8 +143,4 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 </script>
 
-<style>
-.badge-info { background: var(--info-light, rgba(49,130,246,0.12)); color: var(--info, #3182f6); }
-.pagination { display: flex; gap: 0.75rem; align-items: center; justify-content: center; margin-top: 1rem; }
-</style>
 {% endblock %}

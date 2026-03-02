@@ -200,7 +200,7 @@ class TestPlaceLimitSell:
         assert len(orders) == 0
 
     async def test_fill_increases_usdt_balance(self, client_with_btc):
-        # adjust_qty(1.0, step_size=0.00001) = 0.99999; proceeds = 0.99999 * 50000
+        # adjust_qty(1.0, step_size=0.00001) = 0.99999; proceeds = 0.99999 * 50000 * (1 - fee)
         initial_usdt = await client_with_btc.get_free_balance("USDT")
         client_with_btc.set_price(40000.0)
         order = await client_with_btc.place_limit_sell(
@@ -209,7 +209,9 @@ class TestPlaceLimitSell:
         adj_qty = float(order["origQty"])
         client_with_btc.set_price(50000.0)
         final_usdt = await client_with_btc.get_free_balance("USDT")
-        assert final_usdt == pytest.approx(initial_usdt + adj_qty * 50000.0, rel=1e-6)
+        fee_rate = client_with_btc._fee_rate
+        expected = initial_usdt + adj_qty * 50000.0 * (1 - fee_rate)
+        assert final_usdt == pytest.approx(expected, rel=1e-6)
 
     async def test_raises_on_insufficient_btc(self, client):
         client.set_price(50000.0)
@@ -429,9 +431,11 @@ class TestFullCycle:
         assert usdt_after_buy == pytest.approx(initial_usdt - btc_qty * 50000.0, rel=1e-6)
 
         # Step 2: sell all BTC at 55000
+        # Buy fill deducts fee from received BTC, so use actual balance
+        btc_received = await client.get_free_balance("BTC")
         client.set_price(40000.0)  # below sell price → order stays open
         await client.place_limit_sell(
-            qty_base=btc_qty, price=55000.0, symbol=SYMBOL
+            qty_base=btc_received, price=55000.0, symbol=SYMBOL
         )
         # Fill the sell
         client.set_price(55000.0)
@@ -442,10 +446,12 @@ class TestFullCycle:
         assert btc_free == pytest.approx(0.0, abs=1e-8)
         assert btc_locked == pytest.approx(0.0, abs=1e-8)
 
-        # Verify USDT is back plus profit
+        # Verify USDT is back plus profit (accounting for fees on both sides)
         final_usdt = await client.get_free_balance("USDT")
-        sell_proceeds = btc_qty * 55000.0
+        fee_rate = client._fee_rate
         buy_cost = btc_qty * 50000.0
+        sell_qty = await client.adjust_qty(btc_received, SYMBOL)
+        sell_proceeds = sell_qty * 55000.0 * (1 - fee_rate)
         expected_usdt = initial_usdt - buy_cost + sell_proceeds
         assert final_usdt == pytest.approx(expected_usdt, rel=1e-6)
 

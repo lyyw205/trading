@@ -5,6 +5,7 @@ import time
 import uuid
 
 from app.exchange.base_client import ExchangeClient, SymbolFilters
+from app.utils.symbol_parser import parse_symbol
 
 
 class BacktestClient(ExchangeClient):
@@ -19,8 +20,10 @@ class BacktestClient(ExchangeClient):
         symbol: str,
         initial_balance_usdt: float = 10000.0,
         initial_balance_btc: float = 0.0,
+        fee_rate: float = 0.001,
     ):
         self.symbol = symbol
+        self._fee_rate = fee_rate
         self._current_price: float = 0.0
         self._candle_low: float = 0.0
         self._candle_high: float = 0.0
@@ -77,11 +80,12 @@ class BacktestClient(ExchangeClient):
             if filled:
                 qty = float(order["origQty"])
                 px = float(order["price"])
+                fee = qty * px * self._fee_rate
                 order["status"] = "FILLED"
                 order["executedQty"] = order["origQty"]
                 order["cummulativeQuoteQty"] = str(qty * px)
                 order["updateTime"] = self._time_ms()
-                asset = order["symbol"].replace("USDT", "")
+                asset = parse_symbol(order["symbol"])[0]
 
                 if order["side"] == "BUY":
                     cost = qty * px
@@ -90,14 +94,15 @@ class BacktestClient(ExchangeClient):
                     )
                     if asset not in self._balances:
                         self._balances[asset] = {"free": 0.0, "locked": 0.0}
-                    self._balances[asset]["free"] += qty
+                    fee_qty = qty * self._fee_rate
+                    self._balances[asset]["free"] += qty - fee_qty
                 else:  # SELL
                     if asset not in self._balances:
                         self._balances[asset] = {"free": 0.0, "locked": 0.0}
                     self._balances[asset]["locked"] = max(
                         0.0, self._balances[asset]["locked"] - qty
                     )
-                    self._balances["USDT"]["free"] += qty * px
+                    self._balances["USDT"]["free"] += qty * px - fee
 
                 self._filled_orders.append(order)
                 self._trades.append(
@@ -109,8 +114,8 @@ class BacktestClient(ExchangeClient):
                         "price": order["price"],
                         "qty": order["origQty"],
                         "quoteQty": str(qty * px),
-                        "commission": "0",
-                        "commissionAsset": "BNB",
+                        "commission": str(fee),
+                        "commissionAsset": "USDT",
                         "time": self._time_ms(),
                         "isBuyer": order["side"] == "BUY",
                     }
@@ -267,7 +272,7 @@ class BacktestClient(ExchangeClient):
         if qty <= 0:
             raise ValueError("qty is zero after adjustment")
 
-        asset = symbol.replace("USDT", "")
+        asset = parse_symbol(symbol)[0]
         if asset not in self._balances:
             self._balances[asset] = {"free": 0.0, "locked": 0.0}
         asset_free = self._balances[asset]["free"]

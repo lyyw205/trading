@@ -1845,7 +1845,11 @@ select.form-input {
 
 /* Status badges — additional */
 .badge-warning { background: var(--warning-light); color: var(--warning); }
+.badge-info { background: var(--info-light, rgba(49,130,246,0.12)); color: var(--info, #3182f6); }
 .badge-inactive { background: var(--bg-tertiary); color: var(--text-muted); }
+.badge-neutral { background: var(--bg-surface); color: var(--text-muted); }
+.kpi-positive { color: var(--success); }
+.kpi-negative { color: var(--danger); }
 
 /* Mobile responsive for tables */
 @media (max-width: 768px) {
@@ -1862,3 +1866,16 @@ select.form-input {
   .page-header { flex-direction: column; gap: 0.75rem; align-items: stretch; }
   .page-header .btn { width: 100%; text-align: center; }
 }
+
+/* ---- Badge variants ---- */
+.badge-buy-paused { background: var(--orange-light); color: var(--orange); }
+.badge-buy-throttled { background: var(--warning-light); color: var(--warning); }
+
+/* ---- Param rows (backtest report & strategy catalog) ---- */
+.param-row { display: flex; justify-content: space-between; align-items: center; padding: 0.25rem 0; font-size: 0.82rem; }
+.param-row + .param-row { border-top: 1px solid var(--border); }
+.param-key { color: var(--text-muted); }
+.param-val { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); }
+.param-cat { margin-bottom: 0.75rem; }
+.param-cat:last-child { margin-bottom: 0; }
+.param-cat-label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--primary); margin-bottom: 0.35rem; padding-bottom: 0.2rem; border-bottom: 1px solid var(--border); }

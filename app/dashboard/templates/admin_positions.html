@@ -75,7 +75,7 @@ async function loadPositions() {
     }
 
     tbody.innerHTML = positions.map(p => `<tr>
-      <td><a href="/accounts/${p.account_id}">${escapeHtml(p.account_name)}</a></td>
+      <td><a href="/accounts/${encodeURIComponent(p.account_id)}">${escapeHtml(p.account_name)}</a></td>
       <td style="font-weight:500;">${escapeHtml(p.symbol)}</td>
       <td>${fmt(p.qty, 8)}</td>
       <td>$${fmt(p.cost_basis_usdt, 2)}</td>

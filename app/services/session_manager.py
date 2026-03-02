@@ -18,7 +18,7 @@ class SessionManager:
     def __init__(self, secret_key: str):
         self._serializer = URLSafeTimedSerializer(secret_key)
         self.cookie_name = "session"
-        self.max_age = 7 * 24 * 3600  # 7 days
+        self.max_age = 24 * 3600  # 24 hours
 
     def create_session_cookie(self, user_id: str, email: str, role: str) -> str:
         """Encode uid+email+role into a signed cookie value"""

@@ -72,15 +72,14 @@ const _tradesLimit = 100;
 let _tradesTotal = 0;
 let _accountsMap = {};
 
-async function loadTrades() {
+async function loadTrades(opts) {
   const tbody = document.getElementById('trades-tbody');
   if (!tbody) return;
 
   const accountId = document.getElementById('trade-filter-account').value;
   const side = document.getElementById('trade-filter-side').value;
 
-  // Reset to first page when called from filter change
-  if (arguments.length === 0) _tradesPage = 0;
+  if (!opts || opts.keepPage !== true) _tradesPage = 0;
   const offset = _tradesPage * _tradesLimit;
 
   let url = `/api/admin/trades?limit=${_tradesLimit}&offset=${offset}`;
@@ -106,7 +105,7 @@ async function loadTrades() {
       const label = _accountsMap[t.account_id] || String(t.account_id).slice(0, 8);
       return `<tr>
         <td>${escapeHtml(time)}</td>
-        <td><a href="/accounts/${t.account_id}">${escapeHtml(label)}</a></td>
+        <td><a href="/accounts/${encodeURIComponent(t.account_id)}">${escapeHtml(label)}</a></td>
         <td>${escapeHtml(t.symbol || '')}</td>
         <td class="${sideClass}">${escapeHtml(t.side || '-')}</td>
         <td>${t.price != null ? fmt(t.price, 2) : '-'}</td>
@@ -131,7 +130,7 @@ async function loadTrades() {
 function changeTradesPage(delta) {
   _tradesPage += delta;
   if (_tradesPage < 0) _tradesPage = 0;
-  loadTrades();
+  loadTrades({ keepPage: true });
 }
 
 function exportTradesCSV() {

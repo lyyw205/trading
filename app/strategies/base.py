@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from abc import ABC, abstractmethod
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
@@ -38,7 +39,24 @@ class RepositoryBundle:
     price: PriceRepository
 
 
-class BaseBuyLogic(ABC):
+class _StrategyTimingMixin:
+    """Shared timing helpers for buy/sell logic classes."""
+
+    def __init__(self):
+        self._last_order_ts: float = 0.0
+        self._sim_time: float | None = None  # 백테스트용 시뮬레이션 시각
+
+    def _now(self) -> float:
+        return self._sim_time if self._sim_time is not None else time.time()
+
+    def _cooldown_ok(self, cooldown_sec: float) -> bool:
+        return (self._now() - self._last_order_ts) >= cooldown_sec
+
+    def _touch_order(self) -> None:
+        self._last_order_ts = self._now()
+
+
+class BaseBuyLogic(_StrategyTimingMixin, ABC):
     """매수 전용 플러그인 기본 클래스."""
     name: str = ""
     display_name: str = ""
@@ -47,9 +65,15 @@ class BaseBuyLogic(ABC):
     default_params: dict[str, Any] = {}
     tunable_params: dict[str, dict[str, Any]] = {}
 
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        if "default_params" in cls.__dict__:
+            cls.default_params = deepcopy(cls.default_params)
+        if "tunable_params" in cls.__dict__:
+            cls.tunable_params = deepcopy(cls.tunable_params)
+
     def __init__(self):
-        self._last_order_ts: float = 0.0
-        self._sim_time: float | None = None  # 백테스트용 시뮬레이션 시각
+        super().__init__()
 
     async def pre_tick(
         self,
@@ -78,17 +102,8 @@ class BaseBuyLogic(ABC):
     def validate_params(self, params: dict[str, Any]) -> dict[str, Any]:
         return {**self.default_params, **params}
 
-    def _now(self) -> float:
-        return self._sim_time if self._sim_time is not None else time.time()
 
-    def _cooldown_ok(self, cooldown_sec: float) -> bool:
-        return (self._now() - self._last_order_ts) >= cooldown_sec
-
-    def _touch_order(self) -> None:
-        self._last_order_ts = self._now()
-
-
-class BaseSellLogic(ABC):
+class BaseSellLogic(_StrategyTimingMixin, ABC):
     """매도 전용 플러그인 기본 클래스."""
     name: str = ""
     display_name: str = ""
@@ -97,9 +112,15 @@ class BaseSellLogic(ABC):
     default_params: dict[str, Any] = {}
     tunable_params: dict[str, dict[str, Any]] = {}
 
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        if "default_params" in cls.__dict__:
+            cls.default_params = deepcopy(cls.default_params)
+        if "tunable_params" in cls.__dict__:
+            cls.tunable_params = deepcopy(cls.tunable_params)
+
     def __init__(self):
-        self._last_order_ts: float = 0.0
-        self._sim_time: float | None = None
+        super().__init__()
 
     @abstractmethod
     async def tick(
@@ -116,12 +137,3 @@ class BaseSellLogic(ABC):
 
     def validate_params(self, params: dict[str, Any]) -> dict[str, Any]:
         return {**self.default_params, **params}
-
-    def _now(self) -> float:
-        return self._sim_time if self._sim_time is not None else time.time()
-
-    def _cooldown_ok(self, cooldown_sec: float) -> bool:
-        return (self._now() - self._last_order_ts) >= cooldown_sec
-
-    def _touch_order(self) -> None:
-        self._last_order_ts = self._now()

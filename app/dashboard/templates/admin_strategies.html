@@ -4,7 +4,7 @@
 
 {% block content %}
 <style>
-.dashboard-section {
+.strategies-page .dashboard-section {
   background: none;
   border: none;
   box-shadow: none;
@@ -80,16 +80,10 @@
   margin-top: 0.25rem;
 }
 .params-list.open { display: block; }
-.param-row {
-  display: flex;
-  justify-content: space-between;
-  padding: 0.25rem 0;
-}
-.param-row + .param-row { border-top: 1px solid var(--border); }
-.param-key { color: var(--text-muted); font-family: var(--font-mono); }
-.param-val { font-weight: 600; color: var(--text); font-family: var(--font-mono); }
+.param-key, .param-val { font-family: var(--font-mono); }
 </style>
 
+<div class="strategies-page">
 <div class="hero-banner">
   <h1 class="page-title">Strategy Catalog</h1>
   <p class="hero-subtitle">Registered buy & sell strategies with adoption statistics.</p>
@@ -112,6 +106,7 @@
     <div class="table-empty">Loading...</div>
   </div>
 </section>
+</div>
 {% endblock %}
 
 {% block scripts %}

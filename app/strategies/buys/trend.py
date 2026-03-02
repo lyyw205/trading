@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from app.strategies.base import BaseBuyLogic, RepositoryBundle, StrategyContext
+from app.strategies.constants import PENDING_KEYS
 from app.strategies.registry import BuyLogicRegistry
 from app.strategies.sizing import resolve_buy_usdt
 from app.strategies.utils import extract_base_commission_qty
@@ -18,14 +19,6 @@ logger = logging.getLogger(__name__)
 
 _PENDING_TIMEOUT_MS = 3 * 60 * 60 * 1000
 _ORDER_COOLDOWN_SEC = 5.0
-
-_PENDING_KEYS = (
-    "pending_order_id",
-    "pending_time_ms",
-    "pending_bucket_usdt",
-    "pending_kind",
-    "pending_trigger_price",
-)
 
 
 @BuyLogicRegistry.register
@@ -154,12 +147,12 @@ class TrendBuy(BaseBuyLogic):
                 ctx, state, order_data, account_state, repos, combo_id,
                 core_bucket_locked=pending_bucket,
             )
-            await state.clear_keys(*_PENDING_KEYS)
+            await state.clear_keys(*PENDING_KEYS)
             return True
 
         if status in ("CANCELED", "REJECTED", "EXPIRED"):
             logger.info("trend_buy: pending trend buy order %s %s", order_id, status)
-            await state.clear_keys(*_PENDING_KEYS)
+            await state.clear_keys(*PENDING_KEYS)
             return True
 
         now_ms = int(self._now() * 1000)
@@ -170,7 +163,7 @@ class TrendBuy(BaseBuyLogic):
                 await repos.order.upsert_order(ctx.account_id, cancel_resp)
             except Exception as exc:
                 logger.error("trend_buy: cancel timed-out order %s failed: %s", order_id, exc)
-            await state.clear_keys(*_PENDING_KEYS)
+            await state.clear_keys(*PENDING_KEYS)
             return True
 
         return True

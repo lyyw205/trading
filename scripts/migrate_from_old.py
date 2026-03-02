@@ -28,7 +28,7 @@ import logging
 import os
 import sys
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
 import asyncpg
 from sqlalchemy import text
@@ -76,8 +76,12 @@ async def fetch_settings(conn: asyncpg.Connection) -> dict[str, str]:
     return {r["key"]: r["value"] for r in rows}
 
 
+_ALLOWED_LOT_TABLES = {"btc_lots", "btc_trend_lots"}
+
 async def fetch_lots(conn: asyncpg.Connection, table: str) -> list[dict]:
-    rows = await conn.fetch(f"SELECT * FROM {table} ORDER BY lot_id ASC")
+    if table not in _ALLOWED_LOT_TABLES:
+        raise ValueError(f"Invalid lot table: {table}")
+    rows = await conn.fetch(f"SELECT * FROM {table} ORDER BY lot_id ASC")  # noqa: S608
     return [dict(r) for r in rows]
 
 
@@ -391,7 +395,7 @@ async def insert_core_history(
             "btc_qty": _float(row.get("btc_qty")),
             "cost_usdt": _float(row.get("cost_usdt")),
             "source": _str(row.get("source"), "migration"),
-            "created_at": row.get("created_at") or datetime.utcnow(),
+            "created_at": row.get("created_at") or datetime.now(UTC),
         },
     )
 

@@ -112,8 +112,8 @@ class AccountTrader:
             self._sell_instances[key] = SellLogicRegistry.create_instance(name)
         return self._sell_instances[key]
 
-    async def step(self):
-        """Single trading cycle (corresponds to btc_trader.py step())"""
+    async def step(self) -> int:
+        """Single trading cycle. Returns loop_interval_sec for run_forever."""
         # Generate cycle ID for correlation across logs
         cycle_id = uuid4().hex[:12]
         cycle_token = current_cycle_id.set(cycle_id)
@@ -125,7 +125,7 @@ class AccountTrader:
                 account_repo = AccountRepository(session)
                 account = await account_repo.get_by_id(self.account_id)
                 if not account or not account.is_active:
-                    return
+                    return 60
 
                 # Sync buy-pause state from DB
                 self._buy_pause_state = account.buy_pause_state or BuyPauseState.ACTIVE
@@ -296,6 +296,8 @@ class AccountTrader:
                 self._last_success_at = time.time()
                 await account_repo.update_last_success(self.account_id)
                 await session.commit()
+
+                return account.loop_interval_sec if account.loop_interval_sec else 60
         finally:
             current_account_id.reset(token)
             current_cycle_id.reset(cycle_token)
@@ -327,7 +329,7 @@ class AccountTrader:
             except Exception as e:
                 logger.warning("[%s] Open orders sync failed for %s: %s", self.account_id, symbol, e)
 
-        # Step 2: Refresh tracked orders NOT already synced (use correct symbol from DB)
+        # Step 2: Refresh tracked orders NOT already synced (parallel, use correct symbol from DB)
         to_refresh = [oid for oid in open_ids[:50] if oid not in synced_oids]
         if to_refresh:
             order_sym_stmt = select(Order.order_id, Order.symbol).where(
@@ -337,37 +339,59 @@ class AccountTrader:
             order_sym_result = await session.execute(order_sym_stmt)
             order_symbol_map = {row[0]: row[1] for row in order_sym_result.all()}
 
-            for oid in to_refresh:
-                try:
-                    sym = order_symbol_map.get(oid, account.symbol)
-                    await self._rate_limiter.acquire(weight=1)
-                    o = await self._client.get_order(oid, sym)
-                    await order_repo.upsert_order(self.account_id, o)
-                    synced_oids.add(oid)
-                except Exception as e:
-                    logger.warning("[%s] Order %s sync failed: %s", self.account_id, oid, e)
+            async def _refresh_order(oid: int):
+                sym = order_symbol_map.get(oid, account.symbol)
+                await self._rate_limiter.acquire(weight=1)
+                o = await self._client.get_order(oid, sym)
+                await order_repo.upsert_order(self.account_id, o)
+                synced_oids.add(oid)
 
-        # Step 3: Sync recent fills per symbol (skip already-synced orders)
+            results = await asyncio.gather(
+                *[_refresh_order(oid) for oid in to_refresh],
+                return_exceptions=True,
+            )
+            for oid, res in zip(to_refresh, results):
+                if isinstance(res, Exception):
+                    logger.warning("[%s] Order %s sync failed: %s", self.account_id, oid, res)
+
+        # Step 3: Sync recent fills per symbol (parallel order lookups, track new fills)
+        symbols_with_new_fills: set[str] = set()
         for symbol in symbols:
             try:
                 await self._rate_limiter.acquire(weight=5)
                 trades = await self._client.get_my_trades(symbol)
                 seen_oids: set[int] = set()
+                unseen_oids: list[int] = []
                 for t in trades:
                     oid = int(t.get("orderId", 0))
                     if oid > 0 and oid not in seen_oids and oid not in synced_oids:
                         seen_oids.add(oid)
-                        try:
-                            await self._rate_limiter.acquire(weight=1)
-                            o = await self._client.get_order(oid, symbol)
-                            await order_repo.upsert_order(self.account_id, o)
-                        except Exception:
-                            pass
+                        unseen_oids.append(oid)
                     await order_repo.insert_fill(self.account_id, oid, t)
+
+                if trades:
+                    symbols_with_new_fills.add(symbol)
+
+                # Parallel fetch for unseen order IDs
+                if unseen_oids:
+                    async def _fetch_fill_order(fill_oid: int, sym: str = symbol):
+                        await self._rate_limiter.acquire(weight=1)
+                        o = await self._client.get_order(fill_oid, sym)
+                        await order_repo.upsert_order(self.account_id, o)
+
+                    fill_results = await asyncio.gather(
+                        *[_fetch_fill_order(oid) for oid in unseen_oids],
+                        return_exceptions=True,
+                    )
+                    for oid, res in zip(unseen_oids, fill_results):
+                        if isinstance(res, Exception):
+                            logger.warning("[%s] Fill order %s sync failed: %s", self.account_id, oid, res)
             except Exception as e:
                 logger.warning("[%s] Fills sync failed for %s: %s", self.account_id, symbol, e)
 
-            await position_repo.recompute_from_fills(self.account_id, symbol)
+            # 4-6: Conditional recompute — only for symbols with new fills
+            if symbol in symbols_with_new_fills:
+                await position_repo.recompute_from_fills(self.account_id, symbol)
 
     async def run_forever(self):
         """Main trading loop with circuit breaker and exponential backoff"""
@@ -385,7 +409,7 @@ class AccountTrader:
         while self._running:
             try:
                 # Phase 3-B: step() 타임아웃 (180초)
-                await asyncio.wait_for(self.step(), timeout=180)
+                loop_interval = await asyncio.wait_for(self.step(), timeout=180)
             except TimeoutError:
                 self._consecutive_failures += 1
                 logger.error(f"[{self.account_id}] step() timed out (180s), failures: {self._consecutive_failures}")
@@ -410,7 +434,7 @@ class AccountTrader:
                 continue
 
             # Dynamic interval (buy-pause aware)
-            base_interval = await self._get_loop_interval()
+            base_interval = loop_interval if loop_interval else 60
             interval = BuyPauseManager.compute_interval(
                 base_interval, self._buy_pause_state, self._has_open_positions,
             )
@@ -421,12 +445,6 @@ class AccountTrader:
         self._wake_event.clear()
         with contextlib.suppress(TimeoutError):
             await asyncio.wait_for(self._wake_event.wait(), timeout=seconds)
-
-    async def _get_loop_interval(self) -> int:
-        async with TradingSessionLocal() as session:
-            repo = AccountRepository(session)
-            account = await repo.get_by_id(self.account_id)
-            return account.loop_interval_sec if account else 60
 
     async def _disable_with_circuit_breaker(self):
         async with TradingSessionLocal() as session:

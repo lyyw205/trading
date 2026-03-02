@@ -4,15 +4,15 @@ import time
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.config import GlobalConfig
+from app.config import get_settings
 
-settings = GlobalConfig()
+settings = get_settings()
 _slow_query_logger = logging.getLogger("db.slow_query")
 
 # 1) 트레이딩 엔진용: SQLAlchemy 직접 PostgreSQL 연결 (RLS 바이패스)
 engine_trading = create_async_engine(
     settings.database_url or "postgresql+asyncpg://localhost/crypto_trader",
-    pool_size=30,
+    pool_size=15,
     max_overflow=10,
     echo=settings.debug,
 )

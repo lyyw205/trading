@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from uuid import UUID
+
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
@@ -41,7 +43,7 @@ async def accounts_page(request: Request):
 
 
 @router.get("/accounts/{account_id}", response_class=HTMLResponse)
-async def account_detail_page(request: Request, account_id: str):
+async def account_detail_page(request: Request, account_id: UUID):
     user, redirect = _require_login(request)
     if redirect:
         return redirect
@@ -49,7 +51,7 @@ async def account_detail_page(request: Request, account_id: str):
     return templates.TemplateResponse("account_detail.html", {
         "request": request,
         "user": user,
-        "account_id": account_id,
+        "account_id": str(account_id),
     })
 
 
@@ -138,7 +140,7 @@ async def admin_trades_page(request: Request):
 
 
 @router.get("/admin/backtest/{backtest_id}", response_class=HTMLResponse)
-async def backtest_report_page(request: Request, backtest_id: str):
+async def backtest_report_page(request: Request, backtest_id: UUID):
     user, redirect = _require_admin_page(request)
     if redirect:
         return redirect
@@ -146,5 +148,5 @@ async def backtest_report_page(request: Request, backtest_id: str):
     return templates.TemplateResponse("backtest_report.html", {
         "request": request,
         "user": user,
-        "backtest_id": backtest_id,
+        "backtest_id": str(backtest_id),
     })

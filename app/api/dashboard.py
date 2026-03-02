@@ -145,7 +145,7 @@ async def approve_earnings(
     user = getattr(request.state, "user", {})
     audit_log(
         "approve_earnings",
-        user_id=user.get("sub", "unknown") if isinstance(user, dict) else "unknown",
+        user_id=user.get("id", "unknown") if isinstance(user, dict) else "unknown",
         account_id=str(account.id),
         reserve_pct=body.reserve_pct,
         total_earnings=result["total_earnings"],

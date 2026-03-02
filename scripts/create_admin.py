@@ -6,6 +6,7 @@ Usage:
 """
 import argparse
 import asyncio
+import getpass
 import sys
 from pathlib import Path
 
@@ -29,7 +30,8 @@ async def main(email: str, password: str) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Create initial admin user")
     parser.add_argument("--email", required=True, help="Admin email address")
-    parser.add_argument("--password", required=True, help="Admin password (min 8 chars)")
+    parser.add_argument("--password", default=None, help="Admin password (prompted if omitted)")
     args = parser.parse_args()
 
-    asyncio.run(main(args.email, args.password))
+    password = args.password or getpass.getpass("Admin password (min 8 chars): ")
+    asyncio.run(main(args.email, password))

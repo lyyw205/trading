@@ -13,8 +13,8 @@ from app.models.user import UserProfile
 logger = logging.getLogger(__name__)
 
 # Brute-force protection constants
-MAX_FAILED_ATTEMPTS = 20
-LOCK_DURATION_MINUTES = 15
+MAX_FAILED_ATTEMPTS = 5
+LOCK_DURATION_MINUTES = 30
 
 # Pre-hashed dummy password for timing-attack prevention
 _DUMMY_HASH = bcrypt.hashpw(b"dummy-timing-safe", bcrypt.gensalt(rounds=12))

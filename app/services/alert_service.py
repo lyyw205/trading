@@ -16,7 +16,7 @@ from enum import StrEnum
 
 import httpx
 
-from app.config import GlobalConfig
+from app.config import GlobalConfig, get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ class AlertService:
     TELEGRAM_API = "https://api.telegram.org/bot{token}/sendMessage"
 
     def __init__(self, settings: GlobalConfig | None = None):
-        self._settings = settings or GlobalConfig()
+        self._settings = settings or get_settings()
         self._enabled = bool(
             self._settings.telegram_bot_token and self._settings.telegram_chat_id
         )

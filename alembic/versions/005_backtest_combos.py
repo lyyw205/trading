@@ -25,8 +25,8 @@ def upgrade() -> None:
     op.alter_column("backtest_runs", "strategies", nullable=True)
     op.alter_column("backtest_runs", "strategy_params", nullable=True)
 
-    # 3. Drop strategy_account_access table
-    op.drop_table("strategy_account_access")
+    # 3. Drop strategy_account_access table (may not exist on clean installs)
+    op.execute("DROP TABLE IF EXISTS strategy_account_access")
 
 
 def downgrade() -> None:

@@ -1,14 +1,16 @@
+import logging
+import secrets
+from functools import lru_cache
+
 from pydantic import model_validator
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_config_logger = logging.getLogger(__name__)
 
 
 class GlobalConfig(BaseSettings):
     # Database (트레이딩 엔진용 직접 연결)
     database_url: str = ""
-
-    # Initial Admin Bootstrap (최초 실행 시에만 사용)
-    initial_admin_email: str = ""
-    initial_admin_password: str = ""
 
     # Encryption (쉼표 구분 다중 키)
     encryption_keys: str = ""  # "key1,key2,key3"
@@ -41,7 +43,7 @@ class GlobalConfig(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_secrets(self):
-        """프로덕션 환경에서 필수 시크릿이 비어있으면 시작 차단."""
+        """프로덕션: 필수 시크릿 누락 시 시작 차단. 개발: 자동 생성 + 경고."""
         if self.environment == "production":
             if not self.session_secret_key:
                 raise ValueError("SESSION_SECRET_KEY must be set in production")
@@ -49,12 +51,26 @@ class GlobalConfig(BaseSettings):
                 raise ValueError("CSRF_SECRET must be set in production")
             if not self.encryption_keys:
                 raise ValueError("ENCRYPTION_KEYS must be set in production")
+        else:
+            if not self.session_secret_key:
+                self.session_secret_key = secrets.token_urlsafe(32)
+                _config_logger.warning("SESSION_SECRET_KEY auto-generated (non-production)")
+            if not self.csrf_secret:
+                self.csrf_secret = secrets.token_urlsafe(32)
+                _config_logger.warning("CSRF_SECRET auto-generated (non-production)")
+            if not self.encryption_keys:
+                self.encryption_keys = secrets.token_urlsafe(32)
+                _config_logger.warning("ENCRYPTION_KEYS auto-generated (non-production)")
         return self
 
     @property
     def encryption_key_list(self) -> list[str]:
         return [k.strip() for k in self.encryption_keys.split(",") if k.strip()]
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+
+
+@lru_cache
+def get_settings() -> GlobalConfig:
+    """Cached singleton for GlobalConfig."""
+    return GlobalConfig()

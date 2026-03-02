@@ -10,9 +10,9 @@ from pydantic import BaseModel, Field
 class BacktestComboConfig(BaseModel):
     name: str
     buy_logic_name: str
-    buy_params: dict[str, Any] = {}
+    buy_params: dict[str, Any] = Field(default_factory=dict)
     sell_logic_name: str
-    sell_params: dict[str, Any] = {}
+    sell_params: dict[str, Any] = Field(default_factory=dict)
     reference_combo_name: str | None = None
 
 
@@ -77,6 +77,7 @@ class BacktestReportResponse(BaseModel):
     trade_log: list[dict[str, Any]] | None = None
     equity_curve: list[dict[str, Any]] | None = None
     candles: list[dict[str, Any]] | None = None
+    pinned: bool = False
 
 
 class BacktestListItem(BaseModel):

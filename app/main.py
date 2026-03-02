@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import logging
 import os
+import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 
@@ -11,6 +12,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from slowapi.errors import RateLimitExceeded
+from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse
 from starlette_csrf import CSRFMiddleware
 
@@ -24,7 +26,7 @@ from app.api.dashboard import router as dashboard_router
 from app.api.debug import router as debug_router
 from app.api.health import router as health_router
 from app.api.metrics import router as metrics_router
-from app.config import GlobalConfig
+from app.config import get_settings
 from app.dashboard.routes import router as pages_router
 from app.db.session import TradingSessionLocal
 from app.dependencies import limiter
@@ -38,7 +40,7 @@ from app.services.trading_engine import TradingEngine
 from app.utils.encryption import EncryptionManager
 from app.utils.logging import setup_logging
 
-settings = GlobalConfig()
+settings = get_settings()
 
 # Constants
 MIN_THREAD_POOL_SIZE = 10
@@ -103,6 +105,11 @@ async def lifespan(app: FastAPI):
     session_manager = SessionManager(settings.session_secret_key)
     app.state.session_manager = session_manager
 
+    # Initialize alert service (Telegram)
+    from app.services.alert_service import AlertService
+    alert_service = AlertService(settings)
+    app.state.alert_service = alert_service
+
     # Initialize trading engine
     rate_limiter = GlobalRateLimiter(max_rate=settings.api_rate_limit)
     engine = TradingEngine(rate_limiter=rate_limiter, encryption=encryption)
@@ -118,21 +125,6 @@ async def lifespan(app: FastAPI):
 
     # Start candle aggregation background job
     aggregation_task = asyncio.create_task(run_aggregation_loop())
-
-    # Auto-bootstrap initial admin if configured and not yet created
-    if settings.initial_admin_email and settings.initial_admin_password:
-        try:
-            bootstrap_user = await auth_service.create_user(
-                email=settings.initial_admin_email,
-                password=settings.initial_admin_password,
-                role="admin",
-            )
-            logger.info("Initial admin created: %s", bootstrap_user["email"])
-        except ValueError as e:
-            if "이미 등록된" in str(e):
-                logger.debug("Initial admin already exists, skipping")
-            else:
-                logger.error("Failed to bootstrap admin: %s", e)
 
     # Clean up orphan RUNNING backtests from previous crashes
     try:
@@ -163,6 +155,7 @@ async def lifespan(app: FastAPI):
     for task in [engine_task, aggregation_task]:
         with contextlib.suppress(asyncio.CancelledError):
             await task
+    await alert_service.close()
     executor.shutdown(wait=True, cancel_futures=True)
     logger.info("Trading engine stopped")
 
@@ -212,15 +205,36 @@ app.add_middleware(
 # Note: AuthMiddleware is added after app creation but needs session_manager/auth_service
 # These are set in lifespan, so we use a lazy wrapper
 class LazyAuthMiddleware:
-    """Cookie session -> user injection middleware (로컬 인증 기반)."""
+    """Cookie session -> user injection middleware (로컬 인증 기반).
+
+    DB 검증: 쿠키 payload만 신뢰하지 않고 DB에서 최신 role/is_active를 확인.
+    TTL 60초 캐시로 매 요청마다 DB 조회하지 않음.
+    """
 
     # Exact-match public paths (no prefix matching)
     _PUBLIC_EXACT = {"/", "/health", "/login", "/api/auth/login", "/favicon.ico"}
     # Prefix-match public paths (trailing slash prevents overmatch)
     _PUBLIC_PREFIX = ("/static/", "/api/auth/")
+    _USER_CACHE_TTL = 60  # seconds
 
     def __init__(self, app):
         self.app = app
+        self._user_cache: dict[str, tuple[float, dict | None]] = {}
+
+    async def _validate_user_from_db(self, app_state, uid: str) -> dict | None:
+        """DB에서 사용자 조회 (TTL 캐시). 비활성/삭제 → None."""
+        now = time.time()
+        cached = self._user_cache.get(uid)
+        if cached and (now - cached[0]) < self._USER_CACHE_TTL:
+            return cached[1]
+
+        auth_service = getattr(app_state.state, "auth_service", None)
+        if not auth_service:
+            return None
+
+        db_user = await auth_service.get_user_by_id(uid)
+        self._user_cache[uid] = (now, db_user)
+        return db_user
 
     async def __call__(self, scope, receive, send):
         if scope["type"] not in ("http", "websocket"):
@@ -265,12 +279,20 @@ class LazyAuthMiddleware:
             await response(scope, receive, send)
             return
 
-        # session_data = {"uid": ..., "email": ..., "role": ...}
-        # Map uid → id for downstream compatibility
+        # DB validation: 최신 role/is_active 확인
+        uid = session_data["uid"]
+        db_user = await self._validate_user_from_db(app_state, uid)
+        if not db_user:
+            # 비활성/삭제된 사용자 → 강제 로그아웃
+            response = self._force_logout(path, session_manager)
+            await response(scope, receive, send)
+            return
+
+        # DB에서 가져온 최신 정보 사용 (쿠키의 role이 아닌 DB의 role)
         user = {
-            "id": session_data["uid"],
-            "email": session_data["email"],
-            "role": session_data.get("role", "user"),
+            "id": db_user["id"],
+            "email": db_user["email"],
+            "role": db_user["role"],
         }
 
         # Inject user into scope state
@@ -295,6 +317,47 @@ class LazyAuthMiddleware:
 
 app.add_middleware(LazyAuthMiddleware)
 app.add_middleware(RequestIdMiddleware)
+
+# CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[o.strip() for o in settings.cors_origins.split(",") if o.strip()],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# Security headers middleware
+class SecurityHeadersMiddleware:
+    """Add security headers to all responses."""
+
+    _HEADERS = [
+        (b"x-frame-options", b"DENY"),
+        (b"x-content-type-options", b"nosniff"),
+        (b"referrer-policy", b"strict-origin-when-cross-origin"),
+        (b"permissions-policy", b"camera=(), microphone=(), geolocation=()"),
+    ]
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_wrapper(message):
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers", []))
+                headers.extend(self._HEADERS)
+                message["headers"] = headers
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)
+
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 
 # No-cache middleware for HTML pages (prevents stale template serving)

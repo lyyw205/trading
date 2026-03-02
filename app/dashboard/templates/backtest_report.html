@@ -30,13 +30,6 @@
 .chart-tooltip .tt-row { display:contents; }
 .chart-tooltip .tt-key { color:var(--text-muted); }
 .chart-tooltip .tt-val { font-variant-numeric:tabular-nums; text-align:left; }
-/* Strategy params - category layout */
-.param-cat { margin-bottom: 0.75rem; }
-.param-cat:last-child { margin-bottom: 0; }
-.param-cat-label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--primary); margin-bottom: 0.35rem; padding-bottom: 0.2rem; border-bottom: 1px solid var(--border); }
-.param-row { display: flex; justify-content: space-between; align-items: center; padding: 0.25rem 0; font-size: 0.82rem; }
-.param-key { color: var(--text-muted, #848e9c); }
-.param-val { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text, #eaecef); }
 </style>
 <div class="page-header" style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap;">
   <div style="flex:1;">
@@ -151,11 +144,14 @@ async function loadBacktestReport(runId) {
     renderPriceChart(report);
     renderEquityCurve(report);
     renderTradeLog(report);
-    // Show pin button
+    // Show pin button with status from report data
     const pinBtn = document.getElementById('bt-pin-btn');
     if (pinBtn) {
       pinBtn.style.display = '';
-      checkPinStatus(runId);
+      if (report.pinned) {
+        _isPinned = true;
+        _updatePinUI();
+      }
     }
   } catch (e) {
     document.getElementById('bt-summary').innerHTML =
@@ -425,12 +421,16 @@ function renderPriceChart(report, tfMinutes) {
   _priceChart.timeScale().subscribeVisibleTimeRangeChange(scheduleOverlay);
   _priceChart.timeScale().subscribeVisibleLogicalRangeChange(scheduleOverlay);
 
-  window.addEventListener('resize', () => {
-    if (_priceChart) {
-      _priceChart.applyOptions({ width: container.clientWidth });
-      scheduleOverlay();
-    }
-  });
+  if (!window._btPriceResizeHandler) {
+    window._btPriceResizeHandler = () => {
+      if (_priceChart) {
+        const c = document.getElementById('bt-price-chart');
+        if (c) _priceChart.applyOptions({ width: c.clientWidth });
+        scheduleOverlay();
+      }
+    };
+    window.addEventListener('resize', window._btPriceResizeHandler);
+  }
 }
 
 let _tradeTooltip = null;
@@ -617,9 +617,13 @@ function renderEquityCurve(report) {
   lineSeries.setData(data);
   chart.timeScale().fitContent();
 
-  window.addEventListener('resize', () => {
-    chart.applyOptions({ width: container.clientWidth });
-  });
+  if (!window._btEquityResizeHandler) {
+    window._btEquityResizeHandler = () => {
+      const c = document.getElementById('bt-equity-chart');
+      if (c && chart) chart.applyOptions({ width: c.clientWidth });
+    };
+    window.addEventListener('resize', window._btEquityResizeHandler);
+  }
 }
 
 const TRADE_PAGE_SIZE = 50;
@@ -704,18 +708,6 @@ function fmtNum(val, decimals) {
 
 let _isPinned = false;
 
-async function checkPinStatus(runId) {
-  try {
-    const resp = await apiFetch('/api/backtest/list');
-    if (!resp.ok) return;
-    const runs = await resp.json();
-    const run = runs.find(r => r.id === runId);
-    if (run && run.pinned) {
-      _isPinned = true;
-      _updatePinUI();
-    }
-  } catch (e) {}
-}
 
 function _updatePinUI() {
   const btn = document.getElementById('bt-pin-btn');

@@ -6,6 +6,7 @@ from uuid import UUID
 
 from app.models.core_btc_history import CoreBtcHistory
 from app.strategies.base import BaseBuyLogic, RepositoryBundle, StrategyContext
+from app.strategies.constants import PENDING_KEYS
 from app.strategies.registry import BuyLogicRegistry
 from app.strategies.sizing import resolve_buy_usdt
 from app.strategies.utils import extract_base_commission_qty
@@ -19,14 +20,6 @@ logger = logging.getLogger(__name__)
 
 _PENDING_TIMEOUT_MS = 3 * 60 * 60 * 1000
 _ORDER_COOLDOWN_SEC = 5.0
-
-_PENDING_KEYS = (
-    "pending_order_id",
-    "pending_time_ms",
-    "pending_bucket_usdt",
-    "pending_kind",
-    "pending_trigger_price",
-)
 
 
 @BuyLogicRegistry.register
@@ -178,12 +171,12 @@ class LotStackingBuy(BaseBuyLogic):
                 ctx, state, order_data, account_state, repos, combo_id,
                 kind=pending_kind, core_bucket_locked=pending_bucket,
             )
-            await state.clear_keys(*_PENDING_KEYS)
+            await state.clear_keys(*PENDING_KEYS)
             return True
 
         if status in ("CANCELED", "REJECTED", "EXPIRED"):
             logger.info("lot_stacking_buy: pending buy order %s %s", order_id, status)
-            await state.clear_keys(*_PENDING_KEYS)
+            await state.clear_keys(*PENDING_KEYS)
             return True
 
         now_ms = int(self._now() * 1000)
@@ -194,7 +187,7 @@ class LotStackingBuy(BaseBuyLogic):
                 await repos.order.upsert_order(ctx.account_id, cancel_resp)
             except Exception as exc:
                 logger.error("lot_stacking_buy: cancel timed-out order %s failed: %s", order_id, exc)
-            await state.clear_keys(*_PENDING_KEYS)
+            await state.clear_keys(*PENDING_KEYS)
             return True
 
         if status == "NEW" and pending_kind == "LOT" and pending_trigger > 0:
@@ -210,7 +203,7 @@ class LotStackingBuy(BaseBuyLogic):
                     await repos.order.upsert_order(ctx.account_id, cancel_resp)
                 except Exception as exc:
                     logger.error("lot_stacking_buy: cancel rebound order %s failed: %s", order_id, exc)
-                await state.clear_keys(*_PENDING_KEYS)
+                await state.clear_keys(*PENDING_KEYS)
                 return True
 
         return True

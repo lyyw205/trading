@@ -33,20 +33,28 @@
 
 {% block scripts %}
 <script>
-async function loadOverviewData() {
-  await Promise.all([loadKPIs(), loadHealthTable()]);
-}
+let _overviewCache = null;
 
-async function loadKPIs() {
-  const el = document.getElementById('kpi-cards');
-  if (!el) return;
+async function loadOverviewData() {
   try {
     const [perfResp, overviewResp] = await Promise.all([
       apiFetch('/api/admin/performance'),
       apiFetch('/api/admin/overview'),
     ]);
     const perf = perfResp.ok ? await perfResp.json() : {};
-    const overview = overviewResp.ok ? await overviewResp.json() : {};
+    _overviewCache = overviewResp.ok ? await overviewResp.json() : {};
+    renderKPIs(perf, _overviewCache);
+    renderHealthTable(_overviewCache);
+  } catch (e) {
+    const el = document.getElementById('kpi-cards');
+    if (el) el.innerHTML = '<p class="error-text">Failed to load overview data</p>';
+  }
+}
+
+function renderKPIs(perf, overview) {
+  const el = document.getElementById('kpi-cards');
+  if (!el) return;
+  try {
 
     const cbTripped = perf.circuit_breaker_tripped || 0;
     el.innerHTML = `
@@ -104,13 +112,10 @@ async function loadKPIs() {
   }
 }
 
-async function loadHealthTable() {
+function renderHealthTable(data) {
   const el = document.getElementById('admin-health');
   if (!el) return;
   try {
-    const resp = await apiFetch('/api/admin/overview');
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const data = await resp.json();
     const health = data.account_health || {};
     const _hColors = ['var(--primary)', 'var(--success)', 'var(--info)', 'var(--warning)', 'var(--orange)', 'var(--danger)'];
 

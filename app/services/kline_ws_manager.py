@@ -86,6 +86,11 @@ class KlineWsManager:
                 self._subscriptions[symbol_lower] = count - 1
                 logger.debug("KlineWsManager: %s refcount -> %d", symbol, count - 1)
 
+    @property
+    def subscription_count(self) -> int:
+        """Number of active symbol subscriptions."""
+        return len(self._subscriptions)
+
     def get_latest_price(self, symbol: str) -> float | None:
         """Return the latest price from WebSocket stream, or None if unavailable."""
         return self._latest_prices.get(symbol.lower()) or self._latest_prices.get(symbol.upper())
@@ -247,22 +252,33 @@ class KlineWsManager:
                     quote_volume = float(k["q"])
                     trade_count = int(k["n"])
 
-                    async with TradingSessionLocal() as session:
-                        await store_closed_candle_1m(
-                            symbol=symbol_upper,
-                            ts_ms=ts_ms,
-                            open_=open_,
-                            high=high,
-                            low=low,
-                            close=close,
-                            volume=volume,
-                            quote_volume=quote_volume,
-                            trade_count=trade_count,
-                            session=session,
+                    # Fire-and-forget: don't block WS loop on DB commit
+                    asyncio.create_task(
+                        self._save_candle(
+                            symbol_upper, ts_ms, open_, high, low,
+                            close, volume, quote_volume, trade_count,
                         )
-                        await session.commit()
-                    logger.debug("KlineWsManager: stored 1m candle %s @ %d", symbol_upper, ts_ms)
+                    )
                 except Exception as e:
                     logger.error(
-                        "KlineWsManager: failed to store candle for %s: %s", symbol_upper, e
+                        "KlineWsManager: failed to parse candle for %s: %s", symbol_upper, e
                     )
+
+    async def _save_candle(
+        self, symbol: str, ts_ms: int,
+        open_: float, high: float, low: float, close: float,
+        volume: float, quote_volume: float, trade_count: int,
+    ) -> None:
+        """Save a closed candle to DB (fire-and-forget from WS loop)."""
+        try:
+            async with TradingSessionLocal() as session:
+                await store_closed_candle_1m(
+                    symbol=symbol, ts_ms=ts_ms,
+                    open_=open_, high=high, low=low, close=close,
+                    volume=volume, quote_volume=quote_volume,
+                    trade_count=trade_count, session=session,
+                )
+                await session.commit()
+            logger.debug("KlineWsManager: stored 1m candle %s @ %d", symbol, ts_ms)
+        except Exception as e:
+            logger.error("KlineWsManager: failed to store candle for %s: %s", symbol, e)

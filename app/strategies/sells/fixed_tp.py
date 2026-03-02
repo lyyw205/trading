@@ -108,16 +108,26 @@ class FixedTpSell(BaseSellLogic):
         target_price: float,
         base_mode: str,
     ) -> None:
-        try:
-            sell_order_data = await exchange.get_order(lot.sell_order_id, ctx.symbol)
-        except Exception as exc:
-            logger.error(
-                "fixed_tp: failed to get sell order %s for lot %s: %s",
-                lot.sell_order_id, lot.lot_id, exc,
-            )
-            return
-
-        await repos.order.upsert_order(ctx.account_id, sell_order_data)
+        # Use DB data first (_sync_orders_and_fills already synced), fallback to API
+        db_order = await repos.order.get_order(ctx.account_id, lot.sell_order_id)
+        if db_order:
+            sell_order_data = {
+                "orderId": db_order.order_id,
+                "status": db_order.status,
+                "executedQty": str(db_order.executed_qty or 0),
+                "cummulativeQuoteQty": str(db_order.cumulative_quote_qty or 0),
+                "updateTime": db_order.update_time_ms or 0,
+            }
+        else:
+            try:
+                sell_order_data = await exchange.get_order(lot.sell_order_id, ctx.symbol)
+                await repos.order.upsert_order(ctx.account_id, sell_order_data)
+            except Exception as exc:
+                logger.error(
+                    "fixed_tp: failed to get sell order %s for lot %s: %s",
+                    lot.sell_order_id, lot.lot_id, exc,
+                )
+                return
         sell_status = str(sell_order_data.get("status", "")).upper()
 
         if sell_status == "FILLED":
