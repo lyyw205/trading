@@ -1,12 +1,15 @@
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
-from sqlalchemy import BigInteger, ForeignKey, Index, Numeric, String, func
+from sqlalchemy import BigInteger, CheckConstraint, ForeignKey, Index, Numeric, String, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+
+LOT_STATUSES = ("OPEN", "CLOSED")
 
 
 class Lot(Base):
@@ -15,6 +18,7 @@ class Lot(Base):
         Index("idx_lots_open", "account_id", "symbol", "status"),
         Index("idx_lots_strategy", "account_id", "strategy_name", "status"),
         Index("idx_lots_combo", "account_id", "combo_id", "status"),
+        CheckConstraint(f"status IN {LOT_STATUSES!r}", name="chk_lot_status"),
     )
 
     lot_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -24,21 +28,24 @@ class Lot(Base):
     symbol: Mapped[str] = mapped_column(String, nullable=False)
     strategy_name: Mapped[str] = mapped_column(String, nullable=False, server_default="lot_stacking")
     buy_order_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    buy_price: Mapped[float] = mapped_column(Numeric, nullable=False)
-    buy_qty: Mapped[float] = mapped_column(Numeric, nullable=False)
+    buy_price: Mapped[Decimal] = mapped_column(Numeric, nullable=False)
+    buy_qty: Mapped[Decimal] = mapped_column(Numeric, nullable=False)
     buy_time: Mapped[datetime] = mapped_column(server_default=func.now())
     buy_time_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     status: Mapped[str] = mapped_column(String, server_default="OPEN")
     sell_order_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     sell_order_time_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    sell_price: Mapped[float | None] = mapped_column(Numeric, nullable=True)
+    sell_price: Mapped[Decimal | None] = mapped_column(Numeric, nullable=True)
     sell_time: Mapped[datetime | None] = mapped_column(nullable=True)
     sell_time_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    fee_usdt: Mapped[float | None] = mapped_column(Numeric, nullable=True)
-    net_profit_usdt: Mapped[float | None] = mapped_column(Numeric, nullable=True)
+    fee_usdt: Mapped[Decimal | None] = mapped_column(Numeric, nullable=True)
+    net_profit_usdt: Mapped[Decimal | None] = mapped_column(Numeric, nullable=True)
     combo_id: Mapped[uuid.UUID | None] = mapped_column(
         PG_UUID(as_uuid=True), ForeignKey("trading_combos.id"), nullable=True
     )
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB, server_default="{}")
 
     account = relationship("TradingAccount", back_populates="lots")
+
+    def __repr__(self) -> str:
+        return f"<Lot lot_id={self.lot_id} account={self.account_id} status={self.status!r} buy_price={self.buy_price}>"

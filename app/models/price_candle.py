@@ -1,85 +1,39 @@
-from datetime import datetime
+from sqlalchemy import Index
 
-from sqlalchemy import BigInteger, Index, Integer, Numeric, String, func
-from sqlalchemy.orm import Mapped, mapped_column
-
-from app.models.base import Base
+from app.models.base import Base, PriceCandleMixin, UpdatedAtMixin
 
 
-class PriceCandle5m(Base):
+class PriceCandle5m(PriceCandleMixin, UpdatedAtMixin, Base):
+    """5-minute candles — upserted from real-time price feed."""
+
     __tablename__ = "price_candles_5m"
     __table_args__ = (
         Index("idx_price_candles_5m_symbol_ts", "symbol", "ts_ms", unique=True),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    symbol: Mapped[str] = mapped_column(String, nullable=False)
-    ts_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    open: Mapped[float] = mapped_column(Numeric, nullable=False)
-    high: Mapped[float] = mapped_column(Numeric, nullable=False)
-    low: Mapped[float] = mapped_column(Numeric, nullable=False)
-    close: Mapped[float] = mapped_column(Numeric, nullable=False)
-    volume: Mapped[float] = mapped_column(Numeric, nullable=False, server_default="0")
-    quote_volume: Mapped[float] = mapped_column(Numeric, nullable=False, server_default="0")
-    trade_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        server_default=func.now(), onupdate=func.now()
-    )
 
+class PriceCandle1m(PriceCandleMixin, Base):
+    """1-minute candles — write-once from kline WebSocket."""
 
-class PriceCandle1m(Base):
     __tablename__ = "price_candles_1m"
     __table_args__ = (
         Index("idx_price_candles_1m_symbol_ts", "symbol", "ts_ms", unique=True),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    symbol: Mapped[str] = mapped_column(String, nullable=False)
-    ts_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    open: Mapped[float] = mapped_column(Numeric, nullable=False)
-    high: Mapped[float] = mapped_column(Numeric, nullable=False)
-    low: Mapped[float] = mapped_column(Numeric, nullable=False)
-    close: Mapped[float] = mapped_column(Numeric, nullable=False)
-    volume: Mapped[float] = mapped_column(Numeric, nullable=False, server_default="0")
-    quote_volume: Mapped[float] = mapped_column(Numeric, nullable=False, server_default="0")
-    trade_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
+class PriceCandle1h(PriceCandleMixin, Base):
+    """1-hour candles — aggregated from 5m candles."""
 
-class PriceCandle1h(Base):
     __tablename__ = "price_candles_1h"
     __table_args__ = (
         Index("idx_price_candles_1h_symbol_ts", "symbol", "ts_ms", unique=True),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    symbol: Mapped[str] = mapped_column(String, nullable=False)
-    ts_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    open: Mapped[float] = mapped_column(Numeric, nullable=False)
-    high: Mapped[float] = mapped_column(Numeric, nullable=False)
-    low: Mapped[float] = mapped_column(Numeric, nullable=False)
-    close: Mapped[float] = mapped_column(Numeric, nullable=False)
-    volume: Mapped[float] = mapped_column(Numeric, nullable=False, server_default="0")
-    quote_volume: Mapped[float] = mapped_column(Numeric, nullable=False, server_default="0")
-    trade_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
+class PriceCandle1d(PriceCandleMixin, Base):
+    """1-day candles — aggregated from 1h candles."""
 
-class PriceCandle1d(Base):
     __tablename__ = "price_candles_1d"
     __table_args__ = (
         Index("idx_price_candles_1d_symbol_ts", "symbol", "ts_ms", unique=True),
     )
-
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    symbol: Mapped[str] = mapped_column(String, nullable=False)
-    ts_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    open: Mapped[float] = mapped_column(Numeric, nullable=False)
-    high: Mapped[float] = mapped_column(Numeric, nullable=False)
-    low: Mapped[float] = mapped_column(Numeric, nullable=False)
-    close: Mapped[float] = mapped_column(Numeric, nullable=False)
-    volume: Mapped[float] = mapped_column(Numeric, nullable=False, server_default="0")
-    quote_volume: Mapped[float] = mapped_column(Numeric, nullable=False, server_default="0")
-    trade_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())

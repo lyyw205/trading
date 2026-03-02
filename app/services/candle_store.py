@@ -126,7 +126,9 @@ async def aggregate_candles(
     if not source_model or not target_model or not bucket_ms:
         raise ValueError(f"Invalid interval pair: {source_interval} -> {target_interval}")
 
-    # Use raw SQL for proper OHLCV aggregation with first/last open/close
+    # SAFETY: table names are statically resolved from _TABLE_MAP — no user input
+    # reaches here. Parameterized queries cannot substitute table/column identifiers,
+    # so format-string is the standard approach for dynamic table names in SQLAlchemy.
     raw_sql = text(f"""
         INSERT INTO {target_model.__tablename__} (symbol, ts_ms, "open", high, low, "close", volume, quote_volume, trade_count)
         SELECT

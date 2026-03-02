@@ -20,13 +20,16 @@ from app.models.position import Position
 from app.models.trading_combo import TradingCombo
 from app.models.user import UserProfile
 from app.schemas.account import AccountResponse
+from app.schemas.auth import CreateUserRequest, ResetPasswordRequest, SetActiveRequest, SetRoleRequest
 from app.schemas.trade import OrderResponse
+from app.strategies.registry import BuyLogicRegistry, SellLogicRegistry
 from app.utils.logging import audit_log
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
 @router.get("/accounts")
+@limiter.limit("60/minute")
 async def admin_list_accounts(request: Request, admin: dict = Depends(require_admin), session: AsyncSession = Depends(get_trading_session)):
     repo = AccountRepository(session)
     accounts = await repo.get_active_accounts()
@@ -39,7 +42,8 @@ async def admin_list_accounts(request: Request, admin: dict = Depends(require_ad
 
 
 @router.get("/users")
-async def admin_list_users(admin: dict = Depends(require_admin), session: AsyncSession = Depends(get_trading_session)):
+@limiter.limit("60/minute")
+async def admin_list_users(request: Request, admin: dict = Depends(require_admin), session: AsyncSession = Depends(get_trading_session)):
     account_count_sq = (
         select(TradingAccount.owner_id, sa_func.count().label("account_count"))
         .group_by(TradingAccount.owner_id)
@@ -56,11 +60,11 @@ async def admin_list_users(admin: dict = Depends(require_admin), session: AsyncS
 
 
 @router.get("/overview")
+@limiter.limit("60/minute")
 async def admin_overview(request: Request, admin: dict = Depends(require_admin), session: AsyncSession = Depends(get_trading_session)):
     engine = request.app.state.trading_engine
-    stmt_users = select(UserProfile)
-    result_users = await session.execute(stmt_users)
-    total_users = len(result_users.scalars().all())
+    total_users_result = await session.execute(select(sa_func.count(UserProfile.id)))
+    total_users = total_users_result.scalar() or 0
     repo = AccountRepository(session)
     all_accounts = await repo.get_active_accounts()
     return {
@@ -72,11 +76,9 @@ async def admin_overview(request: Request, admin: dict = Depends(require_admin),
 
 
 @router.put("/users/{user_id}/role")
-async def admin_set_role(user_id: str, request: Request, admin: dict = Depends(require_admin), session: AsyncSession = Depends(get_trading_session)):
-    body = await request.json()
-    role = body.get("role", "user")
-    if role not in ("admin", "user"):
-        raise HTTPException(status_code=400, detail="Invalid role")
+@limiter.limit("30/minute")
+async def admin_set_role(user_id: str, body: SetRoleRequest, request: Request, admin: dict = Depends(require_admin), session: AsyncSession = Depends(get_trading_session)):
+    role = body.role
     stmt = select(UserProfile).where(UserProfile.id == UUID(user_id))
     result = await session.execute(stmt)
     user = result.scalar_one_or_none()
@@ -91,15 +93,8 @@ async def admin_set_role(user_id: str, request: Request, admin: dict = Depends(r
 
 @router.post("/users")
 @limiter.limit("10/minute")
-async def admin_create_user(request: Request, admin: dict = Depends(require_admin)):
+async def admin_create_user(req: CreateUserRequest, request: Request, admin: dict = Depends(require_admin)):
     """관리자: 새 사용자 생성"""
-    from app.schemas.auth import CreateUserRequest
-    body = await request.json()
-    try:
-        req = CreateUserRequest(**body)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
     auth_service = request.app.state.auth_service
     try:
         new_user = await auth_service.create_user(req.email, req.password, req.role)
@@ -114,15 +109,8 @@ async def admin_create_user(request: Request, admin: dict = Depends(require_admi
 
 @router.post("/users/{user_id}/reset-password")
 @limiter.limit("10/minute")
-async def admin_reset_password(user_id: str, request: Request, admin: dict = Depends(require_admin)):
+async def admin_reset_password(user_id: str, req: ResetPasswordRequest, request: Request, admin: dict = Depends(require_admin)):
     """관리자: 사용자 비밀번호 초기화"""
-    from app.schemas.auth import ResetPasswordRequest
-    body = await request.json()
-    try:
-        req = ResetPasswordRequest(**body)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
     auth_service = request.app.state.auth_service
     try:
         success = await auth_service.reset_password(user_id, req.new_password)
@@ -138,15 +126,8 @@ async def admin_reset_password(user_id: str, request: Request, admin: dict = Dep
 
 @router.put("/users/{user_id}/active")
 @limiter.limit("10/minute")
-async def admin_set_active(user_id: str, request: Request, admin: dict = Depends(require_admin)):
+async def admin_set_active(user_id: str, req: SetActiveRequest, request: Request, admin: dict = Depends(require_admin)):
     """관리자: 계정 활성/비활성화"""
-    from app.schemas.auth import SetActiveRequest
-    body = await request.json()
-    try:
-        req = SetActiveRequest(**body)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
     auth_service = request.app.state.auth_service
     success = await auth_service.set_user_active(user_id, req.is_active)
     if not success:
@@ -157,6 +138,7 @@ async def admin_set_active(user_id: str, request: Request, admin: dict = Depends
 
 
 @router.get("/performance")
+@limiter.limit("60/minute")
 async def admin_performance(
     request: Request,
     admin: dict = Depends(require_admin),
@@ -212,6 +194,7 @@ async def admin_performance(
 
 
 @router.get("/trades")
+@limiter.limit("60/minute")
 async def admin_list_trades(
     request: Request,
     admin: dict = Depends(require_admin),
@@ -257,7 +240,9 @@ async def admin_list_trades(
 #  Lots — cross-account
 # ============================================================
 @router.get("/lots")
+@limiter.limit("60/minute")
 async def admin_list_lots(
+    request: Request,
     admin: dict = Depends(require_admin),
     session: AsyncSession = Depends(get_trading_session),
     status: str | None = Query(default=None),
@@ -278,7 +263,10 @@ async def admin_list_lots(
         stmt = stmt.where(Lot.status == status.upper())
         count_stmt = count_stmt.where(Lot.status == status.upper())
     if account_id:
-        uid = UUID(account_id)
+        try:
+            uid = UUID(account_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid account_id")
         stmt = stmt.where(Lot.account_id == uid)
         count_stmt = count_stmt.where(Lot.account_id == uid)
     if strategy:
@@ -317,13 +305,13 @@ async def admin_list_lots(
 #  Strategy Catalog
 # ============================================================
 @router.get("/strategies")
+@limiter.limit("60/minute")
 async def admin_list_strategies(
+    request: Request,
     admin: dict = Depends(require_admin),
     session: AsyncSession = Depends(get_trading_session),
 ):
     """List all registered buy/sell strategies with adoption counts."""
-    from app.strategies.registry import BuyLogicRegistry, SellLogicRegistry
-
     # Count combos per buy/sell logic name
     buy_counts_stmt = (
         select(TradingCombo.buy_logic_name, sa_func.count().label("cnt"))
@@ -353,7 +341,9 @@ async def admin_list_strategies(
 #  Combos / Strategies — cross-account
 # ============================================================
 @router.get("/combos")
+@limiter.limit("60/minute")
 async def admin_list_combos(
+    request: Request,
     admin: dict = Depends(require_admin),
     session: AsyncSession = Depends(get_trading_session),
     account_id: str | None = Query(default=None),
@@ -389,7 +379,11 @@ async def admin_list_combos(
     )
 
     if account_id:
-        stmt = stmt.where(TradingCombo.account_id == UUID(account_id))
+        try:
+            uid = UUID(account_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid account_id")
+        stmt = stmt.where(TradingCombo.account_id == uid)
     if enabled == "true":
         stmt = stmt.where(TradingCombo.is_enabled.is_(True))
     elif enabled == "false":
@@ -417,7 +411,9 @@ async def admin_list_combos(
 #  Positions — cross-account
 # ============================================================
 @router.get("/positions")
+@limiter.limit("60/minute")
 async def admin_list_positions(
+    request: Request,
     admin: dict = Depends(require_admin),
     session: AsyncSession = Depends(get_trading_session),
     account_id: str | None = Query(default=None),
@@ -429,7 +425,11 @@ async def admin_list_positions(
         .order_by(TradingAccount.name, Position.symbol)
     )
     if account_id:
-        stmt = stmt.where(Position.account_id == UUID(account_id))
+        try:
+            uid = UUID(account_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid account_id")
+        stmt = stmt.where(Position.account_id == uid)
 
     result = await session.execute(stmt)
     rows = result.all()
@@ -449,7 +449,9 @@ async def admin_list_positions(
 #  Earnings / Reserve history — cross-account
 # ============================================================
 @router.get("/earnings")
+@limiter.limit("60/minute")
 async def admin_list_earnings(
+    request: Request,
     admin: dict = Depends(require_admin),
     session: AsyncSession = Depends(get_trading_session),
     account_id: str | None = Query(default=None),
@@ -476,7 +478,10 @@ async def admin_list_earnings(
     count_stmt = select(sa_func.count(CoreBtcHistory.id))
 
     if account_id:
-        uid = UUID(account_id)
+        try:
+            uid = UUID(account_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid account_id")
         hist_stmt = hist_stmt.where(CoreBtcHistory.account_id == uid)
         count_stmt = count_stmt.where(CoreBtcHistory.account_id == uid)
 
@@ -511,7 +516,9 @@ async def admin_list_earnings(
 #  Fills — cross-account audit trail
 # ============================================================
 @router.get("/fills")
+@limiter.limit("60/minute")
 async def admin_list_fills(
+    request: Request,
     admin: dict = Depends(require_admin),
     session: AsyncSession = Depends(get_trading_session),
     account_id: str | None = Query(default=None),
@@ -528,7 +535,10 @@ async def admin_list_fills(
     count_stmt = select(sa_func.count(Fill.trade_id))
 
     if account_id:
-        uid = UUID(account_id)
+        try:
+            uid = UUID(account_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid account_id")
         stmt = stmt.where(Fill.account_id == uid)
         count_stmt = count_stmt.where(Fill.account_id == uid)
     if side:
@@ -565,6 +575,7 @@ async def admin_list_fills(
 #  System Health — consolidated monitoring
 # ============================================================
 @router.get("/system-health")
+@limiter.limit("30/minute")
 async def admin_system_health(
     request: Request,
     admin: dict = Depends(require_admin),
@@ -624,25 +635,25 @@ async def admin_system_health(
 
     # --- WebSocket status ---
     engine = request.app.state.trading_engine
-    ws = engine._kline_ws
-    ws_status = {
-        "healthy": ws.is_healthy() if hasattr(ws, "is_healthy") else None,
-        "subscriptions": len(getattr(ws, "_subscriptions", {})),
-    }
+    ws_status = engine.get_ws_status()
 
     # --- Trading engine ---
     engine_status = {
         "active_accounts": engine.active_account_count,
-        "total_traders": len(engine._traders),
+        "total_traders": engine.active_account_count,
     }
 
     # --- Candle counts ---
+    _CANDLE_TABLES = {
+        "price_candles_1m": text("SELECT symbol, count(*) FROM price_candles_1m GROUP BY symbol ORDER BY symbol"),
+        "price_candles_5m": text("SELECT symbol, count(*) FROM price_candles_5m GROUP BY symbol ORDER BY symbol"),
+        "price_candles_1h": text("SELECT symbol, count(*) FROM price_candles_1h GROUP BY symbol ORDER BY symbol"),
+        "price_candles_1d": text("SELECT symbol, count(*) FROM price_candles_1d GROUP BY symbol ORDER BY symbol"),
+    }
     candle_stats = []
-    for table_name in ("price_candles_1m", "price_candles_5m", "price_candles_1h", "price_candles_1d"):
+    for table_name, stmt in _CANDLE_TABLES.items():
         try:
-            result = await session.execute(
-                text(f"SELECT symbol, count(*) FROM {table_name} GROUP BY symbol ORDER BY symbol")  # noqa: S608
-            )
+            result = await session.execute(stmt)
             for row in result.fetchall():
                 candle_stats.append({"table": table_name, "symbol": row[0], "count": row[1]})
         except Exception:

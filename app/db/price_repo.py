@@ -54,7 +54,7 @@ async def get_candles(
     to_ts_ms: int,
     session: AsyncSession,
     interval: str = "5m",
-) -> list:
+) -> list[PriceCandle1m | PriceCandle5m | PriceCandle1h | PriceCandle1d]:
     """Return candles for symbol in [from_ts_ms, to_ts_ms] ordered by ts_ms.
 
     Supports intervals: '1m', '5m', '1h', '1d'. Default '5m' for backward compat.

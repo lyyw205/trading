@@ -42,6 +42,7 @@ class AlertService:
         self._send_times: deque[float] = deque(maxlen=self._rate_limit)
         self._consecutive_failures = 0
         self._max_failures = 5  # circuit breaker for Telegram API itself
+        self._client = httpx.AsyncClient(timeout=5.0)
 
     @property
     def is_enabled(self) -> bool:
@@ -102,20 +103,18 @@ class AlertService:
             "parse_mode": "HTML",
         }
 
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.post(url, json=payload)
-            if response.status_code == 200:
-                self._consecutive_failures = 0  # reset on success
-                self._send_times.append(time.monotonic())
-                return True
-            else:
-                logger.warning(
-                    "Telegram API returned %d: %s",
-                    response.status_code,
-                    response.text[:100],
-                )
-                self._consecutive_failures += 1
-                return False
+        response = await self._client.post(url, json=payload)
+        if response.status_code == 200:
+            self._consecutive_failures = 0  # reset on success
+            self._send_times.append(time.monotonic())
+            return True
+        logger.warning(
+            "Telegram API returned %d: %s",
+            response.status_code,
+            response.text[:100],
+        )
+        self._consecutive_failures += 1
+        return False
 
     def _check_rate_limit(self) -> bool:
         """Check if we're within the rate limit window."""
@@ -124,6 +123,10 @@ class AlertService:
         while self._send_times and now - self._send_times[0] > 3600:
             self._send_times.popleft()
         return len(self._send_times) < self._rate_limit
+
+    async def close(self) -> None:
+        """Close the shared HTTP client."""
+        await self._client.aclose()
 
     def reset_circuit_breaker(self) -> None:
         """Manual reset of the alert circuit breaker."""

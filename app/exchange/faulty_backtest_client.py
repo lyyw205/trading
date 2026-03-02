@@ -42,30 +42,32 @@ class FaultyBacktestClient(BacktestClient):
         return await super().get_price(symbol)
 
     async def place_limit_buy_by_quote(
-        self, quote_usdt, price, symbol, client_oid=None
-    ):
+        self, quote_usdt: float, price: float, symbol: str, client_oid: str | None = None,
+    ) -> dict:
         self._check_failure("place_limit_buy_by_quote")
         return await super().place_limit_buy_by_quote(
             quote_usdt, price, symbol, client_oid
         )
 
-    async def place_limit_sell(self, qty_base, price, symbol, client_oid=None):
+    async def place_limit_sell(
+        self, qty_base: float, price: float, symbol: str, client_oid: str | None = None,
+    ) -> dict:
         self._check_failure("place_limit_sell")
         return await super().place_limit_sell(qty_base, price, symbol, client_oid)
 
-    async def get_open_orders(self, symbol: str):
+    async def get_open_orders(self, symbol: str) -> list[dict]:
         self._check_failure("get_open_orders")
         return await super().get_open_orders(symbol)
 
-    async def get_order(self, order_id: int, symbol: str):
+    async def get_order(self, order_id: int, symbol: str) -> dict:
         self._check_failure("get_order")
         return await super().get_order(order_id, symbol)
 
-    async def get_balance(self, asset: str):
+    async def get_balance(self, asset: str) -> dict:
         self._check_failure("get_balance")
         return await super().get_balance(asset)
 
-    async def get_free_balance(self, asset: str):
+    async def get_free_balance(self, asset: str) -> float:
         self._check_failure("get_free_balance")
         return await super().get_free_balance(asset)
 

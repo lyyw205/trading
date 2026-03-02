@@ -96,6 +96,7 @@ async def update_account(
     session: AsyncSession = Depends(get_trading_session),
 ):
     encryption: EncryptionManager = request.app.state.encryption
+    _ALLOWED_UPDATE_FIELDS = {"name", "symbol", "base_asset", "quote_asset", "loop_interval_sec", "order_cooldown_sec", "is_active"}
     for field, val in body.model_dump(exclude_unset=True).items():
         if field == "api_key" and val:
             account.api_key_encrypted = encryption.encrypt(val)
@@ -105,7 +106,7 @@ async def update_account(
             if user.get("role") != "admin":
                 raise HTTPException(status_code=403, detail="Only admin can change owner")
             account.owner_id = val
-        elif hasattr(account, field):
+        elif field in _ALLOWED_UPDATE_FIELDS:
             setattr(account, field, val)
     await session.commit()
 

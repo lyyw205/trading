@@ -48,9 +48,9 @@
   </div>
 
   <div class="pagination" id="earnings-pagination" style="display:none;">
-    <button class="btn btn-outline btn-sm" id="earnings-prev" onclick="changePage(-1)">Prev</button>
+    <button class="btn btn-outline btn-sm" id="earnings-prev" onclick="changeEarningsPage(-1)">Prev</button>
     <span id="earnings-page-info" class="text-muted" style="font-size:0.85rem;"></span>
-    <button class="btn btn-outline btn-sm" id="earnings-next" onclick="changePage(1)">Next</button>
+    <button class="btn btn-outline btn-sm" id="earnings-next" onclick="changeEarningsPage(1)">Next</button>
   </div>
 </section>
 {% endblock %}
@@ -61,21 +61,6 @@ let _earningsPage = 0;
 const _earningsLimit = 100;
 
 function resetAndLoad() { _earningsPage = 0; loadEarnings(); }
-
-async function loadAccountOptions() {
-  try {
-    const resp = await apiFetch('/api/admin/accounts');
-    if (!resp.ok) return;
-    const accounts = await resp.json();
-    const sel = document.getElementById('filter-account');
-    accounts.forEach(a => {
-      const opt = document.createElement('option');
-      opt.value = a.id;
-      opt.textContent = a.name || a.id;
-      sel.appendChild(opt);
-    });
-  } catch (e) {}
-}
 
 async function loadEarnings() {
   const tbody = document.getElementById('earnings-tbody');
@@ -146,7 +131,7 @@ async function loadEarnings() {
   }
 }
 
-function changePage(delta) {
+function changeEarningsPage(delta) {
   _earningsPage += delta;
   if (_earningsPage < 0) _earningsPage = 0;
   loadEarnings();

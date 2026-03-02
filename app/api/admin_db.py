@@ -10,13 +10,11 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import GlobalConfig
 from app.db.session import engine_trading, get_trading_session
 from app.dependencies import require_admin
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 logger = logging.getLogger(__name__)
-settings = GlobalConfig()
 
 
 @router.get("/db-health")

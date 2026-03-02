@@ -1,20 +1,21 @@
 import enum
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
-from sqlalchemy import Boolean, ForeignKey, Integer, Numeric, String, func
+from sqlalchemy import Boolean, ForeignKey, Integer, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.models.base import Base
+from app.models.base import Base, TimestampMixin
 
 
-class BuyPauseState(str, enum.Enum):
+class BuyPauseState(enum.StrEnum):
     ACTIVE = "ACTIVE"
     THROTTLED = "THROTTLED"
     PAUSED = "PAUSED"
 
 
-class TradingAccount(Base):
+class TradingAccount(TimestampMixin, Base):
     __tablename__ = "trading_accounts"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
@@ -39,15 +40,11 @@ class TradingAccount(Base):
     buy_pause_reason: Mapped[str | None] = mapped_column(String(50), nullable=True)
     buy_pause_since: Mapped[datetime | None] = mapped_column(nullable=True)
     consecutive_low_balance: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
-    pending_earnings_usdt: Mapped[float] = mapped_column(
+    pending_earnings_usdt: Mapped[Decimal] = mapped_column(
         Numeric, nullable=False, server_default="0"
     )
     loop_interval_sec: Mapped[int] = mapped_column(Integer, nullable=False, server_default="60")
     order_cooldown_sec: Mapped[int] = mapped_column(Integer, nullable=False, server_default="7")
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        server_default=func.now(), onupdate=func.now()
-    )
 
     owner = relationship("UserProfile", back_populates="accounts")
     strategy_configs = relationship("StrategyConfig", back_populates="account", cascade="all, delete-orphan")
@@ -57,3 +54,6 @@ class TradingAccount(Base):
     lots = relationship("Lot", back_populates="account", cascade="all, delete-orphan")
     positions = relationship("Position", back_populates="account", cascade="all, delete-orphan")
     trading_combos = relationship("TradingCombo", back_populates="account", cascade="all, delete-orphan")
+
+    def __repr__(self) -> str:
+        return f"<TradingAccount id={self.id} name={self.name!r} symbol={self.symbol!r} active={self.is_active}>"

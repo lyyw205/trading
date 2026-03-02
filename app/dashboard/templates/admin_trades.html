@@ -57,9 +57,9 @@
 
   <!-- Pagination -->
   <div class="pagination" id="trades-pagination" style="display:none;">
-    <button class="btn btn-outline btn-sm" id="trades-prev" onclick="changePage(-1)">Prev</button>
+    <button class="btn btn-outline btn-sm" id="trades-prev" onclick="changeTradesPage(-1)">Prev</button>
     <span id="trades-page-info" class="text-muted" style="font-size:0.85rem;"></span>
-    <button class="btn btn-outline btn-sm" id="trades-next" onclick="changePage(1)">Next</button>
+    <button class="btn btn-outline btn-sm" id="trades-next" onclick="changeTradesPage(1)">Next</button>
   </div>
 </section>
 {% endblock %}
@@ -71,22 +71,6 @@ let _tradesPage = 0;
 const _tradesLimit = 100;
 let _tradesTotal = 0;
 let _accountsMap = {};
-
-async function loadAccountOptions() {
-  try {
-    const resp = await apiFetch('/api/admin/accounts');
-    if (!resp.ok) return;
-    const accounts = await resp.json();
-    const sel = document.getElementById('trade-filter-account');
-    accounts.forEach(a => {
-      _accountsMap[a.id] = a.name || a.id;
-      const opt = document.createElement('option');
-      opt.value = a.id;
-      opt.textContent = a.name || a.id;
-      sel.appendChild(opt);
-    });
-  } catch (e) {}
-}
 
 async function loadTrades() {
   const tbody = document.getElementById('trades-tbody');
@@ -144,7 +128,7 @@ async function loadTrades() {
   }
 }
 
-function changePage(delta) {
+function changeTradesPage(delta) {
   _tradesPage += delta;
   if (_tradesPage < 0) _tradesPage = 0;
   loadTrades();
@@ -175,7 +159,9 @@ function exportTradesCSV() {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-  await loadAccountOptions();
+  await loadAccountOptions('trade-filter-account', accounts => {
+    accounts.forEach(a => { _accountsMap[a.id] = a.name || a.id; });
+  });
   loadTrades();
 });
 </script>

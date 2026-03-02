@@ -130,9 +130,9 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="https://unpkg.com/lightweight-charts@4/dist/lightweight-charts.standalone.production.js"></script>
+<script src="https://unpkg.com/lightweight-charts@4/dist/lightweight-charts.standalone.production.js" integrity="sha384-8gW8l6f140H19LkFlnwAyin0xRbNRU9ifnniXwViGWpODYCeSOPUv53r5xmh69GL" crossorigin="anonymous"></script>
 <script>
-const BACKTEST_ID = '{{ backtest_id }}';
+const BACKTEST_ID = {{ backtest_id | tojson }};
 
 document.addEventListener('DOMContentLoaded', () => {
   loadBacktestReport(BACKTEST_ID);

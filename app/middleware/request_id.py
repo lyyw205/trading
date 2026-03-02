@@ -17,7 +17,8 @@ class RequestIdMiddleware:
 
         # Extract from incoming header or generate new
         headers = dict(scope.get("headers", []))
-        request_id = headers.get(b"x-request-id", b"").decode() or uuid4().hex[:12]
+        raw_id = headers.get(b"x-request-id", b"").decode()
+        request_id = raw_id[:64] if raw_id else uuid4().hex[:12]
 
         token = current_request_id.set(request_id)
 

@@ -52,8 +52,8 @@ class AccountResponse(BaseModel):
     updated_at: datetime
     circuit_breaker_tripped: bool = False
     owner_id: UUID
-    owner_email: str | None = None
-    combo_symbols: list[str] = []
+    owner_email: str | None = None  # Computed: joined from UserProfile.email
+    combo_symbols: list[str] = []  # Computed: aggregated from TradingCombo.symbols
 
     model_config = {"from_attributes": True}
 

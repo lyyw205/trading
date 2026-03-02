@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import time
 from typing import TYPE_CHECKING
 from uuid import UUID
 
@@ -256,7 +255,7 @@ class LotStackingBuy(BaseBuyLogic):
                 cost_usdt=spent_usdt,
                 source="INIT",
             )
-            state._session.add(history)
+            state.session.add(history)
             logger.info(
                 "lot_stacking_buy: INIT buy filled qty=%.8f cost=%.2f avg=%.2f",
                 bought_qty_net, spent_usdt, avg_price,
@@ -337,10 +336,7 @@ class LotStackingBuy(BaseBuyLogic):
     ) -> float:
         alpha = 2.0 / (n + 1)
         prev = await state.get_float("recenter_ema", 0.0)
-        if prev <= 0:
-            ema = price
-        else:
-            ema = alpha * price + (1 - alpha) * prev
+        ema = price if prev <= 0 else alpha * price + (1 - alpha) * prev
         await state.set("recenter_ema", ema)
         return ema
 

@@ -9,7 +9,7 @@ Buy Pause Manager — 잔고 부족 시 매수만 일시정지, 매도는 계속
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import update
@@ -99,7 +99,7 @@ class BuyPauseManager:
             else:
                 values["buy_pause_reason"] = "LOW_BALANCE"
                 if current_state == BuyPauseState.ACTIVE:
-                    values["buy_pause_since"] = datetime.utcnow()
+                    values["buy_pause_since"] = datetime.now(UTC)
 
                 if new_state != current_state:
                     logger.warning(

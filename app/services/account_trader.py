@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
+
+from sqlalchemy import func, select
 
 from app.db.account_repo import AccountRepository
 from app.db.lot_repo import LotRepository
@@ -14,12 +17,16 @@ from app.db.position_repo import PositionRepository
 from app.db.session import TradingSessionLocal
 from app.exchange.binance_client import BinanceClient
 from app.models.account import BuyPauseState
+from app.models.lot import Lot
+from app.models.order import Order
+from app.models.trading_combo import TradingCombo
 from app.services.account_state_manager import AccountStateManager
 from app.services.buy_pause_manager import MIN_TRADE_USDT, BuyPauseManager
 from app.strategies.base import BaseBuyLogic, BaseSellLogic, RepositoryBundle, StrategyContext
 from app.strategies.registry import BuyLogicRegistry, SellLogicRegistry
 from app.strategies.state_store import StrategyStateStore
 from app.utils.logging import current_account_id, current_cycle_id
+from app.utils.symbol_parser import parse_symbol
 
 if TYPE_CHECKING:
     from app.services.price_collector import PriceCollector
@@ -81,11 +88,9 @@ class AccountTrader:
             api_secret = self._encryption.decrypt(account.api_secret_encrypted)
             self._client = BinanceClient(api_key, api_secret, account.symbol)
             # Register client for all combo symbols (BinanceClient methods accept explicit symbol)
-            from app.models.trading_combo import TradingCombo
-            from sqlalchemy import select as sa_select
-            combo_stmt = sa_select(TradingCombo.symbols).where(
+            combo_stmt = select(TradingCombo.symbols).where(
                 TradingCombo.account_id == self.account_id,
-                TradingCombo.is_enabled == True,
+                TradingCombo.is_enabled.is_(True),
             )
             combo_result = await session.execute(combo_stmt)
             all_symbols = {account.symbol}
@@ -155,15 +160,10 @@ class AccountTrader:
                     price=None,  # price_repo is module-level functions
                 )
 
-                from sqlalchemy import func, select
-
-                from app.models.lot import Lot
-
                 # --- Combo-based execution (Phase 3) ---
-                from app.models.trading_combo import TradingCombo
                 combo_stmt = select(TradingCombo).where(
                     TradingCombo.account_id == self.account_id,
-                    TradingCombo.is_enabled == True,
+                    TradingCombo.is_enabled.is_(True),
                 )
                 combo_result = await session.execute(combo_stmt)
                 combos = list(combo_result.scalars().all())
@@ -177,7 +177,7 @@ class AccountTrader:
                 for c in combos:
                     if c.symbols:
                         all_combo_symbols.update(s.upper() for s in c.symbols)
-                await self._sync_orders_and_fills(account, all_combo_symbols, order_repo, position_repo)
+                await self._sync_orders_and_fills(account, all_combo_symbols, order_repo, position_repo, session)
 
                 # Sentry context for this trading cycle
                 try:
@@ -206,7 +206,6 @@ class AccountTrader:
                     combo_symbols = combo.symbols if combo.symbols else [account.symbol]
 
                     for symbol in combo_symbols:
-                        from app.utils.symbol_parser import parse_symbol
                         try:
                             base_asset, quote_asset = parse_symbol(symbol)
                         except ValueError:
@@ -301,43 +300,62 @@ class AccountTrader:
             current_account_id.reset(token)
             current_cycle_id.reset(cycle_token)
 
-    async def _sync_orders_and_fills(self, account, symbols: set[str], order_repo: OrderRepository, position_repo: PositionRepository):
-        """Sync open orders and recent fills for all active symbols"""
-        # Get recent open orders from DB
-        open_ids = await order_repo.get_recent_open_orders(self.account_id)
+    async def _sync_orders_and_fills(
+        self, account, symbols: set[str],
+        order_repo: OrderRepository, position_repo: PositionRepository,
+        session,
+    ):
+        """Sync open orders and recent fills for all active symbols.
 
+        Optimization: tracks already-synced order IDs to avoid duplicate API calls.
+        Uses correct symbol per order (H-1 fix) instead of account default symbol.
+        """
+        open_ids = await order_repo.get_recent_open_orders(self.account_id)
+        synced_oids: set[int] = set()
+
+        # Step 1: Sync open orders per symbol from exchange
         for symbol in symbols:
-            # Get open orders from exchange per symbol
             try:
                 await self._rate_limiter.acquire(weight=3)
                 ex_open = await self._client.get_open_orders(symbol)
                 for o in ex_open:
                     await order_repo.upsert_order(self.account_id, o)
                     oid = int(o["orderId"])
+                    synced_oids.add(oid)
                     if oid not in open_ids:
                         open_ids.append(oid)
             except Exception as e:
-                logger.warning(f"[{self.account_id}] Open orders sync failed for {symbol}: {e}")
+                logger.warning("[%s] Open orders sync failed for %s: %s", self.account_id, symbol, e)
 
-        # Refresh each tracked order (symbol is in the order data)
-        for oid in open_ids[:50]:
-            try:
-                await self._rate_limiter.acquire(weight=1)
-                # Try with account symbol first; order may belong to any symbol
-                o = await self._client.get_order(oid, account.symbol)
-                await order_repo.upsert_order(self.account_id, o)
-            except Exception as e:
-                logger.warning(f"[{self.account_id}] Order {oid} sync failed: {e}")
+        # Step 2: Refresh tracked orders NOT already synced (use correct symbol from DB)
+        to_refresh = [oid for oid in open_ids[:50] if oid not in synced_oids]
+        if to_refresh:
+            order_sym_stmt = select(Order.order_id, Order.symbol).where(
+                Order.account_id == self.account_id,
+                Order.order_id.in_(to_refresh),
+            )
+            order_sym_result = await session.execute(order_sym_stmt)
+            order_symbol_map = {row[0]: row[1] for row in order_sym_result.all()}
 
+            for oid in to_refresh:
+                try:
+                    sym = order_symbol_map.get(oid, account.symbol)
+                    await self._rate_limiter.acquire(weight=1)
+                    o = await self._client.get_order(oid, sym)
+                    await order_repo.upsert_order(self.account_id, o)
+                    synced_oids.add(oid)
+                except Exception as e:
+                    logger.warning("[%s] Order %s sync failed: %s", self.account_id, oid, e)
+
+        # Step 3: Sync recent fills per symbol (skip already-synced orders)
         for symbol in symbols:
-            # Sync recent fills per symbol
             try:
                 await self._rate_limiter.acquire(weight=5)
                 trades = await self._client.get_my_trades(symbol)
-                seen_oids = set()
+                seen_oids: set[int] = set()
                 for t in trades:
                     oid = int(t.get("orderId", 0))
-                    if oid > 0 and oid not in seen_oids:
+                    if oid > 0 and oid not in seen_oids and oid not in synced_oids:
                         seen_oids.add(oid)
                         try:
                             await self._rate_limiter.acquire(weight=1)
@@ -347,9 +365,8 @@ class AccountTrader:
                             pass
                     await order_repo.insert_fill(self.account_id, oid, t)
             except Exception as e:
-                logger.warning(f"[{self.account_id}] Fills sync failed for {symbol}: {e}")
+                logger.warning("[%s] Fills sync failed for %s: %s", self.account_id, symbol, e)
 
-            # Recompute position per symbol
             await position_repo.recompute_from_fills(self.account_id, symbol)
 
     async def run_forever(self):
@@ -402,10 +419,8 @@ class AccountTrader:
     async def _interruptible_sleep(self, seconds: float):
         """Sleep that can be interrupted by _wake_event (manual resume)."""
         self._wake_event.clear()
-        try:
+        with contextlib.suppress(TimeoutError):
             await asyncio.wait_for(self._wake_event.wait(), timeout=seconds)
-        except TimeoutError:
-            pass
 
     async def _get_loop_interval(self) -> int:
         async with TradingSessionLocal() as session:
@@ -419,7 +434,7 @@ class AccountTrader:
             await repo.update_circuit_breaker(
                 self.account_id,
                 failures=self._consecutive_failures,
-                disabled_at=datetime.utcnow(),
+                disabled_at=datetime.now(UTC),
             )
             await session.commit()
         logger.critical(f"[{self.account_id}] Circuit breaker triggered: {self._consecutive_failures} consecutive failures")

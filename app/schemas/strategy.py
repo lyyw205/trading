@@ -6,7 +6,7 @@ from uuid import UUID
 from pydantic import BaseModel, field_validator
 
 
-class BuyLogicInfo(BaseModel):
+class LogicInfo(BaseModel):
     name: str
     display_name: str
     description: str
@@ -15,13 +15,9 @@ class BuyLogicInfo(BaseModel):
     tunable_params: dict[str, dict[str, Any]]
 
 
-class SellLogicInfo(BaseModel):
-    name: str
-    display_name: str
-    description: str
-    version: str
-    default_params: dict[str, Any]
-    tunable_params: dict[str, dict[str, Any]]
+# Backward-compatible aliases
+BuyLogicInfo = LogicInfo
+SellLogicInfo = LogicInfo
 
 
 # --- Combo schemas ---
@@ -50,6 +46,15 @@ class ComboUpdate(BaseModel):
     sell_params: dict[str, Any] | None = None
     reference_combo_id: UUID | None = None
     reapply_open_orders: bool = False
+
+    @field_validator("symbols")
+    @classmethod
+    def validate_symbols(cls, v: list[str] | None) -> list[str] | None:
+        if v is not None:
+            if not v:
+                raise ValueError("symbols must contain at least one entry")
+            return [s.upper() for s in v]
+        return v
 
 
 class ComboResponse(BaseModel):

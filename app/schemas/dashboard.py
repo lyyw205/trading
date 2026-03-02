@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -12,12 +13,18 @@ class BuyPauseInfo(BaseModel):
     consecutive_low_balance: int = 0
 
 
+class PositionInfo(BaseModel):
+    qty: float
+    cost_basis_usdt: float
+    avg_entry: float
+
+
 class DashboardSummary(BaseModel):
-    account_id: str
+    account_id: UUID
     account_name: str
     symbol: str
     current_price: float
-    position: dict[str, Any] | None
+    position: PositionInfo | None
     open_lots_count: int
     total_net_profit: float
     reserve_qty: float
@@ -29,15 +36,13 @@ class DashboardSummary(BaseModel):
 
 
 class AssetStatus(BaseModel):
-    symbol: str
-    current_price: float
-    position_qty: float
-    position_cost: float
-    position_avg_entry: float
-    unrealized_pnl: float
-    reserve_qty: float
-    reserve_cost_usdt: float
-    free_usdt: float
+    btc_balance: float
+    usdt_balance: float
+    reserve_pool_qty: float
+    reserve_pool_usdt: float
+    reserve_pool_pct: float
+    pending_earnings_usdt: float
+    total_invested_usdt: float
 
 
 class ApproveEarningsRequest(BaseModel):

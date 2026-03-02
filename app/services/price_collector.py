@@ -23,7 +23,6 @@ class PriceCollector:
 
     def __init__(self):
         self._prices: dict[str, float] = {}
-        self._lock = asyncio.Lock()
         self._exchange_clients: dict[str, ExchangeClient] = {}
         self._kline_ws: KlineWsManager | None = None
 
@@ -67,7 +66,7 @@ class PriceCollector:
             self._prices[symbol] = price
             return price
         except Exception as e:
-            logger.warning(f"Price fetch failed for {symbol}: {e}")
+            logger.warning("Price fetch failed for %s: %s", symbol, e)
             return self._prices.get(symbol, 0.0)
 
     async def refresh_all(self) -> dict[str, float]:
@@ -77,4 +76,4 @@ class PriceCollector:
             return {}
         tasks = [self.refresh_symbol(s) for s in symbols]
         results = await asyncio.gather(*tasks, return_exceptions=True)
-        return {s: r for s, r in zip(symbols, results) if isinstance(r, float)}
+        return {s: r for s, r in zip(symbols, results, strict=False) if isinstance(r, float)}

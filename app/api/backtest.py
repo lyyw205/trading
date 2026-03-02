@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 
@@ -30,6 +30,9 @@ SAVED_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "backtests"
 SAVED_DIR.mkdir(parents=True, exist_ok=True)
 
 router = APIRouter(prefix="/api/backtest", tags=["backtest"])
+
+MAX_CONCURRENT_BACKTESTS = 3
+_running_tasks: dict[str, asyncio.Task] = {}
 
 
 @router.post("/run", response_model=BacktestRunResponse)
@@ -61,11 +64,29 @@ async def run_backtest(
 
     run_id = run.id
 
-    # Launch backtest in background
+    # Check concurrent backtest limit
+    active = {k: t for k, t in _running_tasks.items() if not t.done()}
+    _running_tasks.clear()
+    _running_tasks.update(active)
+    if len(active) >= MAX_CONCURRENT_BACKTESTS:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Maximum {MAX_CONCURRENT_BACKTESTS} concurrent backtests. Try again later.",
+        )
+
+    # Launch backtest in background with tracking
     from backtest.isolated_runner import IsolatedBacktestRunner
 
     runner = IsolatedBacktestRunner()
-    asyncio.create_task(runner.run(run_id))
+    task = asyncio.create_task(runner.run(run_id))
+    _running_tasks[str(run_id)] = task
+
+    def _on_backtest_done(t: asyncio.Task, _rid: UUID = run_id) -> None:
+        _running_tasks.pop(str(_rid), None)
+        if not t.cancelled() and t.exception():
+            logger.error("Backtest %s failed: %s", _rid, t.exception())
+
+    task.add_done_callback(_on_backtest_done)
 
     return BacktestRunResponse(id=run_id, status="PENDING")
 
@@ -107,10 +128,10 @@ async def get_backtest_report(
         )
 
     # Load candles from local Parquet for the chart
-    from backtest.isolated_runner import DATA_DIR
-
     import pyarrow.compute as pc
     import pyarrow.parquet as pq
+
+    from backtest.isolated_runner import DATA_DIR
 
     candles = []
     for interval in ("1m", "5m"):
@@ -177,15 +198,19 @@ async def list_backtests(
     result = await session.execute(stmt)
     runs = result.scalars().all()
 
-    # Collect pinned status from JSON files
-    pinned_ids = set()
-    for f in SAVED_DIR.glob("*.json"):
-        try:
-            data = json.loads(f.read_text(encoding="utf-8"))
-            if data.get("pinned"):
-                pinned_ids.add(f.stem)
-        except Exception:
-            pass
+    # Collect pinned status from JSON files (offload blocking I/O to thread)
+    def _get_pinned_ids() -> set[str]:
+        pinned = set()
+        for f in SAVED_DIR.glob("*.json"):
+            try:
+                data = json.loads(f.read_text(encoding="utf-8"))
+                if data.get("pinned"):
+                    pinned.add(f.stem)
+            except Exception:
+                pass
+        return pinned
+
+    pinned_ids = await asyncio.to_thread(_get_pinned_ids)
 
     items = []
     for r in runs:
@@ -241,7 +266,7 @@ def _auto_save(run: BacktestRun, candles: list[dict]) -> None:
         return
     data = {
         "id": str(run.id),
-        "saved_at": datetime.now(timezone.utc).isoformat(),
+        "saved_at": datetime.now(UTC).isoformat(),
         "pinned": False,
         "config": {
             "symbol": run.symbol,
@@ -265,11 +290,11 @@ def _auto_save(run: BacktestRun, candles: list[dict]) -> None:
 
 @router.post("/{run_id}/pin")
 async def toggle_pin(
-    run_id: str,
+    run_id: UUID,
     user: dict = Depends(require_admin),
 ):
     """Toggle pinned status of a saved backtest report."""
-    path = _saved_path(run_id)
+    path = _saved_path(str(run_id))
     if not path.exists():
         raise HTTPException(status_code=404, detail="Saved report not found")
     data = json.loads(path.read_text(encoding="utf-8"))
@@ -280,11 +305,11 @@ async def toggle_pin(
 
 @router.delete("/saved/{run_id}")
 async def delete_saved_report(
-    run_id: str,
+    run_id: UUID,
     user: dict = Depends(require_admin),
 ):
     """Delete a saved backtest JSON file."""
-    path = _saved_path(run_id)
+    path = _saved_path(str(run_id))
     if not path.exists():
         raise HTTPException(status_code=404, detail="Saved report not found")
     path.unlink()

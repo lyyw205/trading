@@ -1,14 +1,19 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import random
 from typing import TYPE_CHECKING
 from uuid import UUID
 
+from sqlalchemy import select
+
 from app.db.account_repo import AccountRepository
 from app.db.session import TradingSessionLocal
+from app.models.trading_combo import TradingCombo
 from app.services.account_trader import AccountTrader
+from app.services.buy_pause_manager import BuyPauseManager
 from app.services.kline_ws_manager import KlineWsManager
 from app.services.price_collector import PriceCollector
 from app.services.rate_limiter import GlobalRateLimiter
@@ -100,21 +105,17 @@ class TradingEngine:
         task = self._tasks.pop(account_id, None)
         if task:
             task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await task
-            except asyncio.CancelledError:
-                pass
         self._traders.pop(account_id, None)
         logger.info(f"Stopped trader for account {account_id}")
 
     async def _get_combo_symbols(self, account_id: UUID) -> set[str]:
         """Collect all unique symbols from active combos for an account."""
-        from app.models.trading_combo import TradingCombo
-        from sqlalchemy import select
         async with TradingSessionLocal() as session:
             stmt = select(TradingCombo.symbols).where(
                 TradingCombo.account_id == account_id,
-                TradingCombo.is_enabled == True,
+                TradingCombo.is_enabled.is_(True),
             )
             result = await session.execute(stmt)
             all_symbols = set()
@@ -153,7 +154,6 @@ class TradingEngine:
 
     async def resume_buying(self, account_id: UUID):
         """Resume buying for a paused account and wake the trading loop."""
-        from app.services.buy_pause_manager import BuyPauseManager
         async with TradingSessionLocal() as session:
             mgr = BuyPauseManager(account_id, session)
             await mgr.resume()
@@ -172,3 +172,14 @@ class TradingEngine:
     @property
     def active_account_count(self) -> int:
         return len(self._traders)
+
+    async def get_current_price(self, symbol: str) -> float:
+        """Public accessor for current price from PriceCollector cache."""
+        return await self._price_collector.get_price(symbol)
+
+    def get_ws_status(self) -> dict:
+        """Public accessor for WebSocket kline manager status."""
+        return {
+            "healthy": self._kline_ws.is_healthy(),
+            "subscriptions": len(self._kline_ws._subscriptions),
+        }

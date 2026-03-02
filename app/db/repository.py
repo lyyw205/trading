@@ -1,13 +1,11 @@
-from typing import Any, Generic, TypeVar
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.base import Base
 
-ModelT = TypeVar("ModelT", bound=Base)
 
-
-class BaseRepository(Generic[ModelT]):
+class BaseRepository[ModelT: Base]:
     """공통 CRUD 베이스 리포지토리."""
 
     def __init__(self, model: type[ModelT], session: AsyncSession):

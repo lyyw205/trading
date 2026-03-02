@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+from typing import ClassVar
 from uuid import UUID
 
 from sqlalchemy import select, update
@@ -14,14 +16,25 @@ class AccountStateManager:
     계정 레벨 공유 상태 관리.
     reserve pool(reserve_qty, reserve_cost_usdt)은 LOT/TREND 양쪽에서 접근.
     pending_earnings_usdt는 trading_accounts 정식 컬럼으로 원자적 접근.
+
+    reserve 변경은 per-account asyncio lock으로 read-modify-write 경합 방지.
+    (단일 프로세스 asyncio 앱 전제. 다중 프로세스 확장 시 DB-level lock 필요.)
     """
+
+    _reserve_locks: ClassVar[dict[UUID, asyncio.Lock]] = {}
 
     def __init__(self, account_id: UUID, session: AsyncSession):
         self._account_id = account_id
         self._session = session
         self._store = StrategyStateStore(account_id, scope="shared", session=session)
 
-    # ---- reserve (기존 유지, shared scope KV) ----
+    @classmethod
+    def _get_reserve_lock(cls, account_id: UUID) -> asyncio.Lock:
+        if account_id not in cls._reserve_locks:
+            cls._reserve_locks[account_id] = asyncio.Lock()
+        return cls._reserve_locks[account_id]
+
+    # ---- reserve (shared scope KV, guarded by asyncio lock) ----
 
     async def get_reserve_qty(self) -> float:
         return await self._store.get_float("reserve_qty", 0.0)
@@ -30,10 +43,11 @@ class AccountStateManager:
         await self._store.set("reserve_qty", float(qty))
 
     async def add_reserve_qty(self, delta: float) -> float:
-        current = await self.get_reserve_qty()
-        new_val = current + delta
-        await self.set_reserve_qty(new_val)
-        return new_val
+        async with self._get_reserve_lock(self._account_id):
+            current = await self.get_reserve_qty()
+            new_val = current + delta
+            await self.set_reserve_qty(new_val)
+            return new_val
 
     async def get_reserve_cost_usdt(self) -> float:
         return await self._store.get_float("reserve_cost_usdt", 0.0)
@@ -42,10 +56,11 @@ class AccountStateManager:
         await self._store.set("reserve_cost_usdt", float(cost))
 
     async def add_reserve_cost_usdt(self, delta: float) -> float:
-        current = await self.get_reserve_cost_usdt()
-        new_val = current + delta
-        await self.set_reserve_cost_usdt(new_val)
-        return new_val
+        async with self._get_reserve_lock(self._account_id):
+            current = await self.get_reserve_cost_usdt()
+            new_val = current + delta
+            await self.set_reserve_cost_usdt(new_val)
+            return new_val
 
     # ---- pending_earnings (신규 - 원자적 SQL) ----
 

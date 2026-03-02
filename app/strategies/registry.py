@@ -28,7 +28,7 @@ class BuyLogicRegistry:
             {"name": c.name, "display_name": c.display_name,
              "description": c.description, "version": c.version,
              "default_params": c.default_params, "tunable_params": c.tunable_params}
-            for c in (cls._buy_logics[k]() for k in cls._buy_logics)
+            for c in cls._buy_logics.values()
         ]
 
 
@@ -57,5 +57,5 @@ class SellLogicRegistry:
             {"name": c.name, "display_name": c.display_name,
              "description": c.description, "version": c.version,
              "default_params": c.default_params, "tunable_params": c.tunable_params}
-            for c in (cls._sell_logics[k]() for k in cls._sell_logics)
+            for c in cls._sell_logics.values()
         ]

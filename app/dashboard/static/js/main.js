@@ -1257,6 +1257,8 @@ function formatComboSymbols(symbols, fallbackSymbol) {
 }
 
 function showToast(msg, type) {
+  const existing = document.querySelector('.toast:not(#toast)');
+  if (existing) existing.remove();
   const toast = document.createElement('div');
   toast.className = 'toast toast-' + (type || 'success');
   toast.textContent = msg;
@@ -1266,6 +1268,28 @@ function showToast(msg, type) {
     toast.style.transition = 'opacity 0.3s';
     setTimeout(() => toast.remove(), 300);
   }, 2700);
+}
+
+/**
+ * Shared admin helper: populate an account <select> dropdown.
+ * @param {string} [selectId='filter-account'] - id of the <select> element
+ * @param {function} [onLoaded] - optional callback receiving the accounts array
+ */
+async function loadAccountOptions(selectId, onLoaded) {
+  try {
+    const resp = await apiFetch('/api/admin/accounts');
+    if (!resp.ok) return;
+    const accounts = await resp.json();
+    const sel = document.getElementById(selectId || 'filter-account');
+    if (!sel) return;
+    accounts.forEach(a => {
+      const opt = document.createElement('option');
+      opt.value = a.id;
+      opt.textContent = a.name || a.id;
+      sel.appendChild(opt);
+    });
+    if (onLoaded) onLoaded(accounts);
+  } catch (e) {}
 }
 
 /* ============================================================

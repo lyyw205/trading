@@ -69,4 +69,4 @@ async def _check_database() -> dict:
         return {"status": "ok", "latency_ms": latency_ms}
     except Exception as e:
         logger.error("Database health check failed: %s", e)
-        return {"status": "error", "error": str(e)}
+        return {"status": "error", "error": "database_unreachable"}

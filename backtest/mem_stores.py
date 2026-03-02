@@ -7,19 +7,19 @@ identical async signatures so strategy code requires zero modifications.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+import contextlib
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from uuid import UUID
-
 
 # ---------------------------------------------------------------------------
 # _NoOpSession — state._session.add() 호환
 # ---------------------------------------------------------------------------
 
 class _NoOpSession:
-    """state._session.add(obj) 호환용 no-op sink.
+    """state.session.add(obj) 호환용 no-op sink.
 
-    lot_stacking.py:259 에서 CoreBtcHistory를 session.add() 하는 패턴 대응.
+    lot_stacking.py에서 CoreBtcHistory를 session.add() 하는 패턴 대응.
     감사 로그 전용이므로 수집만 하고 DB 저장하지 않는다.
     """
 
@@ -54,6 +54,15 @@ class InMemoryStateStore:
         self._prefix = f"{account_id}:{scope}:"
         self._session = _NoOpSession()
 
+    @property
+    def session(self) -> _NoOpSession:
+        """Public access matching StrategyStateStore.session."""
+        return self._session
+
+    def with_scope(self, scope: str) -> InMemoryStateStore:
+        """Create a store with the same backing but different scope."""
+        return InMemoryStateStore(self.account_id, scope, self._backing)
+
     async def get(self, key: str, default: str | None = None) -> str | None:
         return self._backing.get(self._prefix + key, default)
 
@@ -83,9 +92,9 @@ class InMemoryStateStore:
         self._backing.pop(self._prefix + key, None)
 
     async def clear_keys(self, *keys: str) -> None:
-        # DB 구현과 동일: 빈 문자열로 설정 (삭제가 아님)
+        # DB 구현과 동일: 키 삭제
         for key in keys:
-            await self.set(key, "")
+            await self.delete(key)
 
     async def get_all(self) -> dict[str, str]:
         prefix = self._prefix
@@ -160,7 +169,7 @@ class InMemoryLotRepository:
             buy_order_id=buy_order_id,
             buy_price=float(buy_price),
             buy_qty=float(buy_qty),
-            buy_time=datetime.now(timezone.utc),
+            buy_time=datetime.now(UTC),
             buy_time_ms=buy_time_ms,
             status="OPEN",
             combo_id=combo_id,
@@ -220,12 +229,10 @@ class InMemoryLotRepository:
         idx_key = (lot.account_id, lot.symbol, lot.combo_id)
         idx_list = self._combo_index.get(idx_key)
         if idx_list is not None:
-            try:
+            with contextlib.suppress(ValueError):
                 idx_list.remove(lot)
-            except ValueError:
-                pass
         lot.sell_price = float(sell_price)
-        lot.sell_time = datetime.now(timezone.utc)
+        lot.sell_time = datetime.now(UTC)
         lot.sell_time_ms = sell_time_ms
         lot.fee_usdt = float(fee_usdt)
         lot.net_profit_usdt = float(net_profit_usdt)

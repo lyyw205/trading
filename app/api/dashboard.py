@@ -6,7 +6,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.lot_repo import LotRepository
 from app.db.position_repo import PositionRepository
 from app.db.price_repo import get_candles
 from app.db.session import get_trading_session
@@ -18,8 +17,10 @@ from app.models.order import Order
 from app.schemas.dashboard import (
     ApproveEarningsRequest,
     ApproveEarningsResponse,
+    AssetStatus,
     BuyPauseInfo,
     DashboardSummary,
+    PositionInfo,
 )
 from app.schemas.trade import LotResponse, OrderResponse
 from app.services.account_state_manager import AccountStateManager
@@ -40,7 +41,6 @@ async def get_dashboard(
     position = await pos_repo.get(account.id, account.symbol)
 
     # Open lots count (all strategies)
-    lot_repo = LotRepository(session)
     open_lots_stmt = select(func.count()).select_from(Lot).where(
         Lot.account_id == account.id, Lot.status == "OPEN"
     )
@@ -67,15 +67,14 @@ async def get_dashboard(
     health = engine.get_account_health().get(str(account.id), {})
 
     # Current price
-    price_collector = engine._price_collector
-    cur_price = await price_collector.get_price(account.symbol)
+    cur_price = await engine.get_current_price(account.symbol)
 
     return DashboardSummary(
-        account_id=str(account.id),
+        account_id=account.id,
         account_name=account.name,
         symbol=account.symbol,
         current_price=cur_price,
-        position={"qty": float(position.qty), "cost_basis_usdt": float(position.cost_basis_usdt), "avg_entry": float(position.avg_entry)} if position else None,
+        position=PositionInfo(qty=float(position.qty), cost_basis_usdt=float(position.cost_basis_usdt), avg_entry=float(position.avg_entry)) if position else None,
         open_lots_count=open_lots_total,
         total_net_profit=total_profit,
         reserve_qty=reserve_qty,
@@ -114,8 +113,7 @@ async def approve_earnings(
 ):
     # current_price: PriceCollector 캐시에서 가져옴
     engine = request.app.state.trading_engine
-    price_collector = engine._price_collector
-    current_price = await price_collector.get_price(account.symbol)
+    current_price = await engine.get_current_price(account.symbol)
 
     if current_price <= 0:
         raise HTTPException(status_code=503, detail="현재가를 가져올 수 없습니다.")
@@ -165,6 +163,8 @@ async def get_lots(
     strategy: str | None = None,
     combo_id: UUID | None = None,
     status: str = "OPEN",
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     account=Depends(get_owned_account),
     session: AsyncSession = Depends(get_trading_session),
 ):
@@ -173,9 +173,9 @@ async def get_lots(
         filters.append(Lot.combo_id == combo_id)
     elif strategy:
         filters.append(Lot.strategy_name == strategy)
-    stmt = select(Lot).where(*filters).order_by(Lot.lot_id.desc()).limit(100)
+    stmt = select(Lot).where(*filters).order_by(Lot.lot_id.desc()).offset(offset).limit(limit)
     result = await session.execute(stmt)
-    return [LotResponse.model_validate(l) for l in result.scalars().all()]
+    return [LotResponse.model_validate(lot) for lot in result.scalars().all()]
 
 
 @router.get("/{account_id}/trades", response_model=list[OrderResponse])
@@ -211,7 +211,7 @@ async def get_price_candles(
     return result
 
 
-@router.get("/{account_id}/asset_status")
+@router.get("/{account_id}/asset_status", response_model=AssetStatus)
 @limiter.limit("120/minute")
 async def get_asset_status(
     request: Request,
@@ -223,12 +223,10 @@ async def get_asset_status(
     pos_repo = PositionRepository(session)
     position = await pos_repo.get(account.id, account.symbol)
     base_qty = float(position.qty) if position else 0.0
-    cost_basis = float(position.cost_basis_usdt) if position else 0.0
 
     # Current price for USDT valuation
     engine = request.app.state.trading_engine
-    price_collector = engine._price_collector
-    cur_price = await price_collector.get_price(account.symbol)
+    cur_price = await engine.get_current_price(account.symbol)
 
     # Reserve pool
     account_state = AccountStateManager(account.id, session)
@@ -247,16 +245,17 @@ async def get_asset_status(
 
     # USDT balance estimate: if we know position, usdt = cost_basis portion not in open lots
     # Simple approach: show base asset value as btc_balance, cost_basis as usdt equivalent
-    reserve_pct = round(reserve_cost / total_invested * 100, 1) if total_invested > 0 else 0
+    reserve_pct = min(round(reserve_cost / total_invested * 100, 1), 999.9) if total_invested > 1.0 else 0
 
-    return {
-        "btc_balance": base_qty,
-        "usdt_balance": round(base_qty * cur_price, 2) if cur_price > 0 else 0,
-        "reserve_pool_usdt": reserve_cost,
-        "reserve_pool_pct": reserve_pct,
-        "pending_earnings_usdt": pending_earnings,
-        "total_invested_usdt": round(total_invested, 2),
-    }
+    return AssetStatus(
+        btc_balance=base_qty,
+        usdt_balance=round(base_qty * cur_price, 2) if cur_price > 0 else 0,
+        reserve_pool_qty=reserve_qty,
+        reserve_pool_usdt=reserve_cost,
+        reserve_pool_pct=reserve_pct,
+        pending_earnings_usdt=pending_earnings,
+        total_invested_usdt=round(total_invested, 2),
+    )
 
 
 @router.get("/{account_id}/trade_events")
@@ -284,7 +283,7 @@ async def get_trade_events(
         events.append({
             "time": f.trade_time_ms // 1000,  # lightweight-charts expects unix seconds
             "side": (f.side or "").lower(),
-            "price": round(float(f.price), 2) if f.price else "",
+            "price": float(f.price) if f.price else "",
         })
     # Sort ascending for chart markers
     events.sort(key=lambda e: e["time"])

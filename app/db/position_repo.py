@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import case, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -55,33 +55,30 @@ class PositionRepository:
     ) -> None:
         """Recompute position from all fills for this account/symbol.
 
-        Sums BUY fills (qty, cost) and subtracts SELL fills to derive
+        Uses SQL aggregation to sum BUY/SELL fills and derive
         current qty, cost_basis_usdt, and avg_entry.
         """
         sess = session if session is not None else self._session
 
-        stmt = select(Fill).where(
-            Fill.account_id == account_id,
-            Fill.symbol == symbol,
-        )
-        result = await sess.execute(stmt)
-        fills = result.scalars().all()
+        stmt = select(
+            func.coalesce(
+                func.sum(case((Fill.side == "BUY", Fill.qty), else_=0.0)), 0.0,
+            ),
+            func.coalesce(
+                func.sum(case((Fill.side == "BUY", Fill.quote_qty), else_=0.0)), 0.0,
+            ),
+            func.coalesce(
+                func.sum(case((Fill.side == "SELL", Fill.qty), else_=0.0)), 0.0,
+            ),
+            func.coalesce(
+                func.sum(case((Fill.side == "SELL", Fill.quote_qty), else_=0.0)), 0.0,
+            ),
+        ).where(Fill.account_id == account_id, Fill.symbol == symbol)
 
-        total_qty: float = 0.0
-        total_cost: float = 0.0
-
-        for fill in fills:
-            qty = float(fill.qty or 0)
-            cost = float(fill.quote_qty or 0)
-            if fill.side == "BUY":
-                total_qty += qty
-                total_cost += cost
-            elif fill.side == "SELL":
-                total_qty -= qty
-                total_cost -= cost
-
-        total_qty = max(total_qty, 0.0)
-        total_cost = max(total_cost, 0.0)
+        row = (await sess.execute(stmt)).one()
+        buy_qty, buy_cost, sell_qty, sell_cost = (float(v) for v in row)
+        total_qty = max(buy_qty - sell_qty, 0.0)
+        total_cost = max(buy_cost - sell_cost, 0.0)
         avg_entry = (total_cost / total_qty) if total_qty > 0 else 0.0
 
         upsert_stmt = (

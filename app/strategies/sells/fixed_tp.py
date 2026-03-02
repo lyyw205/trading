@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import time
 from typing import TYPE_CHECKING
 
 from app.strategies.base import BaseSellLogic, RepositoryBundle, StrategyContext
@@ -10,6 +9,7 @@ from app.strategies.utils import extract_fee_usdt
 
 if TYPE_CHECKING:
     from app.exchange.base_client import ExchangeClient
+    from app.models.lot import Lot
     from app.services.account_state_manager import AccountStateManager
     from app.strategies.state_store import StrategyStateStore
 
@@ -59,7 +59,7 @@ class FixedTpSell(BaseSellLogic):
         exchange: ExchangeClient,
         account_state: AccountStateManager,
         repos: RepositoryBundle,
-        open_lots: list,
+        open_lots: list[Lot],
     ) -> None:
         if not open_lots:
             return
@@ -104,7 +104,7 @@ class FixedTpSell(BaseSellLogic):
         exchange: ExchangeClient,
         account_state: AccountStateManager,
         repos: RepositoryBundle,
-        lot,
+        lot: Lot,
         target_price: float,
         base_mode: str,
     ) -> None:
@@ -180,7 +180,7 @@ class FixedTpSell(BaseSellLogic):
         state: StrategyStateStore,
         exchange: ExchangeClient,
         repos: RepositoryBundle,
-        lot,
+        lot: Lot,
         target_price: float,
         sell_qty: float,
     ) -> None:

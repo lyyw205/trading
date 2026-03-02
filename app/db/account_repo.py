@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.account import TradingAccount
 
@@ -25,7 +26,6 @@ class AccountRepository:
 
     async def get_by_owner(self, owner_id: UUID) -> list[TradingAccount]:
         """Return all accounts belonging to a given owner."""
-        from sqlalchemy.orm import selectinload
         stmt = (
             select(TradingAccount)
             .where(TradingAccount.owner_id == owner_id)
@@ -78,7 +78,6 @@ class AccountRepository:
 
     async def get_all_accounts_with_owner(self) -> list[TradingAccount]:
         """Return all accounts with owner and trading_combos eagerly loaded."""
-        from sqlalchemy.orm import selectinload
         stmt = select(TradingAccount).options(
             selectinload(TradingAccount.owner),
             selectinload(TradingAccount.trading_combos),
@@ -91,6 +90,6 @@ class AccountRepository:
         stmt = (
             update(TradingAccount)
             .where(TradingAccount.id == account_id)
-            .values(last_success_at=datetime.utcnow())
+            .values(last_success_at=datetime.now(UTC))
         )
         await self._session.execute(stmt)

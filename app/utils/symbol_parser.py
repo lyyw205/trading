@@ -1,6 +1,6 @@
 """Symbol parsing utility for multi-symbol support."""
 
-QUOTE_ASSETS = ["USDT", "BUSD", "USDC", "TUSD", "BTC", "ETH", "BNB"]
+QUOTE_ASSETS = ["USDT", "USDC", "BTC", "ETH", "BNB"]
 
 
 def parse_symbol(symbol: str) -> tuple[str, str]:

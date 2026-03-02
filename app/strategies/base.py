@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from app.db.position_repo import PositionRepository
     from app.db.price_repo import PriceRepository
     from app.exchange.base_client import ExchangeClient
+    from app.models.lot import Lot
     from app.services.account_state_manager import AccountStateManager
     from app.strategies.state_store import StrategyStateStore
 
@@ -59,7 +60,7 @@ class BaseBuyLogic(ABC):
         combo_id: UUID,
     ) -> None:
         """매도 실행 이전에 호출 (기본: no-op). recenter 등 base_price 순서 보호용."""
-        pass
+        return None
 
     @abstractmethod
     async def tick(
@@ -108,7 +109,7 @@ class BaseSellLogic(ABC):
         exchange: ExchangeClient,
         account_state: AccountStateManager,
         repos: RepositoryBundle,
-        open_lots: list,
+        open_lots: list[Lot],
     ) -> None:
         """매도 로직 1 사이클. open_lots는 이 조합의 미결 로트들."""
         ...

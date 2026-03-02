@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import select, update
@@ -102,7 +102,7 @@ class LotRepository:
             .values(
                 status="CLOSED",
                 sell_price=sell_price,
-                sell_time=datetime.utcnow(),
+                sell_time=datetime.now(UTC),
                 sell_time_ms=sell_time_ms,
                 fee_usdt=fee_usdt,
                 net_profit_usdt=net_profit_usdt,

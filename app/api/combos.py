@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -20,6 +21,8 @@ from app.schemas.strategy import (
 from app.services.combo_reapply import reapply_combo_orders
 from app.strategies.registry import BuyLogicRegistry, SellLogicRegistry
 from app.utils.logging import audit_log
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["combos"])
 
@@ -150,16 +153,15 @@ async def update_combo(
             await engine.refresh_subscriptions(account.id)
 
     # Reapply: cancel existing open orders so next cycle re-places with new params
-    reapply_result = None
+    reapply_error = None
     if body.reapply_open_orders and (body.buy_params is not None or body.sell_params is not None):
-        from app.utils.encryption import EncryptionManager
-        encryption: EncryptionManager = request.app.state.encryption
+        encryption = request.app.state.encryption
         try:
-            reapply_result = await reapply_combo_orders(account, combo, session, encryption)
+            await reapply_combo_orders(account, combo, session, encryption)
             await session.commit()
         except Exception as exc:
-            import logging
-            logging.getLogger(__name__).error("combo reapply failed: %s", exc)
+            logger.error("combo reapply failed: %s", exc)
+            reapply_error = str(exc)
 
     audit_log(
         "combo_updated",
@@ -168,7 +170,11 @@ async def update_combo(
         combo_id=str(combo.id),
         reapply=body.reapply_open_orders,
     )
-    return ComboResponse.model_validate(combo)
+    resp = ComboResponse.model_validate(combo)
+    result = resp.model_dump()
+    if reapply_error:
+        result["reapply_warning"] = f"Combo updated but reapply failed: {reapply_error}"
+    return result
 
 
 @router.delete("/accounts/{account_id}/combos/{combo_id}")

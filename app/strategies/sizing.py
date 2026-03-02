@@ -8,10 +8,10 @@
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 
 
-class SizingMode(str, Enum):
+class SizingMode(StrEnum):
     FIXED = "fixed"
     PCT_BALANCE = "pct_balance"
     SCALED_PLAN = "scaled_plan"
@@ -51,7 +51,7 @@ def resolve_buy_usdt(
         return min(amount, max_cap)
 
     # fixed (default)
-    return params.get("buy_usdt", 100.0)
+    return min(params.get("buy_usdt", 100.0), max_cap)
 
 
 def calc_scaled_plan_amount(

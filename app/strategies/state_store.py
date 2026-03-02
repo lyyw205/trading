@@ -20,6 +20,15 @@ class StrategyStateStore:
         self.scope = scope
         self._session = session
 
+    @property
+    def session(self) -> AsyncSession:
+        """Public access for ORM entity operations."""
+        return self._session
+
+    def with_scope(self, scope: str) -> StrategyStateStore:
+        """Create a store with the same session but different scope."""
+        return StrategyStateStore(self.account_id, scope, self._session)
+
     async def get(self, key: str, default: str | None = None) -> str | None:
         """strategy_state에서 (account_id, scope, key)로 값 조회"""
         stmt = select(StrategyState.value).where(
@@ -71,9 +80,9 @@ class StrategyStateStore:
         await self._session.execute(stmt)
 
     async def clear_keys(self, *keys: str) -> None:
-        """여러 키를 빈 문자열로 설정 (기존 _clear_pending_buy 패턴)"""
+        """여러 키 삭제 (pending 상태 정리 등)"""
         for key in keys:
-            await self.set(key, "")
+            await self.delete(key)
 
     async def get_all(self) -> dict[str, str]:
         """이 scope의 모든 키-값 조회"""

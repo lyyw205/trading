@@ -30,7 +30,10 @@ def _before_cursor_execute(conn, cursor, statement, parameters, context, execute
 
 @event.listens_for(engine_trading.sync_engine, "after_cursor_execute")
 def _after_cursor_execute(conn, cursor, statement, parameters, context, executemany):
-    elapsed = time.monotonic() - conn.info.get("query_start_time", 0)
+    start = conn.info.get("query_start_time")
+    if start is None:
+        return
+    elapsed = time.monotonic() - start
     threshold_sec = settings.slow_query_threshold_ms / 1000.0
     if elapsed > threshold_sec:
         _slow_query_logger.warning(

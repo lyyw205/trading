@@ -43,10 +43,10 @@ class BacktestStatusResponse(BaseModel):
 
 class BacktestConfigOut(BaseModel):
     symbol: str
-    combos: list[dict] | None = None
+    combos: list[dict[str, Any]] | None = None
     # legacy fields for old backtest records
     strategies: list[str] | None = None
-    strategy_params: dict | None = None
+    strategy_params: dict[str, Any] | None = None
     initial_usdt: float
     start_ts_ms: int
     end_ts_ms: int
@@ -74,15 +74,15 @@ class BacktestReportResponse(BaseModel):
     id: UUID
     config: BacktestConfigOut
     summary: BacktestSummaryOut | None = None
-    trade_log: list[dict] | None = None
-    equity_curve: list[dict] | None = None
-    candles: list[dict] | None = None
+    trade_log: list[dict[str, Any]] | None = None
+    equity_curve: list[dict[str, Any]] | None = None
+    candles: list[dict[str, Any]] | None = None
 
 
 class BacktestListItem(BaseModel):
     id: UUID
     symbol: str
-    combos: list[dict] | None = None
+    combos: list[dict[str, Any]] | None = None
     # legacy fields for old backtest records
     strategies: list[str] | None = None
     initial_usdt: float

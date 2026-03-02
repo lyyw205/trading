@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse, RedirectResponse
 
 from app.dependencies import limiter
 from app.schemas.auth import LoginRequest, LoginResponse, UserResponse
@@ -10,11 +11,8 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 @router.post("/login", response_model=LoginResponse)
 @limiter.limit("10/minute")
-async def login(request: Request):
+async def login(login_req: LoginRequest, request: Request):
     """이메일+비밀번호 로그인"""
-    body = await request.json()
-    login_req = LoginRequest(**body)
-
     auth_service = request.app.state.auth_service
     session_mgr = request.app.state.session_manager
 
@@ -27,7 +25,6 @@ async def login(request: Request):
     )
 
     response = LoginResponse(success=True, user=UserResponse(**user))
-    from fastapi.responses import JSONResponse
     json_resp = JSONResponse(content=response.model_dump())
 
     is_secure = not request.app.state.settings_debug
@@ -47,7 +44,6 @@ async def login(request: Request):
 async def logout(request: Request):
     """Clear session cookie"""
     session_mgr = request.app.state.session_manager
-    from fastapi.responses import RedirectResponse
     response = RedirectResponse(url="/login", status_code=302)
     response.delete_cookie(key=session_mgr.cookie_name)
     return response

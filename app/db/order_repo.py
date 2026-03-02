@@ -16,38 +16,28 @@ class OrderRepository:
 
     async def upsert_order(self, account_id: UUID, order_data: dict) -> None:
         """PostgreSQL upsert from Binance API response."""
+        values = {
+            "order_id": int(order_data["orderId"]),
+            "account_id": account_id,
+            "symbol": order_data["symbol"],
+            "side": order_data.get("side"),
+            "type": order_data.get("type"),
+            "status": order_data.get("status"),
+            "price": float(order_data["price"]) if order_data.get("price") is not None else None,
+            "orig_qty": float(order_data["origQty"]) if order_data.get("origQty") is not None else None,
+            "executed_qty": float(order_data["executedQty"]) if order_data.get("executedQty") is not None else None,
+            "cum_quote_qty": float(order_data["cummulativeQuoteQty"]) if order_data.get("cummulativeQuoteQty") is not None else None,
+            "client_order_id": order_data.get("clientOrderId"),
+            "update_time_ms": int(order_data["updateTime"]) if order_data.get("updateTime") is not None else None,
+            "raw_json": order_data,
+        }
+        update_cols = {k: v for k, v in values.items() if k not in ("order_id", "account_id")}
         stmt = (
             pg_insert(Order)
-            .values(
-                order_id=int(order_data["orderId"]),
-                account_id=account_id,
-                symbol=order_data["symbol"],
-                side=order_data.get("side"),
-                type=order_data.get("type"),
-                status=order_data.get("status"),
-                price=float(order_data["price"]) if order_data.get("price") is not None else None,
-                orig_qty=float(order_data["origQty"]) if order_data.get("origQty") is not None else None,
-                executed_qty=float(order_data["executedQty"]) if order_data.get("executedQty") is not None else None,
-                cum_quote_qty=float(order_data["cummulativeQuoteQty"]) if order_data.get("cummulativeQuoteQty") is not None else None,
-                client_order_id=order_data.get("clientOrderId"),
-                update_time_ms=int(order_data["updateTime"]) if order_data.get("updateTime") is not None else None,
-                raw_json=order_data,
-            )
+            .values(**values)
             .on_conflict_do_update(
                 index_elements=["order_id", "account_id"],
-                set_=dict(
-                    symbol=order_data["symbol"],
-                    side=order_data.get("side"),
-                    type=order_data.get("type"),
-                    status=order_data.get("status"),
-                    price=float(order_data["price"]) if order_data.get("price") is not None else None,
-                    orig_qty=float(order_data["origQty"]) if order_data.get("origQty") is not None else None,
-                    executed_qty=float(order_data["executedQty"]) if order_data.get("executedQty") is not None else None,
-                    cum_quote_qty=float(order_data["cummulativeQuoteQty"]) if order_data.get("cummulativeQuoteQty") is not None else None,
-                    client_order_id=order_data.get("clientOrderId"),
-                    update_time_ms=int(order_data["updateTime"]) if order_data.get("updateTime") is not None else None,
-                    raw_json=order_data,
-                ),
+                set_=update_cols,
             )
         )
         await self._session.execute(stmt)

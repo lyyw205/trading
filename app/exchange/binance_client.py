@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import math
 import time
-import uuid
 
 import binance.client
 
 from app.exchange.base_client import ExchangeClient, SymbolFilters
+
+logger = logging.getLogger(__name__)
 
 
 class BinanceClient(ExchangeClient):
@@ -16,6 +19,8 @@ class BinanceClient(ExchangeClient):
         self.symbol = symbol
         self.client = binance.client.Client(api_key, api_secret)
         self._filters_cache: dict[str, SymbolFilters] = {}
+        self._balance_cache: dict[str, dict] = {}
+        self._balance_cache_ts: float = 0.0
         self._sync_time_offset()
 
     # ------------------------------------------------------------------
@@ -28,6 +33,7 @@ class BinanceClient(ExchangeClient):
             server_time = self.client.get_server_time()
             self.client.timestamp_offset = server_time["serverTime"] - int(time.time() * 1000)
         except Exception:
+            logger.warning("Binance time sync failed, using offset=0 (may cause signature errors)")
             self.client.timestamp_offset = 0
 
     # ------------------------------------------------------------------
@@ -63,17 +69,22 @@ class BinanceClient(ExchangeClient):
         self._filters_cache[symbol] = filters
         return filters
 
+    @staticmethod
+    def _floor_to_step(value: float, step: float) -> float:
+        """Truncate value to nearest step multiple, avoiding float precision issues."""
+        if step <= 0:
+            return value
+        precision = max(0, -int(math.floor(math.log10(step))))
+        adjusted = math.floor(round(value / step, 8)) * step
+        return round(adjusted, precision)
+
     def _sync_adjust_qty(self, qty: float, symbol: str) -> float:
         filters = self._sync_get_symbol_filters(symbol)
-        step = filters.step_size
-        adj = (float(qty) // step) * step
-        return float(f"{adj:.12f}")
+        return self._floor_to_step(qty, filters.step_size)
 
     def _sync_adjust_price(self, price: float, symbol: str) -> float:
         filters = self._sync_get_symbol_filters(symbol)
-        tick = filters.tick_size
-        adj = (float(price) // tick) * tick
-        return float(f"{adj:.12f}")
+        return self._floor_to_step(price, filters.tick_size)
 
     def _sync_get_open_orders(self, symbol: str) -> list[dict]:
         return self.client.get_open_orders(symbol=symbol)
@@ -101,13 +112,15 @@ class BinanceClient(ExchangeClient):
     ) -> dict:
         qty = self._sync_adjust_qty(qty_base, symbol)
         px = self._sync_adjust_price(price, symbol)
-        return self.client.order_limit_sell(
-            symbol=symbol,
-            quantity=f"{qty:.8f}",
-            price=f"{px:.8f}",
-            timeInForce="GTC",
-            newClientOrderId=client_oid or "",
-        )
+        kwargs: dict = {
+            "symbol": symbol,
+            "quantity": f"{qty:.8f}",
+            "price": f"{px:.8f}",
+            "timeInForce": "GTC",
+        }
+        if client_oid:
+            kwargs["newClientOrderId"] = client_oid
+        return self.client.order_limit_sell(**kwargs)
 
     def _sync_place_limit_buy_by_quote(
         self,
@@ -119,27 +132,30 @@ class BinanceClient(ExchangeClient):
         px = self._sync_adjust_price(price, symbol)
         qty = quote_usdt / px
         qty = self._sync_adjust_qty(qty, symbol)
-        return self.client.order_limit_buy(
-            symbol=symbol,
-            quantity=f"{qty:.8f}",
-            price=f"{px:.8f}",
-            timeInForce="GTC",
-            newClientOrderId=client_oid or "",
-        )
+        kwargs: dict = {
+            "symbol": symbol,
+            "quantity": f"{qty:.8f}",
+            "price": f"{px:.8f}",
+            "timeInForce": "GTC",
+        }
+        if client_oid:
+            kwargs["newClientOrderId"] = client_oid
+        return self.client.order_limit_buy(**kwargs)
 
     def _sync_get_balance(self, asset: str) -> dict:
-        account = self.client.get_account()
-        for bal in account["balances"]:
-            if bal["asset"] == asset:
-                free = float(bal["free"])
-                locked = float(bal["locked"])
-                return {"free": free, "locked": locked, "total": free + locked}
+        now = time.time()
+        if now - self._balance_cache_ts > 5.0:
+            account = self.client.get_account()
+            self._balance_cache = {
+                bal["asset"]: bal for bal in account["balances"]
+            }
+            self._balance_cache_ts = now
+        bal = self._balance_cache.get(asset)
+        if bal:
+            free = float(bal["free"])
+            locked = float(bal["locked"])
+            return {"free": free, "locked": locked, "total": free + locked}
         return {"free": 0.0, "locked": 0.0, "total": 0.0}
-
-    def _make_client_oid(self, tag: str) -> str:
-        ts = int(time.time() * 1000)
-        uid = uuid.uuid4().hex[:8]
-        return f"{tag}_{ts}_{uid}"
 
     # ------------------------------------------------------------------
     # Public async interface
@@ -149,13 +165,17 @@ class BinanceClient(ExchangeClient):
         return await asyncio.to_thread(self._sync_get_price, symbol)
 
     async def get_symbol_filters(self, symbol: str) -> SymbolFilters:
+        if symbol in self._filters_cache:
+            return self._filters_cache[symbol]
         return await asyncio.to_thread(self._sync_get_symbol_filters, symbol)
 
     async def adjust_qty(self, qty: float, symbol: str) -> float:
-        return await asyncio.to_thread(self._sync_adjust_qty, qty, symbol)
+        filters = await self.get_symbol_filters(symbol)
+        return self._floor_to_step(qty, filters.step_size)
 
     async def adjust_price(self, price: float, symbol: str) -> float:
-        return await asyncio.to_thread(self._sync_adjust_price, price, symbol)
+        filters = await self.get_symbol_filters(symbol)
+        return self._floor_to_step(price, filters.tick_size)
 
     async def get_open_orders(self, symbol: str) -> list[dict]:
         return await asyncio.to_thread(self._sync_get_open_orders, symbol)

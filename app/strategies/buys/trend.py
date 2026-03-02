@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import time
 from typing import TYPE_CHECKING
 from uuid import UUID
 
@@ -24,6 +23,7 @@ _PENDING_KEYS = (
     "pending_order_id",
     "pending_time_ms",
     "pending_bucket_usdt",
+    "pending_kind",
     "pending_trigger_price",
 )
 
@@ -138,7 +138,6 @@ class TrendBuy(BaseBuyLogic):
         order_id = int(pending_order_id)
         pending_time_ms = await state.get_int("pending_time_ms", 0)
         pending_bucket = await state.get_float("pending_bucket_usdt", 0.0)
-        pending_trigger = await state.get_float("pending_trigger_price", 0.0)
 
         try:
             order_data = await exchange.get_order(order_id, ctx.symbol)
@@ -163,7 +162,7 @@ class TrendBuy(BaseBuyLogic):
             await state.clear_keys(*_PENDING_KEYS)
             return True
 
-        now_ms = int(time.time() * 1000)
+        now_ms = int(self._now() * 1000)
         if pending_time_ms > 0 and (now_ms - pending_time_ms) > _PENDING_TIMEOUT_MS:
             logger.warning("trend_buy: pending trend buy order %s timed out, cancelling", order_id)
             try:
@@ -194,7 +193,7 @@ class TrendBuy(BaseBuyLogic):
         bought_qty = float(order_data.get("executedQty", 0))
         spent_usdt = float(order_data.get("cummulativeQuoteQty", 0))
         order_id = int(order_data.get("orderId", 0))
-        update_time_ms = int(order_data.get("updateTime", 0)) or int(time.time() * 1000)
+        update_time_ms = int(order_data.get("updateTime", 0)) or int(self._now() * 1000)
 
         base_fee_qty = extract_base_commission_qty(order_data, ctx.base_asset)
         bought_qty_net = bought_qty - base_fee_qty
@@ -243,13 +242,12 @@ class TrendBuy(BaseBuyLogic):
             return
 
         # Cross-combo reference: read lot_stacking base_price via reference_combo_id
-        from app.strategies.state_store import StrategyStateStore as SSStore
         ref_combo_id = ctx.params.get("_reference_combo_id")
         if not ref_combo_id:
             logger.warning("trend_buy: no reference_combo_id configured, skipping")
             return
 
-        ref_state = SSStore(ctx.account_id, str(ref_combo_id), state._session)
+        ref_state = state.with_scope(str(ref_combo_id))
         lot_base_price = await ref_state.get_float("base_price", 0.0)
         if lot_base_price <= 0:
             return
@@ -318,7 +316,7 @@ class TrendBuy(BaseBuyLogic):
 
         await repos.order.upsert_order(ctx.account_id, order_resp)
         placed_order_id = int(order_resp.get("orderId", 0))
-        placed_time_ms = int(order_resp.get("transactTime", 0)) or int(time.time() * 1000)
+        placed_time_ms = int(order_resp.get("transactTime", 0)) or int(self._now() * 1000)
 
         await state.set("pending_order_id", placed_order_id)
         await state.set("pending_time_ms", placed_time_ms)

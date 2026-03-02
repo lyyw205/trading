@@ -1,7 +1,7 @@
 import contextvars
 import json
 import logging
-from datetime import UTC
+from datetime import UTC, datetime
 
 current_account_id: contextvars.ContextVar[str] = contextvars.ContextVar(
     "account_id", default="system"
@@ -48,6 +48,7 @@ def setup_logging(level: str = "INFO") -> None:
     # 감사 로그 전용 핸들러 (JSON 문자열을 그대로 출력)
     audit = logging.getLogger("audit")
     audit.propagate = False
+    audit.handlers.clear()
     audit_handler = logging.StreamHandler()
     audit_handler.setFormatter(logging.Formatter("%(message)s"))
     audit.addHandler(audit_handler)
@@ -56,7 +57,6 @@ def setup_logging(level: str = "INFO") -> None:
 
 def audit_log(event: str, user_id: str, account_id: str | None = None, **kwargs) -> None:
     """보안 감사 로그 기록."""
-    from datetime import datetime
     data = {
         "event": event,
         "user_id": user_id,

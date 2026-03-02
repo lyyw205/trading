@@ -140,7 +140,7 @@ class BacktestClient(ExchangeClient):
         if step <= 0:
             return qty
         precision = max(0, -int(math.floor(math.log10(step))))
-        adjusted = math.floor(qty / step) * step
+        adjusted = math.floor(round(qty / step, 8)) * step
         return round(adjusted, precision)
 
     async def adjust_price(self, price: float, symbol: str) -> float:
@@ -148,7 +148,7 @@ class BacktestClient(ExchangeClient):
         if tick <= 0:
             return price
         precision = max(0, -int(math.floor(math.log10(tick))))
-        adjusted = math.floor(price / tick) * tick
+        adjusted = math.floor(round(price / tick, 8)) * tick
         return round(adjusted, precision)
 
     async def get_open_orders(self, symbol: str) -> list[dict]:

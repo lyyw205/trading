@@ -312,16 +312,6 @@ function closeAllModals() {
   document.getElementById('modal-backdrop').style.display = 'none';
 }
 
-// ——— Toast ———
-function showToast(msg, type) {
-  const existing = document.querySelector('.toast');
-  if (existing) existing.remove();
-  const t = document.createElement('div');
-  t.className = 'toast toast-' + (type === 'error' ? 'error' : 'success');
-  t.textContent = msg;
-  document.body.appendChild(t);
-  setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 300); }, 3000);
-}
 </script>
 
 <style>

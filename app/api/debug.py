@@ -11,17 +11,16 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import GlobalConfig
 from app.db.session import get_trading_session
-from app.dependencies import require_admin
+from app.dependencies import limiter, require_admin
 from app.models.account import TradingAccount
 
 router = APIRouter(prefix="/api/debug", tags=["debug"])
 logger = logging.getLogger(__name__)
-settings = GlobalConfig()
 
 
 @router.get("/account/{account_id}/state")
+@limiter.limit("60/minute")
 async def get_account_debug_state(
     account_id: UUID,
     request: Request,

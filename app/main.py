@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
+import os
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 
@@ -14,11 +16,11 @@ from starlette_csrf import CSRFMiddleware
 
 from app.api.accounts import router as accounts_router
 from app.api.admin import router as admin_router
+from app.api.admin_db import router as admin_db_router
 from app.api.auth import router as auth_router
 from app.api.backtest import router as backtest_router
 from app.api.combos import router as combos_router
 from app.api.dashboard import router as dashboard_router
-from app.api.admin_db import router as admin_db_router
 from app.api.debug import router as debug_router
 from app.api.health import router as health_router
 from app.api.metrics import router as metrics_router
@@ -29,6 +31,7 @@ from app.dependencies import limiter
 from app.middleware.csrf_middleware import CSRF_EXEMPT_PATHS
 from app.middleware.request_id import RequestIdMiddleware
 from app.services.auth_service import AuthService
+from app.services.candle_aggregator import run_aggregation_loop
 from app.services.rate_limiter import GlobalRateLimiter
 from app.services.session_manager import SessionManager
 from app.services.trading_engine import TradingEngine
@@ -37,14 +40,25 @@ from app.utils.logging import setup_logging
 
 settings = GlobalConfig()
 
+# Constants
+MIN_THREAD_POOL_SIZE = 10
+RATE_LIMIT_RETRY_AFTER_SEC = "60"
+_SENSITIVE_HEADER_NAMES = {"cookie", "authorization", "x-api-key", "x-csrf-token"}
+_SENSITIVE_BODY_KEYWORDS = {"password", "secret", "key", "token"}
+
 
 def _filter_sensitive_data(event, hint):
-    """Strip sensitive data from Sentry events."""
+    """Strip sensitive data from Sentry events (headers + request body)."""
     if "request" in event:
         headers = event["request"].get("headers", {})
         for key in list(headers.keys()):
-            if key.lower() in ("cookie", "authorization", "x-api-key", "x-csrf-token"):
+            if key.lower() in _SENSITIVE_HEADER_NAMES:
                 headers[key] = "[FILTERED]"
+        data = event["request"].get("data")
+        if isinstance(data, dict):
+            for key in list(data.keys()):
+                if any(s in key.lower() for s in _SENSITIVE_BODY_KEYWORDS):
+                    data[key] = "[FILTERED]"
     return event
 
 
@@ -70,8 +84,9 @@ async def lifespan(app: FastAPI):
 
     # Thread pool for asyncio.to_thread (Binance sync calls)
     loop = asyncio.get_running_loop()
-    pool_size = max(10, settings.thread_pool_size)
-    loop.set_default_executor(ThreadPoolExecutor(max_workers=pool_size))
+    pool_size = max(MIN_THREAD_POOL_SIZE, settings.thread_pool_size)
+    executor = ThreadPoolExecutor(max_workers=pool_size)
+    loop.set_default_executor(executor)
 
     # Store debug flag for cookie secure setting
     app.state.settings_debug = settings.debug
@@ -93,11 +108,15 @@ async def lifespan(app: FastAPI):
     engine = TradingEngine(rate_limiter=rate_limiter, encryption=encryption)
     app.state.trading_engine = engine
 
-    # Start trading (non-blocking)
+    # Start trading (non-blocking) with error callback
+    def _on_engine_error(task: asyncio.Task):
+        if not task.cancelled() and task.exception():
+            logger.critical("Trading engine crashed: %s", task.exception())
+
     engine_task = asyncio.create_task(engine.start())
+    engine_task.add_done_callback(_on_engine_error)
 
     # Start candle aggregation background job
-    from app.services.candle_aggregator import run_aggregation_loop
     aggregation_task = asyncio.create_task(run_aggregation_loop())
 
     # Auto-bootstrap initial admin if configured and not yet created
@@ -109,8 +128,11 @@ async def lifespan(app: FastAPI):
                 role="admin",
             )
             logger.info("Initial admin created: %s", bootstrap_user["email"])
-        except ValueError:
-            pass  # Already exists, skip silently
+        except ValueError as e:
+            if "이미 등록된" in str(e):
+                logger.debug("Initial admin already exists, skipping")
+            else:
+                logger.error("Failed to bootstrap admin: %s", e)
 
     # Clean up orphan RUNNING backtests from previous crashes
     try:
@@ -138,6 +160,10 @@ async def lifespan(app: FastAPI):
     aggregation_task.cancel()
     engine_task.cancel()
     await engine.stop_all()
+    for task in [engine_task, aggregation_task]:
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+    executor.shutdown(wait=True, cancel_futures=True)
     logger.info("Trading engine stopped")
 
 
@@ -156,15 +182,13 @@ def _rate_limit_handler(request, exc: RateLimitExceeded):
     return JSONResponse(
         {"detail": f"Rate limit exceeded: {exc.detail}"},
         status_code=429,
-        headers={"Retry-After": "60"},
+        headers={"Retry-After": RATE_LIMIT_RETRY_AFTER_SEC},
     )
 
 
 app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
 
 # Mount static files
-import os
-
 static_dir = os.path.join(os.path.dirname(__file__), "dashboard", "static")
 os.makedirs(static_dir, exist_ok=True)
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
@@ -190,6 +214,11 @@ app.add_middleware(
 class LazyAuthMiddleware:
     """Cookie session -> user injection middleware (로컬 인증 기반)."""
 
+    # Exact-match public paths (no prefix matching)
+    _PUBLIC_EXACT = {"/", "/health", "/login", "/api/auth/login", "/favicon.ico"}
+    # Prefix-match public paths (trailing slash prevents overmatch)
+    _PUBLIC_PREFIX = ("/static/", "/api/auth/")
+
     def __init__(self, app):
         self.app = app
 
@@ -204,20 +233,22 @@ class LazyAuthMiddleware:
         path = request.url.path
 
         # Public paths - skip auth
-        public_paths = {"/health", "/login", "/api/auth/login", "/static", "/favicon.ico"}
-        if any(path.startswith(p) for p in public_paths) or path == "/":
+        if path in self._PUBLIC_EXACT or any(path.startswith(p) for p in self._PUBLIC_PREFIX):
             await self.app(scope, receive, send)
             return
 
         # Get services from app state (set during lifespan)
+        # fail-closed: 서비스 미초기화 시 503 반환
         app_state = scope.get("app")
         if not app_state:
-            await self.app(scope, receive, send)
+            response = JSONResponse({"detail": "Service initializing"}, status_code=503)
+            await response(scope, receive, send)
             return
 
         session_manager = getattr(app_state.state, "session_manager", None)
         if not session_manager:
-            await self.app(scope, receive, send)
+            response = JSONResponse({"detail": "Service initializing"}, status_code=503)
+            await response(scope, receive, send)
             return
 
         # Extract session cookie
@@ -278,15 +309,19 @@ class NoCacheHTMLMiddleware:
 
         async def send_wrapper(message):
             if message["type"] == "http.response.start":
-                headers = dict(message.get("headers", []))
-                ct = headers.get(b"content-type", b"")
+                raw_headers = message.get("headers", [])
+                ct = b""
+                for k, v in raw_headers:
+                    if k == b"content-type":
+                        ct = v
+                        break
                 if b"text/html" in ct:
                     extra = [
                         (b"cache-control", b"no-cache, no-store, must-revalidate"),
                         (b"pragma", b"no-cache"),
                         (b"expires", b"0"),
                     ]
-                    message["headers"] = list(message.get("headers", [])) + extra
+                    message["headers"] = list(raw_headers) + extra
             await send(message)
 
         await self.app(scope, receive, send_wrapper)
@@ -302,7 +337,8 @@ app.include_router(combos_router)
 app.include_router(dashboard_router)
 app.include_router(admin_router)
 app.include_router(backtest_router)
-app.include_router(debug_router)
+if settings.debug or settings.environment != "production":
+    app.include_router(debug_router)
 app.include_router(metrics_router)
 app.include_router(admin_db_router)
 
