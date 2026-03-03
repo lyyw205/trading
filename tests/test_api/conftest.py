@@ -1,4 +1,5 @@
 """API test fixtures — authenticated clients."""
+
 from __future__ import annotations
 
 import pytest_asyncio

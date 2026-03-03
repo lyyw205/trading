@@ -6,6 +6,7 @@ Retention policy:
   - 5m candles: kept for 30 days, then aggregated to 1h
   - 1h candles: kept for 90 days, then aggregated to 1d
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -52,7 +53,6 @@ class CandleAggregator:
             symbols = [row[0] for row in result.all()]
 
         if not symbols:
-            logger.debug("CandleAggregator: no symbols found, skipping")
             return summary
 
         for symbol in symbols:
@@ -86,12 +86,19 @@ class CandleAggregator:
                         }
                         logger.info(
                             "CandleAggregator: %s %s->%s: aggregated=%d, deleted=%d",
-                            symbol, source_interval, target_interval, aggregated, deleted,
+                            symbol,
+                            source_interval,
+                            target_interval,
+                            aggregated,
+                            deleted,
                         )
                 except Exception as e:
                     logger.error(
                         "CandleAggregator: %s %s->%s failed: %s",
-                        symbol, source_interval, target_interval, e,
+                        symbol,
+                        source_interval,
+                        target_interval,
+                        e,
                     )
             if symbol_summary:
                 summary[symbol] = symbol_summary
@@ -112,8 +119,6 @@ async def run_aggregation_loop() -> None:
             summary = await aggregator.run_once()
             if summary:
                 logger.info("CandleAggregator: completed — %s", summary)
-            else:
-                logger.debug("CandleAggregator: no work to do")
         except asyncio.CancelledError:
             logger.info("CandleAggregator: background loop cancelled")
             return

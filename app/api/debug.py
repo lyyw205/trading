@@ -2,6 +2,7 @@
 Debug endpoint for account state inspection.
 Admin-only, always available.
 """
+
 from __future__ import annotations
 
 import logging
@@ -31,9 +32,7 @@ async def get_account_debug_state(
     Full account state snapshot for debugging.
     """
     # Get account from DB
-    result = await session.execute(
-        select(TradingAccount).where(TradingAccount.id == account_id)
-    )
+    result = await session.execute(select(TradingAccount).where(TradingAccount.id == account_id))
     account = result.scalar_one_or_none()
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
@@ -55,7 +54,9 @@ async def get_account_debug_state(
             "buy_pause_since": str(account.buy_pause_since) if account.buy_pause_since else None,
             "consecutive_low_balance": account.consecutive_low_balance,
             "circuit_breaker_failures": account.circuit_breaker_failures,
-            "circuit_breaker_disabled_at": str(account.circuit_breaker_disabled_at) if account.circuit_breaker_disabled_at else None,
+            "circuit_breaker_disabled_at": str(account.circuit_breaker_disabled_at)
+            if account.circuit_breaker_disabled_at
+            else None,
             "last_success_at": str(account.last_success_at) if account.last_success_at else None,
         },
         "config": {

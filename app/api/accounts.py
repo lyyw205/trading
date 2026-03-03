@@ -18,7 +18,9 @@ router = APIRouter(prefix="/api/accounts", tags=["accounts"])
 
 @router.get("", response_model=AccountListResponse)
 @limiter.limit("120/minute")
-async def list_accounts(request: Request, user: dict = Depends(get_current_user), session: AsyncSession = Depends(get_trading_session)):
+async def list_accounts(
+    request: Request, user: dict = Depends(get_current_user), session: AsyncSession = Depends(get_trading_session)
+):
     encryption: EncryptionManager = request.app.state.encryption
     svc = AccountService(session, encryption)
     if user.get("role") == "admin":
@@ -53,12 +55,18 @@ async def list_accounts(request: Request, user: dict = Depends(get_current_user)
 
 @router.post("", response_model=AccountResponse, status_code=201)
 @limiter.limit("30/minute")
-async def create_account(body: AccountCreate, request: Request, user: dict = Depends(get_current_user), session: AsyncSession = Depends(get_trading_session)):
+async def create_account(
+    body: AccountCreate,
+    request: Request,
+    user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_trading_session),
+):
     encryption: EncryptionManager = request.app.state.encryption
     svc = AccountService(session, encryption)
     # Admin can assign account to another user
     if user.get("role") == "admin" and body.owner_id:
         from app.models.user import UserProfile
+
         target_user = await session.get(UserProfile, body.owner_id)
         if not target_user:
             raise HTTPException(status_code=404, detail="Target user not found")
@@ -67,10 +75,15 @@ async def create_account(body: AccountCreate, request: Request, user: dict = Dep
         effective_owner_id = UUID(user["id"])
 
     account = await svc.create_account(
-        owner_id=effective_owner_id, name=body.name,
-        api_key=body.api_key, api_secret=body.api_secret,
-        symbol=body.symbol, base_asset=body.base_asset, quote_asset=body.quote_asset,
-        loop_interval_sec=body.loop_interval_sec, order_cooldown_sec=body.order_cooldown_sec,
+        owner_id=effective_owner_id,
+        name=body.name,
+        api_key=body.api_key,
+        api_secret=body.api_secret,
+        symbol=body.symbol,
+        base_asset=body.base_asset,
+        quote_asset=body.quote_asset,
+        loop_interval_sec=body.loop_interval_sec,
+        order_cooldown_sec=body.order_cooldown_sec,
     )
     await session.commit()
 
@@ -96,7 +109,15 @@ async def update_account(
     session: AsyncSession = Depends(get_trading_session),
 ):
     encryption: EncryptionManager = request.app.state.encryption
-    _ALLOWED_UPDATE_FIELDS = {"name", "symbol", "base_asset", "quote_asset", "loop_interval_sec", "order_cooldown_sec", "is_active"}
+    _ALLOWED_UPDATE_FIELDS = {
+        "name",
+        "symbol",
+        "base_asset",
+        "quote_asset",
+        "loop_interval_sec",
+        "order_cooldown_sec",
+        "is_active",
+    }
     for field, val in body.model_dump(exclude_unset=True).items():
         if field == "api_key" and val:
             account.api_key_encrypted = encryption.encrypt(val)
@@ -110,7 +131,12 @@ async def update_account(
             setattr(account, field, val)
     await session.commit()
 
-    audit_log("account_updated", user_id=user["id"], account_id=str(account.id), changed_fields=list(body.model_dump(exclude_unset=True).keys()))
+    audit_log(
+        "account_updated",
+        user_id=user["id"],
+        account_id=str(account.id),
+        changed_fields=list(body.model_dump(exclude_unset=True).keys()),
+    )
     return AccountResponse.model_validate(account)
 
 

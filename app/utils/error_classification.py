@@ -1,4 +1,5 @@
 """Error classification for circuit breaker decisions."""
+
 from __future__ import annotations
 
 import logging
@@ -7,8 +8,8 @@ logger = logging.getLogger(__name__)
 
 
 class ErrorType:
-    TRANSIENT = "transient"    # retry-able
-    PERMANENT = "permanent"    # immediate CB trip
+    TRANSIENT = "transient"  # retry-able
+    PERMANENT = "permanent"  # immediate CB trip
     RATE_LIMIT = "rate_limit"  # long backoff then retry
 
 
@@ -22,6 +23,7 @@ def classify_error(exc: Exception) -> str:
     # Check Binance API exceptions
     try:
         from binance.exceptions import BinanceAPIException
+
         if isinstance(exc, BinanceAPIException):
             if exc.code in (-1015,):  # Too many requests
                 return ErrorType.RATE_LIMIT

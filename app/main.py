@@ -69,6 +69,7 @@ async def lifespan(app: FastAPI):
     # Initialize Sentry before anything else
     if settings.sentry_dsn:
         import sentry_sdk
+
         sentry_sdk.init(
             dsn=settings.sentry_dsn,
             environment=settings.environment,
@@ -107,6 +108,7 @@ async def lifespan(app: FastAPI):
 
     # Initialize alert service (Telegram)
     from app.services.alert_service import AlertService
+
     alert_service = AlertService(settings)
     app.state.alert_service = alert_service
 
@@ -303,6 +305,7 @@ class LazyAuthMiddleware:
 
     def _unauthorized(self, path: str):
         from starlette.responses import JSONResponse, RedirectResponse
+
         if path.startswith("/api/"):
             return JSONResponse({"detail": "Unauthorized"}, status_code=401)
         return RedirectResponse(url="/login", status_code=302)
@@ -310,6 +313,7 @@ class LazyAuthMiddleware:
     def _force_logout(self, path: str, session_manager):
         """Legacy session format detected → clear cookie and redirect."""
         from starlette.responses import RedirectResponse
+
         response = RedirectResponse(url="/login", status_code=302)
         response.delete_cookie(key=session_manager.cookie_name)
         return response

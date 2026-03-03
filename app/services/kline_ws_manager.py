@@ -5,9 +5,11 @@ Uses Binance WebSocket kline stream via multiplex_socket for all active symbols.
 Stores completed 1m candles to DB and maintains latest price in memory.
 Includes supervisor loop for fault recovery and REST backfill for gap filling.
 """
+
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 
 from app.db.session import TradingSessionLocal
@@ -38,6 +40,7 @@ class KlineWsManager:
         self._running = True
         try:
             from binance import AsyncClient
+
             self._async_client = await AsyncClient.create()
             logger.info("KlineWsManager: AsyncClient created (public streams)")
         except Exception as e:
@@ -50,15 +53,11 @@ class KlineWsManager:
         self._running = False
         if self._ws_task and not self._ws_task.done():
             self._ws_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._ws_task
-            except asyncio.CancelledError:
-                pass
         if self._async_client:
-            try:
+            with contextlib.suppress(Exception):
                 await self._async_client.close_connection()
-            except Exception:
-                pass
         logger.info("KlineWsManager: stopped")
 
     async def subscribe(self, symbol: str) -> None:
@@ -71,7 +70,7 @@ class KlineWsManager:
                 logger.info("KlineWsManager: subscribed to %s (new)", symbol)
                 await self._rebuild_multiplex()
             else:
-                logger.debug("KlineWsManager: %s refcount -> %d", symbol, prev_count + 1)
+                pass  # refcount incremented
 
     async def unsubscribe(self, symbol: str) -> None:
         """Remove a symbol subscription."""
@@ -84,7 +83,6 @@ class KlineWsManager:
                 await self._rebuild_multiplex()
             elif count > 1:
                 self._subscriptions[symbol_lower] = count - 1
-                logger.debug("KlineWsManager: %s refcount -> %d", symbol, count - 1)
 
     @property
     def subscription_count(self) -> int:
@@ -104,19 +102,15 @@ class KlineWsManager:
         # Cancel existing task
         if self._ws_task and not self._ws_task.done():
             self._ws_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._ws_task
-            except asyncio.CancelledError:
-                pass
 
         if not self._subscriptions:
             logger.info("KlineWsManager: no symbols, WS idle")
             return
 
         # Start new supervisor task
-        self._ws_task = asyncio.create_task(
-            self._supervisor_loop(), name="kline-ws-supervisor"
-        )
+        self._ws_task = asyncio.create_task(self._supervisor_loop(), name="kline-ws-supervisor")
 
     async def _supervisor_loop(self) -> None:
         """Outer supervisor that restarts WS on fatal failures."""
@@ -141,6 +135,7 @@ class KlineWsManager:
                     if self._async_client:
                         await self._async_client.close_connection()
                     from binance import AsyncClient
+
                     self._async_client = await AsyncClient.create()
                     self._bsm = None
                     logger.info("KlineWsManager: recreated AsyncClient after failure")
@@ -158,23 +153,23 @@ class KlineWsManager:
         symbols = list(self._subscriptions.keys())
         for symbol in symbols:
             try:
-                klines = await self._async_client.get_klines(
-                    symbol=symbol.upper(), interval="1m", limit=60
-                )
+                klines = await self._async_client.get_klines(symbol=symbol.upper(), interval="1m", limit=60)
                 candles = []
                 for k in klines:
                     # Binance kline format: [open_time, open, high, low, close, volume, close_time, quote_volume, trades, ...]
-                    candles.append({
-                        "symbol": symbol.upper(),
-                        "ts_ms": int(k[0]),
-                        "open": float(k[1]),
-                        "high": float(k[2]),
-                        "low": float(k[3]),
-                        "close": float(k[4]),
-                        "volume": float(k[5]),
-                        "quote_volume": float(k[7]),
-                        "trade_count": int(k[8]),
-                    })
+                    candles.append(
+                        {
+                            "symbol": symbol.upper(),
+                            "ts_ms": int(k[0]),
+                            "open": float(k[1]),
+                            "high": float(k[2]),
+                            "low": float(k[3]),
+                            "close": float(k[4]),
+                            "volume": float(k[5]),
+                            "quote_volume": float(k[7]),
+                            "trade_count": int(k[8]),
+                        }
+                    )
                 if candles:
                     async with TradingSessionLocal() as session:
                         inserted = await store_candles_batch_1m(candles, session=session)
@@ -183,7 +178,9 @@ class KlineWsManager:
                     self._latest_prices[symbol] = candles[-1]["close"]
                     logger.info(
                         "KlineWsManager: backfilled %d/%d candles for %s",
-                        inserted, len(candles), symbol.upper(),
+                        inserted,
+                        len(candles),
+                        symbol.upper(),
                     )
             except Exception as e:
                 logger.warning("KlineWsManager: backfill failed for %s: %s", symbol, e)
@@ -192,9 +189,11 @@ class KlineWsManager:
         """Run the multiplex WebSocket stream for all subscribed symbols."""
         if not self._async_client:
             from binance import AsyncClient
+
             self._async_client = await AsyncClient.create()
 
         from binance import BinanceSocketManager
+
         self._bsm = BinanceSocketManager(self._async_client)
 
         symbols = list(self._subscriptions.keys())
@@ -206,7 +205,8 @@ class KlineWsManager:
 
         logger.info(
             "KlineWsManager: starting multiplex for %d symbols: %s",
-            len(symbols), [s.upper() for s in symbols],
+            len(symbols),
+            [s.upper() for s in symbols],
         )
 
         async with self._bsm.multiplex_socket(streams) as stream:
@@ -255,30 +255,47 @@ class KlineWsManager:
                     # Fire-and-forget: don't block WS loop on DB commit
                     asyncio.create_task(
                         self._save_candle(
-                            symbol_upper, ts_ms, open_, high, low,
-                            close, volume, quote_volume, trade_count,
+                            symbol_upper,
+                            ts_ms,
+                            open_,
+                            high,
+                            low,
+                            close,
+                            volume,
+                            quote_volume,
+                            trade_count,
                         )
                     )
                 except Exception as e:
-                    logger.error(
-                        "KlineWsManager: failed to parse candle for %s: %s", symbol_upper, e
-                    )
+                    logger.error("KlineWsManager: failed to parse candle for %s: %s", symbol_upper, e)
 
     async def _save_candle(
-        self, symbol: str, ts_ms: int,
-        open_: float, high: float, low: float, close: float,
-        volume: float, quote_volume: float, trade_count: int,
+        self,
+        symbol: str,
+        ts_ms: int,
+        open_: float,
+        high: float,
+        low: float,
+        close: float,
+        volume: float,
+        quote_volume: float,
+        trade_count: int,
     ) -> None:
         """Save a closed candle to DB (fire-and-forget from WS loop)."""
         try:
             async with TradingSessionLocal() as session:
                 await store_closed_candle_1m(
-                    symbol=symbol, ts_ms=ts_ms,
-                    open_=open_, high=high, low=low, close=close,
-                    volume=volume, quote_volume=quote_volume,
-                    trade_count=trade_count, session=session,
+                    symbol=symbol,
+                    ts_ms=ts_ms,
+                    open_=open_,
+                    high=high,
+                    low=low,
+                    close=close,
+                    volume=volume,
+                    quote_volume=quote_volume,
+                    trade_count=trade_count,
+                    session=session,
                 )
                 await session.commit()
-            logger.debug("KlineWsManager: stored 1m candle %s @ %d", symbol, ts_ms)
         except Exception as e:
             logger.error("KlineWsManager: failed to store candle for %s: %s", symbol, e)

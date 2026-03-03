@@ -14,12 +14,10 @@ engine_trading = create_async_engine(
     settings.database_url or "postgresql+asyncpg://localhost/crypto_trader",
     pool_size=15,
     max_overflow=10,
-    echo=settings.debug,
+    echo=settings.sql_echo,
 )
 
-TradingSessionLocal = async_sessionmaker(
-    engine_trading, class_=AsyncSession, expire_on_commit=False
-)
+TradingSessionLocal = async_sessionmaker(engine_trading, class_=AsyncSession, expire_on_commit=False)
 
 
 # Slow query detection

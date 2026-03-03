@@ -3,15 +3,9 @@ import json
 import logging
 from datetime import UTC, datetime
 
-current_account_id: contextvars.ContextVar[str] = contextvars.ContextVar(
-    "account_id", default="system"
-)
-current_request_id: contextvars.ContextVar[str] = contextvars.ContextVar(
-    "request_id", default="-"
-)
-current_cycle_id: contextvars.ContextVar[str] = contextvars.ContextVar(
-    "cycle_id", default="-"
-)
+current_account_id: contextvars.ContextVar[str] = contextvars.ContextVar("account_id", default="system")
+current_request_id: contextvars.ContextVar[str] = contextvars.ContextVar("request_id", default="-")
+current_cycle_id: contextvars.ContextVar[str] = contextvars.ContextVar("cycle_id", default="-")
 
 
 class StructuredFormatter(logging.Formatter):
@@ -44,6 +38,20 @@ def setup_logging(level: str = "INFO") -> None:
     root.handlers.clear()
     root.addHandler(handler)
     root.setLevel(getattr(logging, level.upper(), logging.INFO))
+
+    # 3rd party 라이브러리 노이즈 억제
+    for name in (
+        "sqlalchemy.engine",  # SQL echo (sql_echo=False일 때도 남는 잔여 로그)
+        "sqlalchemy.pool",  # 커넥션 풀 이벤트
+        "asyncpg",  # 드라이버 레벨 로그
+        "binance",  # python-binance 내부 로그
+        "websockets",  # WebSocket 프레임 로그
+        "httpx",  # HTTP 클라이언트
+        "httpcore",  # httpx 하위 레이어
+        "uvicorn.access",  # 요청별 접근 로그 (프록시 뒤에서 불필요)
+        "watchfiles",  # --reload 파일 감지
+    ):
+        logging.getLogger(name).setLevel(logging.WARNING)
 
     # 감사 로그 전용 핸들러 (JSON 문자열을 그대로 출력)
     audit = logging.getLogger("audit")

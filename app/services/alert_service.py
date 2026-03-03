@@ -7,6 +7,7 @@ Features:
 - Severity levels: CRITICAL (immediate), HIGH (debounced), INFO (batched)
 - Self-circuit-breaker (stops trying if Telegram API is down)
 """
+
 from __future__ import annotations
 
 import logging
@@ -22,10 +23,10 @@ logger = logging.getLogger(__name__)
 
 
 class AlertSeverity(StrEnum):
-    CRITICAL = "CRITICAL"   # circuit breaker, account disabled
-    HIGH = "HIGH"           # 3+ consecutive failures
-    MEDIUM = "MEDIUM"       # buy pause state change
-    INFO = "INFO"           # daily digest, status updates
+    CRITICAL = "CRITICAL"  # circuit breaker, account disabled
+    HIGH = "HIGH"  # 3+ consecutive failures
+    MEDIUM = "MEDIUM"  # buy pause state change
+    INFO = "INFO"  # daily digest, status updates
 
 
 class AlertService:
@@ -35,9 +36,7 @@ class AlertService:
 
     def __init__(self, settings: GlobalConfig | None = None):
         self._settings = settings or get_settings()
-        self._enabled = bool(
-            self._settings.telegram_bot_token and self._settings.telegram_chat_id
-        )
+        self._enabled = bool(self._settings.telegram_bot_token and self._settings.telegram_chat_id)
         self._rate_limit = self._settings.alert_rate_limit_per_hour
         self._send_times: deque[float] = deque(maxlen=self._rate_limit)
         self._consecutive_failures = 0

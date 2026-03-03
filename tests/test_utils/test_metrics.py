@@ -1,4 +1,5 @@
 """Unit tests for Prometheus metrics definitions."""
+
 import pytest
 from prometheus_client import Counter, Gauge, Histogram
 
@@ -9,38 +10,47 @@ class TestMetricDefinitions:
 
     def test_trading_cycle_duration_is_histogram(self):
         from app.utils.metrics import TRADING_CYCLE_DURATION
+
         assert isinstance(TRADING_CYCLE_DURATION, Histogram)
 
     def test_order_placement_duration_is_histogram(self):
         from app.utils.metrics import ORDER_PLACEMENT_DURATION
+
         assert isinstance(ORDER_PLACEMENT_DURATION, Histogram)
 
     def test_orders_placed_is_counter(self):
         from app.utils.metrics import ORDERS_PLACED
+
         assert isinstance(ORDERS_PLACED, Counter)
 
     def test_circuit_breaker_trips_is_counter(self):
         from app.utils.metrics import CIRCUIT_BREAKER_TRIPS
+
         assert isinstance(CIRCUIT_BREAKER_TRIPS, Counter)
 
     def test_buy_pause_state_is_gauge(self):
         from app.utils.metrics import BUY_PAUSE_STATE
+
         assert isinstance(BUY_PAUSE_STATE, Gauge)
 
     def test_ws_messages_received_is_counter(self):
         from app.utils.metrics import WS_MESSAGES_RECEIVED
+
         assert isinstance(WS_MESSAGES_RECEIVED, Counter)
 
     def test_ws_reconnections_is_counter(self):
         from app.utils.metrics import WS_RECONNECTIONS
+
         assert isinstance(WS_RECONNECTIONS, Counter)
 
     def test_balance_usdt_is_gauge(self):
         from app.utils.metrics import BALANCE_USDT
+
         assert isinstance(BALANCE_USDT, Gauge)
 
     def test_threadpool_utilization_is_gauge(self):
         from app.utils.metrics import THREADPOOL_UTILIZATION
+
         assert isinstance(THREADPOOL_UTILIZATION, Gauge)
 
     def test_all_metrics_importable(self):
@@ -56,6 +66,7 @@ class TestMetricDefinitions:
             WS_MESSAGES_RECEIVED,
             WS_RECONNECTIONS,
         )
+
         metrics = [
             TRADING_CYCLE_DURATION,
             ORDER_PLACEMENT_DURATION,

@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 from uuid import uuid4
 
+import app.strategies.state_store as _ss_mod
 from backtest.mem_stores import (
     InMemoryAccountStateManager,
     InMemoryLotRepository,
@@ -15,7 +16,6 @@ from backtest.mem_stores import (
     InMemoryStateStore,
     _NoOpSession,
 )
-import app.strategies.state_store as _ss_mod
 
 
 def run(coro):
@@ -159,14 +159,24 @@ class TestInMemoryLotRepository:
 
         async def go():
             lot1 = await repo.insert_lot(
-                account_id=aid, symbol="ETHUSDT", strategy_name="lot_stacking",
-                buy_order_id=100, buy_price=2000.0, buy_qty=0.01,
-                buy_time_ms=1000, combo_id=cid,
+                account_id=aid,
+                symbol="ETHUSDT",
+                strategy_name="lot_stacking",
+                buy_order_id=100,
+                buy_price=2000.0,
+                buy_qty=0.01,
+                buy_time_ms=1000,
+                combo_id=cid,
             )
             lot2 = await repo.insert_lot(
-                account_id=aid, symbol="ETHUSDT", strategy_name="lot_stacking",
-                buy_order_id=101, buy_price=1990.0, buy_qty=0.01,
-                buy_time_ms=2000, combo_id=cid,
+                account_id=aid,
+                symbol="ETHUSDT",
+                strategy_name="lot_stacking",
+                buy_order_id=101,
+                buy_price=1990.0,
+                buy_qty=0.01,
+                buy_time_ms=2000,
+                combo_id=cid,
             )
             assert lot1.lot_id == 1
             assert lot2.lot_id == 2
@@ -183,19 +193,34 @@ class TestInMemoryLotRepository:
         async def go():
             # Insert lots for two combos, out of order
             await repo.insert_lot(
-                account_id=aid, symbol="ETHUSDT", strategy_name="lot_stacking",
-                buy_order_id=1, buy_price=2000.0, buy_qty=0.01,
-                buy_time_ms=3000, combo_id=cid1,
+                account_id=aid,
+                symbol="ETHUSDT",
+                strategy_name="lot_stacking",
+                buy_order_id=1,
+                buy_price=2000.0,
+                buy_qty=0.01,
+                buy_time_ms=3000,
+                combo_id=cid1,
             )
             await repo.insert_lot(
-                account_id=aid, symbol="ETHUSDT", strategy_name="lot_stacking",
-                buy_order_id=2, buy_price=1990.0, buy_qty=0.01,
-                buy_time_ms=1000, combo_id=cid1,
+                account_id=aid,
+                symbol="ETHUSDT",
+                strategy_name="lot_stacking",
+                buy_order_id=2,
+                buy_price=1990.0,
+                buy_qty=0.01,
+                buy_time_ms=1000,
+                combo_id=cid1,
             )
             await repo.insert_lot(
-                account_id=aid, symbol="ETHUSDT", strategy_name="lot_stacking",
-                buy_order_id=3, buy_price=2010.0, buy_qty=0.01,
-                buy_time_ms=2000, combo_id=cid2,
+                account_id=aid,
+                symbol="ETHUSDT",
+                strategy_name="lot_stacking",
+                buy_order_id=3,
+                buy_price=2010.0,
+                buy_qty=0.01,
+                buy_time_ms=2000,
+                combo_id=cid2,
             )
 
             lots = await repo.get_open_lots_by_combo(aid, "ETHUSDT", cid1)
@@ -213,14 +238,22 @@ class TestInMemoryLotRepository:
 
         async def go():
             lot = await repo.insert_lot(
-                account_id=aid, symbol="ETHUSDT", strategy_name="lot_stacking",
-                buy_order_id=1, buy_price=2000.0, buy_qty=0.01,
-                buy_time_ms=1000, combo_id=cid,
+                account_id=aid,
+                symbol="ETHUSDT",
+                strategy_name="lot_stacking",
+                buy_order_id=1,
+                buy_price=2000.0,
+                buy_qty=0.01,
+                buy_time_ms=1000,
+                combo_id=cid,
             )
             await repo.close_lot(
-                account_id=aid, lot_id=lot.lot_id,
-                sell_price=2066.0, sell_time_ms=5000,
-                fee_usdt=0.1, net_profit_usdt=0.56,
+                account_id=aid,
+                lot_id=lot.lot_id,
+                sell_price=2066.0,
+                sell_time_ms=5000,
+                fee_usdt=0.1,
+                net_profit_usdt=0.56,
             )
             open_lots = await repo.get_open_lots_by_combo(aid, "ETHUSDT", cid)
             assert len(open_lots) == 0
@@ -240,13 +273,20 @@ class TestInMemoryLotRepository:
 
         async def go():
             lot = await repo.insert_lot(
-                account_id=aid, symbol="ETHUSDT", strategy_name="lot_stacking",
-                buy_order_id=1, buy_price=2000.0, buy_qty=0.01,
-                buy_time_ms=1000, combo_id=cid,
+                account_id=aid,
+                symbol="ETHUSDT",
+                strategy_name="lot_stacking",
+                buy_order_id=1,
+                buy_price=2000.0,
+                buy_qty=0.01,
+                buy_time_ms=1000,
+                combo_id=cid,
             )
             await repo.set_sell_order(
-                account_id=aid, lot_id=lot.lot_id,
-                sell_order_id=999, sell_order_time_ms=2000,
+                account_id=aid,
+                lot_id=lot.lot_id,
+                sell_order_id=999,
+                sell_order_time_ms=2000,
             )
             assert lot.sell_order_id == 999
             assert lot.sell_order_time_ms == 2000
@@ -270,19 +310,22 @@ class TestInMemoryOrderRepository:
         aid = uuid4()
 
         async def go():
-            await repo.upsert_order(aid, {
-                "orderId": 12345,
-                "symbol": "ETHUSDT",
-                "side": "BUY",
-                "type": "LIMIT",
-                "status": "FILLED",
-                "price": "2000.50",
-                "origQty": "0.01",
-                "executedQty": "0.01",
-                "cummulativeQuoteQty": "20.005",
-                "clientOrderId": "bt_test_1",
-                "updateTime": 1700000000000,
-            })
+            await repo.upsert_order(
+                aid,
+                {
+                    "orderId": 12345,
+                    "symbol": "ETHUSDT",
+                    "side": "BUY",
+                    "type": "LIMIT",
+                    "status": "FILLED",
+                    "price": "2000.50",
+                    "origQty": "0.01",
+                    "executedQty": "0.01",
+                    "cummulativeQuoteQty": "20.005",
+                    "clientOrderId": "bt_test_1",
+                    "updateTime": 1700000000000,
+                },
+            )
             order = await repo.get_order(aid, 12345)
             assert order is not None
             assert order.symbol == "ETHUSDT"
@@ -399,16 +442,16 @@ class TestCrossComboIntegration:
 
         # Patch module-level StrategyStateStore like isolated_runner does
         original_ss = _ss_mod.StrategyStateStore
-        _ss_mod.StrategyStateStore = (
-            lambda a, scope, session: InMemoryStateStore(a, scope, backing)
-        )
+        _ss_mod.StrategyStateStore = lambda a, scope, session: InMemoryStateStore(a, scope, backing)
 
         try:
+
             async def go():
                 await lot_state.set("base_price", 2500.0)
 
                 # Simulate trend.py:246-252 — lazy import + cross-combo read
                 from app.strategies.state_store import StrategyStateStore as SSStore
+
                 ref_state = SSStore(aid, str(lot_combo_id), lot_state._session)
                 base_price = await ref_state.get_float("base_price", 0.0)
                 assert base_price == 2500.0
@@ -432,8 +475,11 @@ class TestCrossComboIntegration:
                 self.__dict__.update(kwargs)
 
         history = FakeCoreBtcHistory(
-            account_id=uuid4(), symbol="ETHUSDT",
-            btc_qty=0.01, cost_usdt=20.0, source="INIT",
+            account_id=uuid4(),
+            symbol="ETHUSDT",
+            btc_qty=0.01,
+            cost_usdt=20.0,
+            source="INIT",
         )
         state._session.add(history)
         assert len(state._session._added) == 1

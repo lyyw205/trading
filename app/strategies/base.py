@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 @dataclass
 class StrategyContext:
     """전략 실행에 필요한 불변 컨텍스트 (매 tick마다 새로 생성)"""
+
     account_id: UUID
     symbol: str
     base_asset: str
@@ -35,6 +36,7 @@ class StrategyContext:
 @dataclass
 class RepositoryBundle:
     """전략에 필요한 리포지토리 묶음"""
+
     lot: LotRepository
     order: OrderRepository
     position: PositionRepository
@@ -60,6 +62,7 @@ class _StrategyTimingMixin:
 
 class BaseBuyLogic(_StrategyTimingMixin, ABC):
     """매수 전용 플러그인 기본 클래스."""
+
     name: str = ""
     display_name: str = ""
     description: str = ""
@@ -107,6 +110,7 @@ class BaseBuyLogic(_StrategyTimingMixin, ABC):
 
 class BaseSellLogic(_StrategyTimingMixin, ABC):
     """매도 전용 플러그인 기본 클래스."""
+
     name: str = ""
     display_name: str = ""
     description: str = ""

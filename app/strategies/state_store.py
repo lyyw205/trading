@@ -69,14 +69,18 @@ class StrategyStateStore:
     async def set(self, key: str, value) -> None:
         """strategy_state에 (account_id, scope, key) -> value upsert (write-through cache)"""
         str_value = str(value)
-        stmt = pg_insert(StrategyState).values(
-            account_id=self.account_id,
-            scope=self.scope,
-            key=key,
-            value=str_value,
-        ).on_conflict_do_update(
-            index_elements=["account_id", "scope", "key"],
-            set_={"value": str_value},
+        stmt = (
+            pg_insert(StrategyState)
+            .values(
+                account_id=self.account_id,
+                scope=self.scope,
+                key=key,
+                value=str_value,
+            )
+            .on_conflict_do_update(
+                index_elements=["account_id", "scope", "key"],
+                set_={"value": str_value},
+            )
         )
         await self._session.execute(stmt)
         if self._cache is not None:
@@ -87,12 +91,15 @@ class StrategyStateStore:
         if not items:
             return
         rows = [
-            {"account_id": self.account_id, "scope": self.scope, "key": k, "value": str(v)}
-            for k, v in items.items()
+            {"account_id": self.account_id, "scope": self.scope, "key": k, "value": str(v)} for k, v in items.items()
         ]
-        stmt = pg_insert(StrategyState).values(rows).on_conflict_do_update(
-            index_elements=["account_id", "scope", "key"],
-            set_={"value": pg_insert(StrategyState).excluded.value},
+        stmt = (
+            pg_insert(StrategyState)
+            .values(rows)
+            .on_conflict_do_update(
+                index_elements=["account_id", "scope", "key"],
+                set_={"value": pg_insert(StrategyState).excluded.value},
+            )
         )
         await self._session.execute(stmt)
         if self._cache is not None:

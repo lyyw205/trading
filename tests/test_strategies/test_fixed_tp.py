@@ -4,13 +4,13 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from app.strategies.base import RepositoryBundle, StrategyContext
 from app.strategies.sells.fixed_tp import FixedTpSell
-from app.strategies.base import StrategyContext, RepositoryBundle
-
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_ctx(price=50000.0, **overrides):
     defaults = dict(
@@ -57,9 +57,7 @@ def _make_repos():
 
 def _make_exchange(min_notional=10.0):
     exchange = AsyncMock()
-    exchange.get_symbol_filters = AsyncMock(
-        return_value=MagicMock(min_notional=min_notional)
-    )
+    exchange.get_symbol_filters = AsyncMock(return_value=MagicMock(min_notional=min_notional))
     exchange.adjust_price = AsyncMock(side_effect=lambda p, s: float(p))
     exchange.adjust_qty = AsyncMock(side_effect=lambda q, s: float(q))
     exchange.place_limit_sell = AsyncMock(
@@ -104,6 +102,7 @@ def _make_strategy():
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_empty_lots_returns_immediately():
@@ -202,9 +201,7 @@ async def test_canceled_sell_clears_order():
 
     await strategy.tick(ctx, state, exchange, account_state, repos, open_lots=[lot])
 
-    repos.lot.clear_sell_order.assert_awaited_once_with(
-        account_id=ctx.account_id, lot_id=3
-    )
+    repos.lot.clear_sell_order.assert_awaited_once_with(account_id=ctx.account_id, lot_id=3)
     repos.lot.close_lot.assert_not_awaited()
 
 

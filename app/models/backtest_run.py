@@ -19,9 +19,7 @@ class BacktestRun(CreatedAtMixin, Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("user_profiles.id", ondelete="CASCADE"), nullable=False
-    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("user_profiles.id", ondelete="CASCADE"), nullable=False)
     symbol: Mapped[str] = mapped_column(String, nullable=False)
     combos: Mapped[list[dict] | None] = mapped_column(JSONB, nullable=True)
     strategies: Mapped[dict | None] = mapped_column(JSONB, nullable=True)

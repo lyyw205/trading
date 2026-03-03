@@ -1,4 +1,5 @@
 """Service-layer test fixtures."""
+
 from __future__ import annotations
 
 import uuid

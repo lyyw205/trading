@@ -21,7 +21,7 @@ class EncryptionManager:
         except Exception as exc:
             raise ValueError(
                 "유효하지 않은 Fernet 키입니다. "
-                "python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\" "
+                'python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())" '
                 "명령으로 키를 생성하세요."
             ) from exc
         self._multi = MultiFernet(fernets)

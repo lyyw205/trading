@@ -25,8 +25,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _CB_RECOVERY_INTERVAL = 600  # check every 10 minutes
-_CB_COOLDOWN_SEC = 1800      # 30 min after trip before auto-recovery
-_CB_MAX_AUTO_RETRIES = 3     # max auto-recovery attempts
+_CB_COOLDOWN_SEC = 1800  # 30 min after trip before auto-recovery
+_CB_MAX_AUTO_RETRIES = 3  # max auto-recovery attempts
 
 
 class TradingEngine:
@@ -66,9 +66,7 @@ class TradingEngine:
             except Exception as e:
                 logger.error(f"Failed to start account {account.id}: {e}")
 
-        await asyncio.gather(
-            *[_start_with_jitter(acc, i) for i, acc in enumerate(accounts)]
-        )
+        await asyncio.gather(*[_start_with_jitter(acc, i) for i, acc in enumerate(accounts)])
 
         # Start background recovery loop
         asyncio.create_task(self._circuit_breaker_recovery_loop())
@@ -83,7 +81,9 @@ class TradingEngine:
             repo = AccountRepository(session)
             account = await repo.get_by_id(account_id)
             if account and (account.circuit_breaker_failures or 0) >= 5:
-                logger.warning(f"Account {account_id} has active circuit breaker ({account.circuit_breaker_failures} failures), skipping start")
+                logger.warning(
+                    f"Account {account_id} has active circuit breaker ({account.circuit_breaker_failures} failures), skipping start"
+                )
                 return
             if account:
                 symbol = account.symbol
@@ -110,7 +110,8 @@ class TradingEngine:
         )
         self._traders[account_id] = trader
         self._tasks[account_id] = asyncio.create_task(
-            trader.run_forever(), name=f"trader-{account_id}",
+            trader.run_forever(),
+            name=f"trader-{account_id}",
         )
         logger.info(f"Started trader for account {account_id}")
 
@@ -186,7 +187,11 @@ class TradingEngine:
                             continue
                         if (account.auto_recovery_attempts or 0) >= _CB_MAX_AUTO_RETRIES:
                             continue  # manual intervention needed
-                        logger.info("Auto-recovering CB-tripped account %s (attempt %d)", account.id, (account.auto_recovery_attempts or 0) + 1)
+                        logger.info(
+                            "Auto-recovering CB-tripped account %s (attempt %d)",
+                            account.id,
+                            (account.auto_recovery_attempts or 0) + 1,
+                        )
                         await repo.reset_circuit_breaker(account.id)
                         await repo.increment_auto_recovery_attempts(account.id)
                         await session.commit()
@@ -213,10 +218,7 @@ class TradingEngine:
             trader.wake()
 
     def get_account_health(self) -> dict[str, dict]:
-        return {
-            str(aid): trader.health_status()
-            for aid, trader in self._traders.items()
-        }
+        return {str(aid): trader.health_status() for aid, trader in self._traders.items()}
 
     @property
     def active_account_count(self) -> int:

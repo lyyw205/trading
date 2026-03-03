@@ -1,4 +1,5 @@
 """BacktestClient extension for failure mode testing."""
+
 from __future__ import annotations
 
 from app.exchange.backtest_client import BacktestClient
@@ -42,15 +43,21 @@ class FaultyBacktestClient(BacktestClient):
         return await super().get_price(symbol)
 
     async def place_limit_buy_by_quote(
-        self, quote_usdt: float, price: float, symbol: str, client_oid: str | None = None,
+        self,
+        quote_usdt: float,
+        price: float,
+        symbol: str,
+        client_oid: str | None = None,
     ) -> dict:
         self._check_failure("place_limit_buy_by_quote")
-        return await super().place_limit_buy_by_quote(
-            quote_usdt, price, symbol, client_oid
-        )
+        return await super().place_limit_buy_by_quote(quote_usdt, price, symbol, client_oid)
 
     async def place_limit_sell(
-        self, qty_base: float, price: float, symbol: str, client_oid: str | None = None,
+        self,
+        qty_base: float,
+        price: float,
+        symbol: str,
+        client_oid: str | None = None,
     ) -> dict:
         self._check_failure("place_limit_sell")
         return await super().place_limit_sell(qty_base, price, symbol, client_oid)

@@ -24,6 +24,7 @@ class GlobalConfig(BaseSettings):
     app_port: int = 8000
     debug: bool = False
     log_level: str = "INFO"
+    sql_echo: bool = False  # SQLAlchemy SQL echo (DEBUG와 독립)
     cors_origins: str = "http://localhost:3000"
 
     # Rate Limiting

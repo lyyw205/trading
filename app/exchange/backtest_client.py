@@ -36,9 +36,7 @@ class BacktestClient(ExchangeClient):
         self._filled_orders: list[dict] = []
         self._trades: list[dict] = []
         self._order_id_counter = 1
-        self._filters = SymbolFilters(
-            step_size=0.00001, tick_size=0.01, min_notional=10.0
-        )
+        self._filters = SymbolFilters(step_size=0.00001, tick_size=0.01, min_notional=10.0)
 
     # ------------------------------------------------------------------
     # Price helpers
@@ -73,8 +71,9 @@ class BacktestClient(ExchangeClient):
         for order in self._open_orders:
             filled = False
             order_price = float(order["price"])
-            if (order["side"] == "BUY" and buy_check <= order_price) or \
-               (order["side"] == "SELL" and sell_check >= order_price):
+            if (order["side"] == "BUY" and buy_check <= order_price) or (
+                order["side"] == "SELL" and sell_check >= order_price
+            ):
                 filled = True
 
             if filled:
@@ -89,9 +88,7 @@ class BacktestClient(ExchangeClient):
 
                 if order["side"] == "BUY":
                     cost = qty * px
-                    self._balances["USDT"]["locked"] = max(
-                        0.0, self._balances["USDT"]["locked"] - cost
-                    )
+                    self._balances["USDT"]["locked"] = max(0.0, self._balances["USDT"]["locked"] - cost)
                     if asset not in self._balances:
                         self._balances[asset] = {"free": 0.0, "locked": 0.0}
                     fee_qty = qty * self._fee_rate
@@ -99,9 +96,7 @@ class BacktestClient(ExchangeClient):
                 else:  # SELL
                     if asset not in self._balances:
                         self._balances[asset] = {"free": 0.0, "locked": 0.0}
-                    self._balances[asset]["locked"] = max(
-                        0.0, self._balances[asset]["locked"] - qty
-                    )
+                    self._balances[asset]["locked"] = max(0.0, self._balances[asset]["locked"] - qty)
                     self._balances["USDT"]["free"] += qty * px - fee
 
                 self._filled_orders.append(order)
@@ -190,16 +185,12 @@ class BacktestClient(ExchangeClient):
                 asset = o["symbol"].replace("USDT", "")
                 if o["side"] == "BUY":
                     cost = qty * px
-                    self._balances["USDT"]["locked"] = max(
-                        0.0, self._balances["USDT"]["locked"] - cost
-                    )
+                    self._balances["USDT"]["locked"] = max(0.0, self._balances["USDT"]["locked"] - cost)
                     self._balances["USDT"]["free"] += cost
                 else:
                     if asset not in self._balances:
                         self._balances[asset] = {"free": 0.0, "locked": 0.0}
-                    self._balances[asset]["locked"] = max(
-                        0.0, self._balances[asset]["locked"] - qty
-                    )
+                    self._balances[asset]["locked"] = max(0.0, self._balances[asset]["locked"] - qty)
                     self._balances[asset]["free"] += qty
             else:
                 remaining.append(o)
@@ -209,9 +200,7 @@ class BacktestClient(ExchangeClient):
             return dict(cancelled)
         return {"orderId": order_id, "symbol": symbol, "status": "CANCELED"}
 
-    async def get_my_trades(
-        self, symbol: str, limit: int = 1000, order_id: int | None = None
-    ) -> list[dict]:
+    async def get_my_trades(self, symbol: str, limit: int = 1000, order_id: int | None = None) -> list[dict]:
         trades = [t for t in self._trades if t["symbol"] == symbol]
         if order_id is not None:
             trades = [t for t in trades if t["orderId"] == order_id]
@@ -233,9 +222,7 @@ class BacktestClient(ExchangeClient):
         cost = qty * price
         usdt_free = self._balances["USDT"]["free"]
         if usdt_free < cost:
-            raise ValueError(
-                f"Insufficient USDT balance: need {cost:.4f}, have {usdt_free:.4f}"
-            )
+            raise ValueError(f"Insufficient USDT balance: need {cost:.4f}, have {usdt_free:.4f}")
 
         self._balances["USDT"]["free"] -= cost
         self._balances["USDT"]["locked"] += cost
@@ -277,9 +264,7 @@ class BacktestClient(ExchangeClient):
             self._balances[asset] = {"free": 0.0, "locked": 0.0}
         asset_free = self._balances[asset]["free"]
         if asset_free < qty:
-            raise ValueError(
-                f"Insufficient {asset} balance: need {qty:.8f}, have {asset_free:.8f}"
-            )
+            raise ValueError(f"Insufficient {asset} balance: need {qty:.8f}, have {asset_free:.8f}")
 
         self._balances[asset]["free"] -= qty
         self._balances[asset]["locked"] += qty
@@ -311,9 +296,7 @@ class BacktestClient(ExchangeClient):
             ],
         }
 
-    async def get_my_trades_from_id(
-        self, symbol: str, from_id: int, limit: int = 1000
-    ) -> list[dict]:
+    async def get_my_trades_from_id(self, symbol: str, from_id: int, limit: int = 1000) -> list[dict]:
         trades = [t for t in self._trades if t["symbol"] == symbol and t["id"] >= from_id]
         return trades[:limit]
 

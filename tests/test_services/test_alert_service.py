@@ -1,7 +1,8 @@
 """Unit tests for AlertService."""
+
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -14,6 +15,17 @@ def _make_settings(token: str = "tok", chat_id: str = "cid", rate_limit: int = 3
     settings.telegram_chat_id = chat_id
     settings.alert_rate_limit_per_hour = rate_limit
     return settings
+
+
+def _mock_client(status_code: int = 200, text: str = "ok"):
+    """Return a mock httpx.AsyncClient with preset response."""
+    mock_response = MagicMock()
+    mock_response.status_code = status_code
+    mock_response.text = text
+
+    client = AsyncMock()
+    client.post = AsyncMock(return_value=mock_response)
+    return client
 
 
 @pytest.mark.unit
@@ -52,25 +64,16 @@ async def test_rate_limiting_rejects_over_limit():
     """Send rate_limit messages successfully, then N+1 should be rejected."""
     settings = _make_settings(rate_limit=3)
     svc = AlertService(settings)
+    svc._client = _mock_client(status_code=200)
 
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-
-    with patch("httpx.AsyncClient") as mock_client_cls:
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.post = AsyncMock(return_value=mock_response)
-        mock_client_cls.return_value = mock_client
-
-        # First 3 succeed
-        for _ in range(3):
-            result = await svc.send("msg", AlertSeverity.INFO)
-            assert result is True
-
-        # 4th is rate-limited
+    # First 3 succeed
+    for _ in range(3):
         result = await svc.send("msg", AlertSeverity.INFO)
-        assert result is False
+        assert result is True
+
+    # 4th is rate-limited
+    result = await svc.send("msg", AlertSeverity.INFO)
+    assert result is False
 
 
 @pytest.mark.unit
@@ -79,27 +82,18 @@ async def test_critical_bypasses_rate_limit():
     """CRITICAL severity must bypass the rate limit."""
     settings = _make_settings(rate_limit=2)
     svc = AlertService(settings)
+    svc._client = _mock_client(status_code=200)
 
-    mock_response = MagicMock()
-    mock_response.status_code = 200
+    # Exhaust rate limit with INFO messages
+    for _ in range(2):
+        await svc.send("msg", AlertSeverity.INFO)
 
-    with patch("httpx.AsyncClient") as mock_client_cls:
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.post = AsyncMock(return_value=mock_response)
-        mock_client_cls.return_value = mock_client
+    # INFO now rejected
+    assert await svc.send("msg", AlertSeverity.INFO) is False
 
-        # Exhaust rate limit with INFO messages
-        for _ in range(2):
-            await svc.send("msg", AlertSeverity.INFO)
-
-        # INFO now rejected
-        assert await svc.send("msg", AlertSeverity.INFO) is False
-
-        # CRITICAL still goes through
-        result = await svc.send_critical("critical msg")
-        assert result is True
+    # CRITICAL still goes through
+    result = await svc.send_critical("critical msg")
+    assert result is True
 
 
 @pytest.mark.unit
@@ -108,21 +102,11 @@ async def test_circuit_breaker_trips_after_max_failures():
     """After max_failures consecutive API errors, is_enabled becomes False."""
     settings = _make_settings()
     svc = AlertService(settings)
+    svc._client = _mock_client(status_code=500, text="Internal Server Error")
 
-    mock_response = MagicMock()
-    mock_response.status_code = 500
-    mock_response.text = "Internal Server Error"
-
-    with patch("httpx.AsyncClient") as mock_client_cls:
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.post = AsyncMock(return_value=mock_response)
-        mock_client_cls.return_value = mock_client
-
-        # Trigger max_failures (5) failures — use CRITICAL to bypass rate limit
-        for _ in range(5):
-            await svc.send_critical("failing")
+    # Trigger max_failures (5) failures — use CRITICAL to bypass rate limit
+    for _ in range(5):
+        await svc.send_critical("failing")
 
     assert not svc.is_enabled
 
@@ -160,17 +144,8 @@ async def test_send_returns_true_on_200():
     """Successful Telegram API call returns True."""
     settings = _make_settings()
     svc = AlertService(settings)
+    svc._client = _mock_client(status_code=200)
 
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-
-    with patch("httpx.AsyncClient") as mock_client_cls:
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.post = AsyncMock(return_value=mock_response)
-        mock_client_cls.return_value = mock_client
-
-        result = await svc.send("test message", AlertSeverity.HIGH)
-        assert result is True
-        assert svc._consecutive_failures == 0
+    result = await svc.send("test message", AlertSeverity.HIGH)
+    assert result is True
+    assert svc._consecutive_failures == 0

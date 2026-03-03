@@ -89,7 +89,9 @@ class AccountTrader:
             # Phase 3-C: DB에서 서킷 브레이커 상태 복원
             self._consecutive_failures = account.circuit_breaker_failures or 0
             if self._consecutive_failures >= 5:
-                logger.warning(f"[{self.account_id}] Circuit breaker already tripped ({self._consecutive_failures} failures), not starting")
+                logger.warning(
+                    "Circuit breaker already tripped (%d failures), not starting", self._consecutive_failures
+                )
                 raise RuntimeError(f"Circuit breaker active: {self._consecutive_failures} failures")
             api_key = self._encryption.decrypt(account.api_key_encrypted)
             api_secret = self._encryption.decrypt(account.api_secret_encrypted)
@@ -121,8 +123,8 @@ class AccountTrader:
             except OperationalError as e:
                 last_exc = e
                 if attempt < 2:
-                    logger.warning("[%s] DB connection error (attempt %d/3): %s", self.account_id, attempt + 1, e)
-                    await asyncio.sleep(2 ** attempt)
+                    logger.warning("DB connection error (attempt %d/3): %s", attempt + 1, e)
+                    await asyncio.sleep(2**attempt)
         raise last_exc
 
     async def _do_step(self) -> int:
@@ -161,7 +163,7 @@ class AccountTrader:
                     free_balance = await self._client.get_free_balance(account.quote_asset)
                     balance_ok = free_balance >= MIN_TRADE_USDT
                 except Exception as e:
-                    logger.warning("[%s] Balance check failed: %s, skipping buy evaluation", self.account_id, e)
+                    logger.warning("Balance check failed: %s, skipping buy evaluation", e)
                     # 잔고 API 실패 → 상태 변경 없이 이번 사이클 매수 스킵
                     balance_ok = False
 
@@ -183,7 +185,6 @@ class AccountTrader:
                 combos = list(combo_result.scalars().all())
 
                 if not combos:
-                    logger.debug("[%s] No active combos, skipping cycle", self.account_id)
                     return
 
                 # Sync orders and fills for all combo symbols
@@ -196,12 +197,16 @@ class AccountTrader:
                 # Sentry context for this trading cycle
                 try:
                     import sentry_sdk
+
                     sentry_sdk.set_tag("account_id", str(self.account_id))
                     sentry_sdk.set_tag("trading_cycle", cycle_id)
-                    sentry_sdk.set_context("trading", {
-                        "buy_pause_state": str(self._buy_pause_state),
-                        "active_combos": len(combos),
-                    })
+                    sentry_sdk.set_context(
+                        "trading",
+                        {
+                            "buy_pause_state": str(self._buy_pause_state),
+                            "active_combos": len(combos),
+                        },
+                    )
                 except Exception:
                     pass  # Sentry not configured
 
@@ -224,7 +229,7 @@ class AccountTrader:
                         try:
                             base_asset, quote_asset = parse_symbol(symbol)
                         except ValueError:
-                            logger.warning("[%s] Cannot parse symbol %s, skipping", self.account_id, symbol)
+                            logger.warning("Cannot parse symbol %s, skipping", symbol)
                             continue
 
                         # Fetch price for this symbol
@@ -232,7 +237,7 @@ class AccountTrader:
                         if cur_price <= 0:
                             cur_price = await self._price_collector.refresh_symbol(symbol)
                         if cur_price <= 0:
-                            logger.warning("[%s] Price is 0 for %s, skipping", self.account_id, symbol)
+                            logger.warning("Price is 0 for %s, skipping", symbol)
                             continue
 
                         buy_logic = self._get_or_create_buy(combo.id, symbol, combo.buy_logic_name)
@@ -244,7 +249,9 @@ class AccountTrader:
 
                         # Pre-fetch open lots once for both buy and sell
                         open_lots = await lot_repo.get_open_lots_by_combo(
-                            self.account_id, symbol, combo.id,
+                            self.account_id,
+                            symbol,
+                            combo.id,
                         )
                         open_lots_count_before += len(open_lots)
 
@@ -285,14 +292,21 @@ class AccountTrader:
 
                         # 2. 매수 (buy-pause 가드 적용)
                         should_buy, self._throttle_cycle = BuyPauseManager.should_attempt_buy(
-                            self._buy_pause_state, balance_ok, self._throttle_cycle,
+                            self._buy_pause_state,
+                            balance_ok,
+                            self._throttle_cycle,
                         )
                         if should_buy:
                             await buy_logic.tick(buy_ctx, combo_state, self._client, account_state, repos, combo.id)
 
                 # --- Sell detection: compare open lot count before/after strategies ---
-                open_lots_after_stmt = select(func.count()).select_from(Lot).where(
-                    Lot.account_id == self.account_id, Lot.status == "OPEN",
+                open_lots_after_stmt = (
+                    select(func.count())
+                    .select_from(Lot)
+                    .where(
+                        Lot.account_id == self.account_id,
+                        Lot.status == "OPEN",
+                    )
                 )
                 open_lots_after = (await session.execute(open_lots_after_stmt)).scalar_one()
                 sell_occurred = open_lots_after < open_lots_count_before
@@ -304,14 +318,16 @@ class AccountTrader:
                         fresh_balance = await self._client.get_free_balance(account.quote_asset)
                         balance_ok = fresh_balance >= MIN_TRADE_USDT
                         if balance_ok:
-                            logger.info("[%s] Sell detected + balance recovered → will resume", self.account_id)
+                            logger.info("Sell detected + balance recovered → will resume")
                     except Exception:
                         pass  # 재체크 실패 시 기존 balance_ok 유지
 
                 # --- Buy pause state transition ---
                 new_state, new_count = await pause_mgr.update_state(
-                    self._buy_pause_state, self._consecutive_low_balance,
-                    balance_ok, sell_occurred,
+                    self._buy_pause_state,
+                    self._consecutive_low_balance,
+                    balance_ok,
+                    sell_occurred,
                 )
                 self._buy_pause_state = new_state
                 self._consecutive_low_balance = new_count
@@ -329,14 +345,15 @@ class AccountTrader:
         finally:
             current_account_id.reset(token)
             current_cycle_id.reset(cycle_token)
-            TRADING_CYCLE_DURATION.labels(account_id=str(self.account_id)).observe(
-                time.perf_counter() - start_time
-            )
+            TRADING_CYCLE_DURATION.labels(account_id=str(self.account_id)).observe(time.perf_counter() - start_time)
         return result
 
     async def _sync_orders_and_fills(
-        self, account, symbols: set[str],
-        order_repo: OrderRepository, position_repo: PositionRepository,
+        self,
+        account,
+        symbols: set[str],
+        order_repo: OrderRepository,
+        position_repo: PositionRepository,
         session,
     ):
         """Sync open orders and recent fills for all active symbols.
@@ -359,7 +376,7 @@ class AccountTrader:
         all_open_orders: list[dict] = []
         for sym, result in zip(symbols, open_order_results, strict=False):
             if isinstance(result, Exception):
-                logger.warning("[%s] Open orders sync failed for %s: %s", self.account_id, sym, result)
+                logger.warning("Open orders sync failed for %s: %s", sym, result)
                 continue
             _, ex_open = result
             for o in ex_open:
@@ -394,7 +411,7 @@ class AccountTrader:
             )
             for oid, res in zip(to_refresh, results, strict=False):
                 if isinstance(res, Exception):
-                    logger.warning("[%s] Order %s sync failed: %s", self.account_id, oid, res)
+                    logger.warning("Order %s sync failed: %s", oid, res)
 
         # Step 3: Sync recent fills per symbol (parallel API fetch, sequential DB upsert)
         async def _fetch_trades(sym: str):
@@ -409,7 +426,7 @@ class AccountTrader:
         symbols_with_new_fills: set[str] = set()
         for sym, result in zip(symbols, trade_results, strict=False):
             if isinstance(result, Exception):
-                logger.warning("[%s] Fills sync failed for %s: %s", self.account_id, sym, result)
+                logger.warning("Fills sync failed for %s: %s", sym, result)
                 continue
             _, trades = result
             try:
@@ -430,6 +447,7 @@ class AccountTrader:
 
                 # Parallel fetch for unseen order IDs
                 if unseen_oids:
+
                     async def _fetch_fill_order(fill_oid: int, fill_sym: str = sym):
                         await self._rate_limiter.acquire(weight=1)
                         o = await self._client.get_order(fill_oid, fill_sym)
@@ -441,9 +459,9 @@ class AccountTrader:
                     )
                     for oid, res in zip(unseen_oids, fill_results, strict=False):
                         if isinstance(res, Exception):
-                            logger.warning("[%s] Fill order %s sync failed: %s", self.account_id, oid, res)
+                            logger.warning("Fill order %s sync failed: %s", oid, res)
             except Exception as e:
-                logger.warning("[%s] Fills sync failed for %s: %s", self.account_id, sym, e)
+                logger.warning("Fills processing failed for %s: %s", sym, e)
 
         # 4-6: Conditional recompute — only for symbols with new fills
         for sym in symbols_with_new_fills:
@@ -451,59 +469,66 @@ class AccountTrader:
 
     async def run_forever(self):
         """Main trading loop with circuit breaker and exponential backoff"""
-        # Phase 3-A: _init_client() 실패 시 서킷 브레이커 발동
+        # Set account context early so _init_client and error logs include account_id
+        token = current_account_id.set(str(self.account_id))
         try:
-            await self._init_client()
-        except Exception as e:
-            logger.error(f"[{self.account_id}] _init_client() failed: {e}")
-            self._consecutive_failures = 5
-            await self._disable_with_circuit_breaker()
-            return
-
-        logger.info(f"[{self.account_id}] Trading loop started")
-
-        while self._running:
+            # Phase 3-A: _init_client() 실패 시 서킷 브레이커 발동
             try:
-                # Phase 3-B: step() 타임아웃 (180초)
-                loop_interval = await asyncio.wait_for(self.step(), timeout=180)
-            except TimeoutError:
-                self._consecutive_failures += 1
-                logger.error(f"[{self.account_id}] step() timed out (180s), failures: {self._consecutive_failures}")
-
-                if self._consecutive_failures >= 5:
-                    await self._disable_with_circuit_breaker()
-                    return
-
-                backoff = min(60, 2 ** (self._consecutive_failures - 1))
-                await asyncio.sleep(backoff)
-                continue
+                await self._init_client()
             except Exception as e:
-                err_type = classify_error(e)
-                if err_type == ErrorType.PERMANENT:
-                    logger.error("[%s] Permanent error, triggering CB: %s", self.account_id, e)
-                    self._consecutive_failures = 5  # immediate trip
-                elif err_type == ErrorType.RATE_LIMIT:
-                    logger.warning("[%s] Rate limited, backing off 120s: %s", self.account_id, e)
-                    await asyncio.sleep(120)
-                    continue
-                else:
+                logger.error("_init_client() failed: %s", e)
+                self._consecutive_failures = 5
+                await self._disable_with_circuit_breaker()
+                return
+
+            logger.info("Trading loop started")
+
+            while self._running:
+                try:
+                    # Phase 3-B: step() 타임아웃 (180초)
+                    loop_interval = await asyncio.wait_for(self.step(), timeout=180)
+                except TimeoutError:
                     self._consecutive_failures += 1
-                    logger.error("[%s] Transient error (%dx): %s", self.account_id, self._consecutive_failures, e)
+                    logger.error("step() timed out (180s), failures: %d", self._consecutive_failures)
 
-                if self._consecutive_failures >= 5:
-                    await self._disable_with_circuit_breaker()
-                    return
+                    if self._consecutive_failures >= 5:
+                        await self._disable_with_circuit_breaker()
+                        return
 
-                backoff = min(60, 2 ** (self._consecutive_failures - 1))
-                await asyncio.sleep(backoff)
-                continue
+                    backoff = min(60, 2 ** (self._consecutive_failures - 1))
+                    await asyncio.sleep(backoff)
+                    continue
+                except Exception as e:
+                    err_type = classify_error(e)
+                    if err_type == ErrorType.PERMANENT:
+                        logger.error("Permanent error, triggering CB: %s", e)
+                        self._consecutive_failures = 5  # immediate trip
+                    elif err_type == ErrorType.RATE_LIMIT:
+                        logger.warning("Rate limited, backing off 120s: %s", e)
+                        await asyncio.sleep(120)
+                        continue
+                    else:
+                        self._consecutive_failures += 1
+                        logger.error("Transient error (%dx): %s", self._consecutive_failures, e)
 
-            # Dynamic interval (buy-pause aware)
-            base_interval = loop_interval if loop_interval else 60
-            interval = BuyPauseManager.compute_interval(
-                base_interval, self._buy_pause_state, self._has_open_positions,
-            )
-            await self._interruptible_sleep(interval)
+                    if self._consecutive_failures >= 5:
+                        await self._disable_with_circuit_breaker()
+                        return
+
+                    backoff = min(60, 2 ** (self._consecutive_failures - 1))
+                    await asyncio.sleep(backoff)
+                    continue
+
+                # Dynamic interval (buy-pause aware)
+                base_interval = loop_interval if loop_interval else 60
+                interval = BuyPauseManager.compute_interval(
+                    base_interval,
+                    self._buy_pause_state,
+                    self._has_open_positions,
+                )
+                await self._interruptible_sleep(interval)
+        finally:
+            current_account_id.reset(token)
 
     async def _interruptible_sleep(self, seconds: float):
         """Sleep that can be interrupted by _wake_event (manual resume)."""
@@ -520,7 +545,7 @@ class AccountTrader:
                 disabled_at=datetime.now(UTC),
             )
             await session.commit()
-        logger.critical("[%s] Circuit breaker triggered: %d consecutive failures", self.account_id, self._consecutive_failures)
+        logger.critical("Circuit breaker triggered: %d consecutive failures", self._consecutive_failures)
 
         # Metrics
         CIRCUIT_BREAKER_TRIPS.labels(account_id=str(self.account_id)).inc()
@@ -535,7 +560,7 @@ class AccountTrader:
                 f"Auto recovery will attempt in 30 minutes"
             )
         except Exception as alert_err:
-            logger.warning("[%s] Failed to send CB alert: %s", self.account_id, alert_err)
+            logger.warning("Failed to send CB alert: %s", alert_err)
 
         self._running = False
 

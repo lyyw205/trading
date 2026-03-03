@@ -3,6 +3,7 @@
 Periodic automatic execution (every 10 min) + admin API manual trigger.
 On drift detection: log + alert + record event in DB.
 """
+
 from __future__ import annotations
 
 import logging
@@ -97,8 +98,12 @@ class ReconciliationService:
             )
 
             if status == "drift_detected":
-                logger.warning("Reconciliation drift for %s: %d position diffs, %d fill gaps",
-                               account_id, len(position_diffs), len(fill_gaps))
+                logger.warning(
+                    "Reconciliation drift for %s: %d position diffs, %d fill gaps",
+                    account_id,
+                    len(position_diffs),
+                    len(fill_gaps),
+                )
                 await self._send_drift_alert(result)
 
             return result
@@ -145,23 +150,21 @@ class ReconciliationService:
             diff = pos.qty - ex_qty
             pct = abs(diff) / max(float(pos.qty), 1e-8)
             if pct > self.POSITION_THRESHOLD_PCT:
-                diffs.append(PositionDiff(
-                    symbol=pos.symbol,
-                    db_qty=float(pos.qty),
-                    exchange_qty=ex_qty,
-                    diff_qty=round(diff, 8),
-                    diff_pct=round(pct * 100, 4),
-                ))
+                diffs.append(
+                    PositionDiff(
+                        symbol=pos.symbol,
+                        db_qty=float(pos.qty),
+                        exchange_qty=ex_qty,
+                        diff_qty=round(diff, 8),
+                        diff_pct=round(pct * 100, 4),
+                    )
+                )
         return diffs
 
     async def _check_fill_gaps(self, account_id: UUID) -> list[FillGap]:
         """Check for missing fills by comparing last DB trade_id vs exchange."""
         # Get last trade_id per symbol from DB
-        stmt = (
-            select(Fill.symbol, func.max(Fill.trade_id))
-            .where(Fill.account_id == account_id)
-            .group_by(Fill.symbol)
-        )
+        stmt = select(Fill.symbol, func.max(Fill.trade_id)).where(Fill.account_id == account_id).group_by(Fill.symbol)
         result = await self._session.execute(stmt)
         db_last_ids = {row[0]: row[1] for row in result.all()}
 
@@ -180,12 +183,14 @@ class ReconciliationService:
                     estimated_missing = exchange_latest_id - last_db_id
                     # Only report if gap is significant (>5 trades)
                     if estimated_missing > 5:
-                        gaps.append(FillGap(
-                            symbol=symbol,
-                            last_db_trade_id=last_db_id,
-                            exchange_latest_trade_id=exchange_latest_id,
-                            estimated_missing=estimated_missing,
-                        ))
+                        gaps.append(
+                            FillGap(
+                                symbol=symbol,
+                                last_db_trade_id=last_db_id,
+                                exchange_latest_trade_id=exchange_latest_id,
+                                estimated_missing=estimated_missing,
+                            )
+                        )
             except Exception as e:
                 logger.warning("Fill gap check failed for %s/%s: %s", account_id, symbol, e)
 
@@ -194,10 +199,7 @@ class ReconciliationService:
     async def repair_fill_gaps(self, account_id: UUID, symbol: str) -> int:
         """Repair missing fills using fromId-based fetching. Returns count of fills added."""
         # Get last DB trade_id for this symbol
-        stmt = (
-            select(func.max(Fill.trade_id))
-            .where(Fill.account_id == account_id, Fill.symbol == symbol)
-        )
+        stmt = select(func.max(Fill.trade_id)).where(Fill.account_id == account_id, Fill.symbol == symbol)
         result = await self._session.execute(stmt)
         last_id = result.scalar()
 

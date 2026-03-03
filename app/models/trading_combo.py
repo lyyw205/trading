@@ -16,9 +16,7 @@ class TradingCombo(TimestampMixin, Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    account_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("trading_accounts.id", ondelete="CASCADE"), nullable=False
-    )
+    account_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("trading_accounts.id", ondelete="CASCADE"), nullable=False)
     name: Mapped[str] = mapped_column(String, nullable=False)
     symbols: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default="[]")
     buy_logic_name: Mapped[str] = mapped_column(String, nullable=False)

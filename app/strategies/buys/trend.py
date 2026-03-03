@@ -51,41 +51,69 @@ class TrendBuy(BaseBuyLogic):
             "group": "sizing",
         },
         "buy_usdt": {
-            "type": "float", "min": 10.0, "max": 500.0, "step": 1.0,
-            "title": "추세 매수금액", "unit": "USDT",
+            "type": "float",
+            "min": 10.0,
+            "max": 500.0,
+            "step": 1.0,
+            "title": "추세 매수금액",
+            "unit": "USDT",
             "visible_when": {"sizing_mode": "fixed"},
             "group": "sizing",
         },
         "buy_balance_pct": {
-            "type": "float", "min": 1.0, "max": 50.0, "step": 0.5,
-            "title": "잔고 대비 매수 비율", "unit": "%",
+            "type": "float",
+            "min": 1.0,
+            "max": 50.0,
+            "step": 0.5,
+            "title": "잔고 대비 매수 비율",
+            "unit": "%",
             "visible_when": {"sizing_mode": "pct_balance"},
             "group": "sizing",
         },
         "max_buy_usdt": {
-            "type": "float", "min": 10.0, "max": 5000.0, "step": 10.0,
-            "title": "최대 매수 금액", "unit": "USDT",
+            "type": "float",
+            "min": 10.0,
+            "max": 5000.0,
+            "step": 10.0,
+            "title": "최대 매수 금액",
+            "unit": "USDT",
             "visible_when": {"sizing_mode": "pct_balance"},
             "group": "sizing",
         },
         "enable_pct": {
-            "type": "float", "min": 0.01, "max": 0.1, "step": 0.005,
-            "title": "\ucd94\uc138 \ud65c\uc131\ud654 \uae30\uc900", "unit": "%",
+            "type": "float",
+            "min": 0.01,
+            "max": 0.1,
+            "step": 0.005,
+            "title": "\ucd94\uc138 \ud65c\uc131\ud654 \uae30\uc900",
+            "unit": "%",
             "group": "condition",
         },
         "recenter_pct": {
-            "type": "float", "min": 0.005, "max": 0.05, "step": 0.005,
-            "title": "\ucd94\uc138 \ub9ac\uc13c\ud130 \ube44\uc728", "unit": "%",
+            "type": "float",
+            "min": 0.005,
+            "max": 0.05,
+            "step": 0.005,
+            "title": "\ucd94\uc138 \ub9ac\uc13c\ud130 \ube44\uc728",
+            "unit": "%",
             "group": "condition",
         },
         "drop_pct": {
-            "type": "float", "min": 0.005, "max": 0.05, "step": 0.001,
-            "title": "\ub418\ub3cc\ub9bc \ub9e4\uc218 \ube44\uc728", "unit": "%",
+            "type": "float",
+            "min": 0.005,
+            "max": 0.05,
+            "step": 0.001,
+            "title": "\ub418\ub3cc\ub9bc \ub9e4\uc218 \ube44\uc728",
+            "unit": "%",
             "group": "condition",
         },
         "step_pct": {
-            "type": "float", "min": 0.005, "max": 0.05, "step": 0.001,
-            "title": "\ub2e8\uacc4\ubcc4 \uac04\uaca9", "unit": "%",
+            "type": "float",
+            "min": 0.005,
+            "max": 0.05,
+            "step": 0.001,
+            "title": "\ub2e8\uacc4\ubcc4 \uac04\uaca9",
+            "unit": "%",
             "group": "condition",
         },
     }
@@ -104,11 +132,21 @@ class TrendBuy(BaseBuyLogic):
         combo_id: UUID,
     ) -> None:
         has_pending = await self._process_pending_trend_buy(
-            ctx, state, exchange, account_state, repos, combo_id,
+            ctx,
+            state,
+            exchange,
+            account_state,
+            repos,
+            combo_id,
         )
         if not has_pending:
             await self._maybe_buy_on_trend(
-                ctx, state, exchange, account_state, repos, combo_id,
+                ctx,
+                state,
+                exchange,
+                account_state,
+                repos,
+                combo_id,
             )
 
     # ------------------------------------------------------------------
@@ -144,7 +182,12 @@ class TrendBuy(BaseBuyLogic):
         if status == "FILLED":
             logger.info("trend_buy: pending trend buy order %s FILLED", order_id)
             await self._handle_filled_trend_buy(
-                ctx, state, order_data, account_state, repos, combo_id,
+                ctx,
+                state,
+                order_data,
+                account_state,
+                repos,
+                combo_id,
                 core_bucket_locked=pending_bucket,
             )
             await state.clear_keys(*PENDING_KEYS)
@@ -215,7 +258,8 @@ class TrendBuy(BaseBuyLogic):
 
         logger.info(
             "trend_buy: TREND buy filled qty_net=%.8f avg=%.2f",
-            bought_qty_net, avg_price,
+            bought_qty_net,
+            avg_price,
         )
 
     # ------------------------------------------------------------------
@@ -264,7 +308,8 @@ class TrendBuy(BaseBuyLogic):
         if ctx.current_price >= trend_base * (1 + recenter_pct):
             logger.info(
                 "trend_buy: recentering trend_base from %.2f to %.2f",
-                trend_base, ctx.current_price,
+                trend_base,
+                ctx.current_price,
             )
             trend_base = ctx.current_price
             await state.set("base_price", trend_base)
@@ -286,7 +331,8 @@ class TrendBuy(BaseBuyLogic):
         if total_buy_usdt < min_trade_usdt:
             logger.warning(
                 "trend_buy: buy_usdt %.2f below min_trade_usdt %.2f",
-                total_buy_usdt, min_trade_usdt,
+                total_buy_usdt,
+                min_trade_usdt,
             )
             return
 
@@ -312,15 +358,19 @@ class TrendBuy(BaseBuyLogic):
         placed_order_id = int(order_resp.get("orderId", 0))
         placed_time_ms = int(order_resp.get("transactTime", 0)) or int(self._now() * 1000)
 
-        await state.set_many({
-            "pending_order_id": placed_order_id,
-            "pending_time_ms": placed_time_ms,
-            "pending_bucket_usdt": 0,
-            "pending_trigger_price": trigger_adjusted,
-        })
+        await state.set_many(
+            {
+                "pending_order_id": placed_order_id,
+                "pending_time_ms": placed_time_ms,
+                "pending_bucket_usdt": 0,
+                "pending_trigger_price": trigger_adjusted,
+            }
+        )
         self._touch_order()
 
         logger.info(
             "trend_buy: placed TREND buy order %s at trigger=%.2f usdt=%.2f",
-            placed_order_id, trigger_adjusted, total_buy_usdt,
+            placed_order_id,
+            trigger_adjusted,
+            total_buy_usdt,
         )

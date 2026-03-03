@@ -1,8 +1,9 @@
 """Unit tests for AccountTrader._sync_orders_and_fills and related methods."""
+
 from __future__ import annotations
 
 import uuid
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -70,17 +71,13 @@ async def test_sync_parallel_open_orders(trader):
     account, order_repo, position_repo, session = _make_sync_deps()
 
     trader._client = AsyncMock()
-    trader._client.get_open_orders = AsyncMock(
-        return_value=[{"orderId": 1, "status": "NEW"}]
-    )
+    trader._client.get_open_orders = AsyncMock(return_value=[{"orderId": 1, "status": "NEW"}])
     trader._client.get_my_trades = AsyncMock(return_value=[])
 
     # rate_limiter is already an AsyncMock via fixture; just ensure acquire works
     trader._rate_limiter.acquire = AsyncMock()
 
-    await trader._sync_orders_and_fills(
-        account, symbols, order_repo, position_repo, session
-    )
+    await trader._sync_orders_and_fills(account, symbols, order_repo, position_repo, session)
 
     assert trader._client.get_open_orders.call_count == len(symbols)
     called_syms = {call.args[0] for call in trader._client.get_open_orders.call_args_list}
@@ -98,9 +95,7 @@ async def test_sync_parallel_fills(trader):
     trader._client.get_my_trades = AsyncMock(return_value=[])
     trader._rate_limiter.acquire = AsyncMock()
 
-    await trader._sync_orders_and_fills(
-        account, symbols, order_repo, position_repo, session
-    )
+    await trader._sync_orders_and_fills(account, symbols, order_repo, position_repo, session)
 
     assert trader._client.get_my_trades.call_count == len(symbols)
     called_syms = {call.args[0] for call in trader._client.get_my_trades.call_args_list}
@@ -127,9 +122,7 @@ async def test_sync_error_isolation(trader, caplog):
 
     with caplog.at_level(logging.WARNING):
         # Must not raise even though one symbol errors out
-        await trader._sync_orders_and_fills(
-            account, symbols, order_repo, position_repo, session
-        )
+        await trader._sync_orders_and_fills(account, symbols, order_repo, position_repo, session)
 
     # Warning logged for the failing symbol
     assert any("ETHUSDT" in record.message for record in caplog.records)

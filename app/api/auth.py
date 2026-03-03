@@ -20,9 +20,7 @@ async def login(login_req: LoginRequest, request: Request):
     if not user:
         raise HTTPException(status_code=401, detail="이메일 또는 비밀번호가 올바르지 않습니다.")
 
-    cookie_value = session_mgr.create_session_cookie(
-        user_id=user["id"], email=user["email"], role=user["role"]
-    )
+    cookie_value = session_mgr.create_session_cookie(user_id=user["id"], email=user["email"], role=user["role"])
 
     response = LoginResponse(success=True, user=UserResponse(**user))
     json_resp = JSONResponse(content=response.model_dump())

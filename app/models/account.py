@@ -19,9 +19,7 @@ class TradingAccount(TimestampMixin, Base):
     __tablename__ = "trading_accounts"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    owner_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("user_profiles.id", ondelete="CASCADE"), nullable=False
-    )
+    owner_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("user_profiles.id", ondelete="CASCADE"), nullable=False)
     name: Mapped[str] = mapped_column(String, nullable=False)
     exchange: Mapped[str] = mapped_column(String, nullable=False, server_default="binance")
     symbol: Mapped[str] = mapped_column(String, nullable=False, server_default="ETHUSDT")
@@ -36,15 +34,11 @@ class TradingAccount(TimestampMixin, Base):
     auto_recovery_attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     last_auto_recovery_at: Mapped[datetime | None] = mapped_column(nullable=True)
     last_success_at: Mapped[datetime | None] = mapped_column(nullable=True)
-    buy_pause_state: Mapped[str] = mapped_column(
-        String(20), nullable=False, server_default=BuyPauseState.ACTIVE.value
-    )
+    buy_pause_state: Mapped[str] = mapped_column(String(20), nullable=False, server_default=BuyPauseState.ACTIVE.value)
     buy_pause_reason: Mapped[str | None] = mapped_column(String(50), nullable=True)
     buy_pause_since: Mapped[datetime | None] = mapped_column(nullable=True)
     consecutive_low_balance: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
-    pending_earnings_usdt: Mapped[Decimal] = mapped_column(
-        Numeric, nullable=False, server_default="0"
-    )
+    pending_earnings_usdt: Mapped[Decimal] = mapped_column(Numeric, nullable=False, server_default="0")
     loop_interval_sec: Mapped[int] = mapped_column(Integer, nullable=False, server_default="60")
     order_cooldown_sec: Mapped[int] = mapped_column(Integer, nullable=False, server_default="7")
 

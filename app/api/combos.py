@@ -29,6 +29,7 @@ router = APIRouter(prefix="/api", tags=["combos"])
 
 # --- Logic listing ---
 
+
 @router.get("/buy-logics", response_model=list[BuyLogicInfo])
 @limiter.limit("120/minute")
 async def list_buy_logics(request: Request):
@@ -43,6 +44,7 @@ async def list_sell_logics(request: Request):
 
 # --- Combo CRUD ---
 
+
 @router.get("/accounts/{account_id}/combos", response_model=list[ComboResponse])
 @limiter.limit("120/minute")
 async def list_combos(
@@ -50,9 +52,13 @@ async def list_combos(
     account=Depends(get_owned_account),
     session: AsyncSession = Depends(get_trading_session),
 ):
-    stmt = select(TradingCombo).where(
-        TradingCombo.account_id == account.id,
-    ).order_by(TradingCombo.created_at)
+    stmt = (
+        select(TradingCombo)
+        .where(
+            TradingCombo.account_id == account.id,
+        )
+        .order_by(TradingCombo.created_at)
+    )
     result = await session.execute(stmt)
     return [ComboResponse.model_validate(c) for c in result.scalars().all()]
 
@@ -97,7 +103,7 @@ async def create_combo(
     await session.refresh(combo)
 
     # Refresh kline WS subscriptions for new symbols
-    engine = getattr(request.app.state, 'trading_engine', None)
+    engine = getattr(request.app.state, "trading_engine", None)
     if engine:
         await engine.refresh_subscriptions(account.id)
 
@@ -148,7 +154,7 @@ async def update_combo(
 
     # Refresh kline WS subscriptions if symbols changed
     if body.symbols is not None:
-        engine = getattr(request.app.state, 'trading_engine', None)
+        engine = getattr(request.app.state, "trading_engine", None)
         if engine:
             await engine.refresh_subscriptions(account.id)
 
@@ -191,11 +197,15 @@ async def delete_combo(
         raise HTTPException(status_code=404, detail="Combo not found")
 
     # Guard: check for OPEN lots
-    stmt = select(Lot).where(
-        Lot.account_id == account.id,
-        Lot.combo_id == combo_id,
-        Lot.status == "OPEN",
-    ).limit(1)
+    stmt = (
+        select(Lot)
+        .where(
+            Lot.account_id == account.id,
+            Lot.combo_id == combo_id,
+            Lot.status == "OPEN",
+        )
+        .limit(1)
+    )
     result = await session.execute(stmt)
     if result.scalar_one_or_none():
         raise HTTPException(
@@ -207,7 +217,7 @@ async def delete_combo(
     await session.commit()
 
     # Refresh kline WS subscriptions after combo deletion
-    engine = getattr(request.app.state, 'trading_engine', None)
+    engine = getattr(request.app.state, "trading_engine", None)
     if engine:
         await engine.refresh_subscriptions(account.id)
 
@@ -236,7 +246,7 @@ async def enable_combo(
     combo.is_enabled = True
     await session.commit()
 
-    engine = getattr(request.app.state, 'trading_engine', None)
+    engine = getattr(request.app.state, "trading_engine", None)
     if engine:
         await engine.refresh_subscriptions(account.id)
 
@@ -260,7 +270,7 @@ async def disable_combo(
     combo.is_enabled = False
     await session.commit()
 
-    engine = getattr(request.app.state, 'trading_engine', None)
+    engine = getattr(request.app.state, "trading_engine", None)
     if engine:
         await engine.refresh_subscriptions(account.id)
 

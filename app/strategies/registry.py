@@ -5,6 +5,7 @@ from app.strategies.base import BaseBuyLogic, BaseSellLogic
 
 class BuyLogicRegistry:
     """매수 로직 플러그인 등록/조회."""
+
     _buy_logics: dict[str, type[BaseBuyLogic]] = {}
 
     @classmethod
@@ -25,15 +26,21 @@ class BuyLogicRegistry:
     @classmethod
     def list_all(cls) -> list[dict]:
         return [
-            {"name": c.name, "display_name": c.display_name,
-             "description": c.description, "version": c.version,
-             "default_params": c.default_params, "tunable_params": c.tunable_params}
+            {
+                "name": c.name,
+                "display_name": c.display_name,
+                "description": c.description,
+                "version": c.version,
+                "default_params": c.default_params,
+                "tunable_params": c.tunable_params,
+            }
             for c in cls._buy_logics.values()
         ]
 
 
 class SellLogicRegistry:
     """매도 로직 플러그인 등록/조회."""
+
     _sell_logics: dict[str, type[BaseSellLogic]] = {}
 
     @classmethod
@@ -54,8 +61,13 @@ class SellLogicRegistry:
     @classmethod
     def list_all(cls) -> list[dict]:
         return [
-            {"name": c.name, "display_name": c.display_name,
-             "description": c.description, "version": c.version,
-             "default_params": c.default_params, "tunable_params": c.tunable_params}
+            {
+                "name": c.name,
+                "display_name": c.display_name,
+                "description": c.description,
+                "version": c.version,
+                "default_params": c.default_params,
+                "tunable_params": c.tunable_params,
+            }
             for c in cls._sell_logics.values()
         ]

@@ -5,6 +5,7 @@ These tests exercise the full state-machine including the SQLAlchemy UPDATE
 statements.  Each test is rolled back via the SAVEPOINT pattern in conftest.py
 so no state leaks between tests.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -52,9 +53,7 @@ async def _create_account(session, *, state: str = BuyPauseState.ACTIVE) -> Trad
 
 async def _reload(session, account_id: uuid.UUID) -> TradingAccount:
     """Re-fetch account from DB to verify persisted values."""
-    result = await session.execute(
-        select(TradingAccount).where(TradingAccount.id == account_id)
-    )
+    result = await session.execute(select(TradingAccount).where(TradingAccount.id == account_id))
     return result.scalar_one()
 
 

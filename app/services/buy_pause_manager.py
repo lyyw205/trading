@@ -6,6 +6,7 @@ Buy Pause Manager — 잔고 부족 시 매수만 일시정지, 매도는 계속
   PAUSED/THROTTLED → (잔고 회복) → ACTIVE
   수동 resume → ACTIVE (항상)
 """
+
 from __future__ import annotations
 
 import logging
@@ -73,8 +74,8 @@ class BuyPauseManager:
             # 매도 발생했지만 잔고는 여전히 부족 → PAUSED 유지, 카운터만 증가
             new_consecutive = consecutive_low + 1
             logger.info(
-                "[%s] Sell occurred but balance still low, staying PAUSED (count=%d)",
-                self._account_id, new_consecutive,
+                "Sell occurred but balance still low, staying PAUSED (count=%d)",
+                new_consecutive,
             )
         else:
             # 잔고 부족
@@ -95,7 +96,7 @@ class BuyPauseManager:
                 values["buy_pause_reason"] = None
                 values["buy_pause_since"] = None
                 if current_state != BuyPauseState.ACTIVE:
-                    logger.info("[%s] Buy pause cleared → ACTIVE", self._account_id)
+                    logger.info("Buy pause cleared → ACTIVE")
             else:
                 values["buy_pause_reason"] = "LOW_BALANCE"
                 if current_state == BuyPauseState.ACTIVE:
@@ -103,15 +104,12 @@ class BuyPauseManager:
 
                 if new_state != current_state:
                     logger.warning(
-                        "[%s] Buy pause → %s (consecutive=%d)",
-                        self._account_id, new_state, new_consecutive,
+                        "Buy pause → %s (consecutive=%d)",
+                        new_state,
+                        new_consecutive,
                     )
 
-            stmt = (
-                update(TradingAccount)
-                .where(TradingAccount.id == self._account_id)
-                .values(**values)
-            )
+            stmt = update(TradingAccount).where(TradingAccount.id == self._account_id).values(**values)
             await self._session.execute(stmt)
 
         return new_state, new_consecutive
@@ -129,7 +127,7 @@ class BuyPauseManager:
             )
         )
         await self._session.execute(stmt)
-        logger.info("[%s] Buy pause manually resumed → ACTIVE", self._account_id)
+        logger.info("Buy pause manually resumed → ACTIVE")
 
     @staticmethod
     def compute_interval(base_interval: int, state: str, has_positions: bool) -> float:

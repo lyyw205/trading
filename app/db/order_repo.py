@@ -32,9 +32,7 @@ class OrderRepository:
         """Fetch a single order by composite PK."""
         return await self._session.get(Order, (order_id, account_id))
 
-    async def get_recent_open_orders(
-        self, account_id: UUID, limit: int = 50
-    ) -> list[int]:
+    async def get_recent_open_orders(self, account_id: UUID, limit: int = 50) -> list[int]:
         """Return order_ids whose status is NEW or PARTIALLY_FILLED."""
         stmt = (
             select(Order.order_id)
@@ -48,9 +46,7 @@ class OrderRepository:
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
-    async def insert_fill(
-        self, account_id: UUID, order_id: int, trade_data: dict
-    ) -> None:
+    async def insert_fill(self, account_id: UUID, order_id: int, trade_data: dict) -> None:
         """Insert from Binance trade response; ignore duplicates."""
         side = "BUY" if trade_data.get("isBuyer") else "SELL"
         stmt = (
@@ -73,31 +69,35 @@ class OrderRepository:
         )
         await self._session.execute(stmt)
 
-    async def insert_fills_batch(
-        self, account_id: UUID, fills: list[tuple[int, dict]]
-    ) -> None:
+    async def insert_fills_batch(self, account_id: UUID, fills: list[tuple[int, dict]]) -> None:
         """Batch insert fills in a single multi-row INSERT ... ON CONFLICT DO NOTHING."""
         if not fills:
             return
         rows = []
         for order_id, trade_data in fills:
             side = "BUY" if trade_data.get("isBuyer") else "SELL"
-            rows.append({
-                "trade_id": int(trade_data["id"]),
-                "account_id": account_id,
-                "order_id": order_id,
-                "symbol": trade_data["symbol"],
-                "side": side,
-                "price": float(trade_data["price"]) if trade_data.get("price") is not None else None,
-                "qty": float(trade_data["qty"]) if trade_data.get("qty") is not None else None,
-                "quote_qty": float(trade_data["quoteQty"]) if trade_data.get("quoteQty") is not None else None,
-                "commission": float(trade_data["commission"]) if trade_data.get("commission") is not None else None,
-                "commission_asset": trade_data.get("commissionAsset"),
-                "trade_time_ms": int(trade_data["time"]) if trade_data.get("time") is not None else None,
-                "raw_json": trade_data,
-            })
-        stmt = pg_insert(Fill).values(rows).on_conflict_do_nothing(
-            index_elements=["trade_id", "account_id"],
+            rows.append(
+                {
+                    "trade_id": int(trade_data["id"]),
+                    "account_id": account_id,
+                    "order_id": order_id,
+                    "symbol": trade_data["symbol"],
+                    "side": side,
+                    "price": float(trade_data["price"]) if trade_data.get("price") is not None else None,
+                    "qty": float(trade_data["qty"]) if trade_data.get("qty") is not None else None,
+                    "quote_qty": float(trade_data["quoteQty"]) if trade_data.get("quoteQty") is not None else None,
+                    "commission": float(trade_data["commission"]) if trade_data.get("commission") is not None else None,
+                    "commission_asset": trade_data.get("commissionAsset"),
+                    "trade_time_ms": int(trade_data["time"]) if trade_data.get("time") is not None else None,
+                    "raw_json": trade_data,
+                }
+            )
+        stmt = (
+            pg_insert(Fill)
+            .values(rows)
+            .on_conflict_do_nothing(
+                index_elements=["trade_id", "account_id"],
+            )
         )
         await self._session.execute(stmt)
 
@@ -113,7 +113,9 @@ class OrderRepository:
             "price": float(order_data["price"]) if order_data.get("price") is not None else None,
             "orig_qty": float(order_data["origQty"]) if order_data.get("origQty") is not None else None,
             "executed_qty": float(order_data["executedQty"]) if order_data.get("executedQty") is not None else None,
-            "cum_quote_qty": float(order_data["cummulativeQuoteQty"]) if order_data.get("cummulativeQuoteQty") is not None else None,
+            "cum_quote_qty": float(order_data["cummulativeQuoteQty"])
+            if order_data.get("cummulativeQuoteQty") is not None
+            else None,
             "client_order_id": order_data.get("clientOrderId"),
             "update_time_ms": int(order_data["updateTime"]) if order_data.get("updateTime") is not None else None,
             "raw_json": order_data,
@@ -125,8 +127,12 @@ class OrderRepository:
             return
         rows = [self._build_order_values(account_id, o) for o in orders]
         update_cols = {k for k in rows[0] if k not in ("order_id", "account_id")}
-        stmt = pg_insert(Order).values(rows).on_conflict_do_update(
-            index_elements=["order_id", "account_id"],
-            set_={col: pg_insert(Order).excluded[col] for col in update_cols},
+        stmt = (
+            pg_insert(Order)
+            .values(rows)
+            .on_conflict_do_update(
+                index_elements=["order_id", "account_id"],
+                set_={col: pg_insert(Order).excluded[col] for col in update_cols},
+            )
         )
         await self._session.execute(stmt)

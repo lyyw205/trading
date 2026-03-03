@@ -41,9 +41,7 @@ async def get_dashboard(
     position = await pos_repo.get(account.id, account.symbol)
 
     # Open lots count (all strategies)
-    open_lots_stmt = select(func.count()).select_from(Lot).where(
-        Lot.account_id == account.id, Lot.status == "OPEN"
-    )
+    open_lots_stmt = select(func.count()).select_from(Lot).where(Lot.account_id == account.id, Lot.status == "OPEN")
     open_lots_result = await session.execute(open_lots_stmt)
     open_lots_total = open_lots_result.scalar_one()
 
@@ -74,7 +72,13 @@ async def get_dashboard(
         account_name=account.name,
         symbol=account.symbol,
         current_price=cur_price,
-        position=PositionInfo(qty=float(position.qty), cost_basis_usdt=float(position.cost_basis_usdt), avg_entry=float(position.avg_entry)) if position else None,
+        position=PositionInfo(
+            qty=float(position.qty),
+            cost_basis_usdt=float(position.cost_basis_usdt),
+            avg_entry=float(position.avg_entry),
+        )
+        if position
+        else None,
         open_lots_count=open_lots_total,
         total_net_profit=total_profit,
         reserve_qty=reserve_qty,
@@ -204,7 +208,13 @@ async def get_price_candles(
     candles = await get_candles(account.symbol, from_ms, to_ms, session, interval=interval)
     result = []
     for c in candles:
-        d = {"ts_ms": c.ts_ms, "open": float(c.open), "high": float(c.high), "low": float(c.low), "close": float(c.close)}
+        d = {
+            "ts_ms": c.ts_ms,
+            "open": float(c.open),
+            "high": float(c.high),
+            "low": float(c.low),
+            "close": float(c.close),
+        }
         if hasattr(c, "volume"):
             d["volume"] = float(c.volume)
         result.append(d)
@@ -267,12 +277,7 @@ async def get_trade_events(
     session: AsyncSession = Depends(get_trading_session),
 ):
     """Return recent fills as chart markers (time, side, price)."""
-    stmt = (
-        select(Fill)
-        .where(Fill.account_id == account.id)
-        .order_by(Fill.trade_time_ms.desc())
-        .limit(limit)
-    )
+    stmt = select(Fill).where(Fill.account_id == account.id).order_by(Fill.trade_time_ms.desc()).limit(limit)
     result = await session.execute(stmt)
     fills = result.scalars().all()
 
@@ -280,11 +285,13 @@ async def get_trade_events(
     for f in fills:
         if not f.trade_time_ms:
             continue
-        events.append({
-            "time": f.trade_time_ms // 1000,  # lightweight-charts expects unix seconds
-            "side": (f.side or "").lower(),
-            "price": float(f.price) if f.price else "",
-        })
+        events.append(
+            {
+                "time": f.trade_time_ms // 1000,  # lightweight-charts expects unix seconds
+                "side": (f.side or "").lower(),
+                "price": float(f.price) if f.price else "",
+            }
+        )
     # Sort ascending for chart markers
     events.sort(key=lambda e: e["time"])
     return events

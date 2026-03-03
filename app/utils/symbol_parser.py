@@ -14,7 +14,7 @@ def parse_symbol(symbol: str) -> tuple[str, str]:
     symbol = symbol.upper()
     for quote in sorted(QUOTE_ASSETS, key=len, reverse=True):
         if symbol.endswith(quote):
-            base = symbol[:-len(quote)]
+            base = symbol[: -len(quote)]
             if base:
                 return base, quote
     raise ValueError(f"Cannot parse symbol: {symbol}")

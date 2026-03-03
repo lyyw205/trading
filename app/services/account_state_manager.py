@@ -70,9 +70,7 @@ class AccountStateManager:
 
     async def get_pending_earnings(self) -> float:
         """trading_accounts.pending_earnings_usdt 조회"""
-        stmt = select(TradingAccount.pending_earnings_usdt).where(
-            TradingAccount.id == self._account_id
-        )
+        stmt = select(TradingAccount.pending_earnings_usdt).where(TradingAccount.id == self._account_id)
         result = await self._session.execute(stmt)
         val = result.scalar_one_or_none()
         return float(val) if val is not None else 0.0
@@ -82,33 +80,23 @@ class AccountStateManager:
         stmt = (
             update(TradingAccount)
             .where(TradingAccount.id == self._account_id)
-            .values(
-                pending_earnings_usdt=TradingAccount.pending_earnings_usdt + delta
-            )
+            .values(pending_earnings_usdt=TradingAccount.pending_earnings_usdt + delta)
         )
         await self._session.execute(stmt)
 
     async def reset_pending_earnings(self) -> None:
         """적립금 리셋 (approve 결정 후)"""
-        stmt = (
-            update(TradingAccount)
-            .where(TradingAccount.id == self._account_id)
-            .values(pending_earnings_usdt=0)
-        )
+        stmt = update(TradingAccount).where(TradingAccount.id == self._account_id).values(pending_earnings_usdt=0)
         await self._session.execute(stmt)
 
-    async def approve_earnings_to_reserve(
-        self, pct: float, current_price: float
-    ) -> dict:
+    async def approve_earnings_to_reserve(self, pct: float, current_price: float) -> dict:
         """
         적립금의 pct%를 reserve에 추가.
         SELECT FOR UPDATE로 approve 중 다른 트랜잭션의 pending_earnings 수정 방지.
         결정 후 pending_earnings는 무조건 0으로 리셋.
         """
         stmt = (
-            select(TradingAccount.pending_earnings_usdt)
-            .where(TradingAccount.id == self._account_id)
-            .with_for_update()
+            select(TradingAccount.pending_earnings_usdt).where(TradingAccount.id == self._account_id).with_for_update()
         )
         result = await self._session.execute(stmt)
         total_earnings = float(result.scalar_one())

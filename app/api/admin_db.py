@@ -2,6 +2,7 @@
 DB monitoring admin endpoint.
 Admin-only, always available.
 """
+
 from __future__ import annotations
 
 import logging
@@ -28,10 +29,7 @@ async def db_health(
     # Active connections from pg_stat_activity
     try:
         result = await session.execute(
-            text(
-                "SELECT count(*) FROM pg_stat_activity "
-                "WHERE state IS NOT NULL AND datname = current_database()"
-            )
+            text("SELECT count(*) FROM pg_stat_activity WHERE state IS NOT NULL AND datname = current_database()")
         )
         active_connections = result.scalar_one()
     except Exception as exc:
@@ -52,8 +50,7 @@ async def db_health(
     try:
         result = await session.execute(
             text(
-                "SELECT count(*) FROM pg_stat_statements "
-                "WHERE mean_exec_time > 1000"  # >1s average
+                "SELECT count(*) FROM pg_stat_statements WHERE mean_exec_time > 1000"  # >1s average
             )
         )
         slow_queries_count = result.scalar_one()
@@ -64,17 +61,9 @@ async def db_health(
     dead_tuples = []
     try:
         result = await session.execute(
-            text(
-                "SELECT relname, n_dead_tup, n_live_tup "
-                "FROM pg_stat_user_tables "
-                "ORDER BY n_dead_tup DESC "
-                "LIMIT 10"
-            )
+            text("SELECT relname, n_dead_tup, n_live_tup FROM pg_stat_user_tables ORDER BY n_dead_tup DESC LIMIT 10")
         )
-        dead_tuples = [
-            {"table": row[0], "dead_tuples": row[1], "live_tuples": row[2]}
-            for row in result.fetchall()
-        ]
+        dead_tuples = [{"table": row[0], "dead_tuples": row[1], "live_tuples": row[2]} for row in result.fetchall()]
     except Exception as exc:
         logger.warning("Failed to query pg_stat_user_tables: %s", exc)
 

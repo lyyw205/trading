@@ -42,6 +42,7 @@ async def get_owned_account(
 ):
     """계정 조회 + 소유권 검증을 한번에 수행. 통과하면 TradingAccount 반환."""
     from app.db.account_repo import AccountRepository
+
     repo = AccountRepository(session)
     account = await repo.get_by_id(account_id)
     if not account:

@@ -97,9 +97,7 @@ class BinanceClient(ExchangeClient):
     def _sync_cancel_order(self, order_id: int, symbol: str) -> dict:
         return self.client.cancel_order(symbol=symbol, orderId=order_id)
 
-    def _sync_get_my_trades(
-        self, symbol: str, limit: int = 1000, order_id: int | None = None
-    ) -> list[dict]:
+    def _sync_get_my_trades(self, symbol: str, limit: int = 1000, order_id: int | None = None) -> list[dict]:
         kwargs: dict = {"symbol": symbol, "limit": limit}
         if order_id is not None:
             kwargs["orderId"] = order_id
@@ -155,9 +153,7 @@ class BinanceClient(ExchangeClient):
             now = time.time()
             if now - self._balance_cache_ts > 5.0:
                 account = self.client.get_account()
-                self._balance_cache = {
-                    bal["asset"]: bal for bal in account["balances"]
-                }
+                self._balance_cache = {bal["asset"]: bal for bal in account["balances"]}
                 self._balance_cache_ts = now
             bal = self._balance_cache.get(asset)
         if bal:
@@ -195,12 +191,8 @@ class BinanceClient(ExchangeClient):
     async def cancel_order(self, order_id: int, symbol: str) -> dict:
         return await asyncio.to_thread(self._sync_cancel_order, order_id, symbol)
 
-    async def get_my_trades(
-        self, symbol: str, limit: int = 1000, order_id: int | None = None
-    ) -> list[dict]:
-        return await asyncio.to_thread(
-            self._sync_get_my_trades, symbol, limit, order_id
-        )
+    async def get_my_trades(self, symbol: str, limit: int = 1000, order_id: int | None = None) -> list[dict]:
+        return await asyncio.to_thread(self._sync_get_my_trades, symbol, limit, order_id)
 
     async def place_limit_sell(
         self,
@@ -209,9 +201,7 @@ class BinanceClient(ExchangeClient):
         symbol: str,
         client_oid: str | None = None,
     ) -> dict:
-        return await asyncio.to_thread(
-            self._sync_place_limit_sell, qty_base, price, symbol, client_oid
-        )
+        return await asyncio.to_thread(self._sync_place_limit_sell, qty_base, price, symbol, client_oid)
 
     async def place_limit_buy_by_quote(
         self,
@@ -220,9 +210,7 @@ class BinanceClient(ExchangeClient):
         symbol: str,
         client_oid: str | None = None,
     ) -> dict:
-        return await asyncio.to_thread(
-            self._sync_place_limit_buy_by_quote, quote_usdt, price, symbol, client_oid
-        )
+        return await asyncio.to_thread(self._sync_place_limit_buy_by_quote, quote_usdt, price, symbol, client_oid)
 
     async def get_balance(self, asset: str) -> dict:
         return await asyncio.to_thread(self._sync_get_balance, asset)

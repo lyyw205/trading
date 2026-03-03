@@ -62,16 +62,20 @@ class PositionRepository:
 
         stmt = select(
             func.coalesce(
-                func.sum(case((Fill.side == "BUY", Fill.qty), else_=0.0)), 0.0,
+                func.sum(case((Fill.side == "BUY", Fill.qty), else_=0.0)),
+                0.0,
             ),
             func.coalesce(
-                func.sum(case((Fill.side == "BUY", Fill.quote_qty), else_=0.0)), 0.0,
+                func.sum(case((Fill.side == "BUY", Fill.quote_qty), else_=0.0)),
+                0.0,
             ),
             func.coalesce(
-                func.sum(case((Fill.side == "SELL", Fill.qty), else_=0.0)), 0.0,
+                func.sum(case((Fill.side == "SELL", Fill.qty), else_=0.0)),
+                0.0,
             ),
             func.coalesce(
-                func.sum(case((Fill.side == "SELL", Fill.quote_qty), else_=0.0)), 0.0,
+                func.sum(case((Fill.side == "SELL", Fill.quote_qty), else_=0.0)),
+                0.0,
             ),
         ).where(Fill.account_id == account_id, Fill.symbol == symbol)
 

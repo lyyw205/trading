@@ -4,6 +4,7 @@ Tests for the /health endpoint.
 Uses @pytest.mark.unit because all DB calls are mocked — no real DB
 connection is required.
 """
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch

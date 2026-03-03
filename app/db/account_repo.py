@@ -93,11 +93,7 @@ class AccountRepository:
 
     async def reset_auto_recovery_on_success(self, account_id: UUID) -> None:
         """Reset auto_recovery_attempts when a step succeeds."""
-        stmt = (
-            update(TradingAccount)
-            .where(TradingAccount.id == account_id)
-            .values(auto_recovery_attempts=0)
-        )
+        stmt = update(TradingAccount).where(TradingAccount.id == account_id).values(auto_recovery_attempts=0)
         await self._session.execute(stmt)
 
     async def get_all_accounts(self) -> list[TradingAccount]:
@@ -117,9 +113,5 @@ class AccountRepository:
 
     async def update_last_success(self, account_id: UUID) -> None:
         """Stamp last_success_at with the current UTC time."""
-        stmt = (
-            update(TradingAccount)
-            .where(TradingAccount.id == account_id)
-            .values(last_success_at=datetime.now(UTC))
-        )
+        stmt = update(TradingAccount).where(TradingAccount.id == account_id).values(last_success_at=datetime.now(UTC))
         await self._session.execute(stmt)

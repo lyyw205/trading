@@ -21,9 +21,17 @@ class AccountService:
         self._encryption = encryption
 
     async def create_account(
-        self, *, owner_id: UUID, name: str, api_key: str, api_secret: str,
-        symbol: str = "ETHUSDT", base_asset: str = "ETH", quote_asset: str = "USDT",
-        loop_interval_sec: int = 60, order_cooldown_sec: int = 7,
+        self,
+        *,
+        owner_id: UUID,
+        name: str,
+        api_key: str,
+        api_secret: str,
+        symbol: str = "ETHUSDT",
+        base_asset: str = "ETH",
+        quote_asset: str = "USDT",
+        loop_interval_sec: int = 60,
+        order_cooldown_sec: int = 7,
     ) -> TradingAccount:
         account = TradingAccount(
             owner_id=owner_id,

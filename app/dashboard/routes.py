@@ -8,7 +8,6 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 router = APIRouter(tags=["pages"])
 
 
-
 def _require_login(request: Request) -> tuple[dict | None, RedirectResponse | None]:
     """Shared guard: redirect to /login if not authenticated."""
     user = getattr(request.state, "user", None)
@@ -48,11 +47,14 @@ async def account_detail_page(request: Request, account_id: UUID):
     if redirect:
         return redirect
     templates = request.app.state.templates
-    return templates.TemplateResponse("account_detail.html", {
-        "request": request,
-        "user": user,
-        "account_id": str(account_id),
-    })
+    return templates.TemplateResponse(
+        "account_detail.html",
+        {
+            "request": request,
+            "user": user,
+            "account_id": str(account_id),
+        },
+    )
 
 
 @router.get("/admin", response_class=HTMLResponse)
@@ -145,8 +147,11 @@ async def backtest_report_page(request: Request, backtest_id: UUID):
     if redirect:
         return redirect
     templates = request.app.state.templates
-    return templates.TemplateResponse("backtest_report.html", {
-        "request": request,
-        "user": user,
-        "backtest_id": str(backtest_id),
-    })
+    return templates.TemplateResponse(
+        "backtest_report.html",
+        {
+            "request": request,
+            "user": user,
+            "backtest_id": str(backtest_id),
+        },
+    )

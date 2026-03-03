@@ -22,7 +22,9 @@ _ORDER_COOLDOWN_SEC = 5.0
 class FixedTpSell(BaseSellLogic):
     name = "fixed_tp"
     display_name = "\uace0\uc815 \ube44\uc728 \uc775\uc808"
-    description = "\ub9e4\uc218\uac00 \ub300\ube44 \uace0\uc815 \ube44\uc728 \uc0c1\uc2b9 \uc2dc \uc775\uc808 \ub9e4\ub3c4"
+    description = (
+        "\ub9e4\uc218\uac00 \ub300\ube44 \uace0\uc815 \ube44\uc728 \uc0c1\uc2b9 \uc2dc \uc775\uc808 \ub9e4\ub3c4"
+    )
     version = "1.0.0"
 
     default_params = {
@@ -33,8 +35,12 @@ class FixedTpSell(BaseSellLogic):
 
     tunable_params = {
         "tp_pct": {
-            "type": "float", "min": 0.01, "max": 0.1, "step": 0.001,
-            "title": "\uc775\uc808 \ube44\uc728", "unit": "%",
+            "type": "float",
+            "min": 0.01,
+            "max": 0.1,
+            "step": 0.001,
+            "title": "\uc775\uc808 \ube44\uc728",
+            "unit": "%",
             "group": "condition",
         },
         "base_price_update_mode": {
@@ -78,19 +84,31 @@ class FixedTpSell(BaseSellLogic):
             if notional < filters.min_notional or notional < min_trade_usdt:
                 logger.warning(
                     "fixed_tp: lot %s notional %.2f below minimum, skipping TP",
-                    lot.lot_id, notional,
+                    lot.lot_id,
+                    notional,
                 )
                 continue
 
             if lot.sell_order_id:
                 await self._check_existing_sell_order(
-                    ctx, state, exchange, account_state, repos,
-                    lot, target_price, base_mode,
+                    ctx,
+                    state,
+                    exchange,
+                    account_state,
+                    repos,
+                    lot,
+                    target_price,
+                    base_mode,
                 )
             else:
                 await self._place_new_sell_order(
-                    ctx, state, exchange, repos,
-                    lot, target_price, sell_qty,
+                    ctx,
+                    state,
+                    exchange,
+                    repos,
+                    lot,
+                    target_price,
+                    sell_qty,
                 )
 
     # ------------------------------------------------------------------
@@ -125,7 +143,9 @@ class FixedTpSell(BaseSellLogic):
             except Exception as exc:
                 logger.error(
                     "fixed_tp: failed to get sell order %s for lot %s: %s",
-                    lot.sell_order_id, lot.lot_id, exc,
+                    lot.sell_order_id,
+                    lot.lot_id,
+                    exc,
                 )
                 return
         sell_status = str(sell_order_data.get("status", "")).upper()
@@ -164,17 +184,22 @@ class FixedTpSell(BaseSellLogic):
 
             logger.info(
                 "fixed_tp: lot %s TP filled sell=%.2f profit=%.4f pending_earnings+=%.4f",
-                lot.lot_id, sell_price, net_profit,
+                lot.lot_id,
+                sell_price,
+                net_profit,
                 net_profit if net_profit > 0 else 0.0,
             )
 
         elif sell_status in ("CANCELED", "REJECTED", "EXPIRED"):
             logger.info(
                 "fixed_tp: sell order %s for lot %s %s, clearing",
-                lot.sell_order_id, lot.lot_id, sell_status,
+                lot.sell_order_id,
+                lot.lot_id,
+                sell_status,
             )
             await repos.lot.clear_sell_order(
-                account_id=ctx.account_id, lot_id=lot.lot_id,
+                account_id=ctx.account_id,
+                lot_id=lot.lot_id,
             )
 
         elif sell_status == "NEW":
@@ -207,7 +232,8 @@ class FixedTpSell(BaseSellLogic):
         except Exception as exc:
             logger.error(
                 "fixed_tp: place TP sell for lot %s failed: %s",
-                lot.lot_id, exc,
+                lot.lot_id,
+                exc,
             )
             return
 
@@ -225,5 +251,8 @@ class FixedTpSell(BaseSellLogic):
 
         logger.info(
             "fixed_tp: placed TP sell order %s for lot %s at %.2f qty=%.8f",
-            sell_order_id, lot.lot_id, target_price, sell_qty,
+            sell_order_id,
+            lot.lot_id,
+            target_price,
+            sell_qty,
         )

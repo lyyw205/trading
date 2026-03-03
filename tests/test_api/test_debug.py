@@ -1,4 +1,5 @@
 """Debug endpoint tests."""
+
 import pytest
 
 
@@ -11,26 +12,12 @@ class TestDebugEndpointAccess:
         # This is a placeholder that will be expanded with integration tests
         # For now, verify the module imports correctly
         from app.api.debug import router
+
         assert router.prefix == "/api/debug"
 
-    def test_trade_events_module_imports(self):
-        """Verify trade_events utility imports."""
-        from app.utils.trade_events import (
-            buy_decision,
-            buy_placed,
-            cycle_end,
-            cycle_start,
-            price_fetched,
-            sell_decision,
-            sell_placed,
-            state_change,
-        )
-        # All functions should be callable
-        assert callable(cycle_start)
-        assert callable(cycle_end)
-        assert callable(buy_decision)
-        assert callable(price_fetched)
-        assert callable(buy_placed)
-        assert callable(sell_decision)
-        assert callable(sell_placed)
-        assert callable(state_change)
+    def test_trade_events_module_removed(self):
+        """Verify trade_events utility was removed (unused code cleanup)."""
+        import importlib
+
+        result = importlib.util.find_spec("app.utils.trade_events")
+        assert result is None

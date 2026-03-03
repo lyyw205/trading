@@ -57,7 +57,10 @@ class TestResolveBuyUsdt:
         """round 6+: plan_5th_amount(A) 사용."""
         params = {"sizing_mode": "scaled_plan", "plan_x_pct": 0.5, "max_buy_usdt": 500.0}
         result = resolve_buy_usdt(
-            params, free_balance=2000.0, sizing_round=6, plan_5th_amount=45.0,
+            params,
+            free_balance=2000.0,
+            sizing_round=6,
+            plan_5th_amount=45.0,
         )
         assert result == 45.0
 
@@ -65,7 +68,10 @@ class TestResolveBuyUsdt:
         """round 6+: plan_5th_amount=0이면 balance * 5 * x fallback."""
         params = {"sizing_mode": "scaled_plan", "plan_x_pct": 0.5, "max_buy_usdt": 500.0}
         result = resolve_buy_usdt(
-            params, free_balance=2000.0, sizing_round=8, plan_5th_amount=0.0,
+            params,
+            free_balance=2000.0,
+            sizing_round=8,
+            plan_5th_amount=0.0,
         )
         assert result == pytest.approx(50.0)  # fallback: 2000 * 5 * 0.005
 

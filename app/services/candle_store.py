@@ -4,6 +4,7 @@ Candle Store — write/read/aggregate service for multi-timeframe candle data.
 All functions receive an AsyncSession and are designed to be called within
 an existing transaction context OR with a fresh session.
 """
+
 from __future__ import annotations
 
 import logging
@@ -147,11 +148,14 @@ async def aggregate_candles(
         ON CONFLICT (symbol, ts_ms) DO NOTHING
     """)
 
-    result = await session.execute(raw_sql, {
-        "bucket_ms": bucket_ms,
-        "symbol": symbol,
-        "cutoff": cutoff_ts_ms,
-    })
+    result = await session.execute(
+        raw_sql,
+        {
+            "bucket_ms": bucket_ms,
+            "symbol": symbol,
+            "cutoff": cutoff_ts_ms,
+        },
+    )
     return result.rowcount
 
 

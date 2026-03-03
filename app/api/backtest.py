@@ -51,10 +51,9 @@ async def run_backtest(
 
     # Check concurrent backtest limit (DB-based, crash-safe)
     from sqlalchemy import func as sa_func
+
     active_count_stmt = (
-        select(sa_func.count())
-        .select_from(BacktestRun)
-        .where(BacktestRun.status.in_(["RUNNING", "PENDING"]))
+        select(sa_func.count()).select_from(BacktestRun).where(BacktestRun.status.in_(["RUNNING", "PENDING"]))
     )
     active_count = (await session.execute(active_count_stmt)).scalar_one()
     if active_count >= MAX_CONCURRENT_BACKTESTS:
@@ -182,14 +181,16 @@ async def get_backtest_report(
                 aggregated = []
                 for i in range(0, n, bucket_size):
                     bucket = rows[i : i + bucket_size]
-                    aggregated.append({
-                        "time": bucket[0]["time"],
-                        "open": bucket[0]["open"],
-                        "high": max(c["high"] for c in bucket),
-                        "low": min(c["low"] for c in bucket),
-                        "close": bucket[-1]["close"],
-                        "volume": sum(c["volume"] for c in bucket),
-                    })
+                    aggregated.append(
+                        {
+                            "time": bucket[0]["time"],
+                            "open": bucket[0]["open"],
+                            "high": max(c["high"] for c in bucket),
+                            "low": min(c["low"] for c in bucket),
+                            "close": bucket[-1]["close"],
+                            "volume": sum(c["volume"] for c in bucket),
+                        }
+                    )
                 return aggregated
             return rows
         return []

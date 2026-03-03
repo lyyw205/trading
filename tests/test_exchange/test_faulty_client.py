@@ -1,4 +1,5 @@
 """FaultyBacktestClient failure-injection tests."""
+
 import pytest
 
 from app.exchange.faulty_backtest_client import FaultyBacktestClient
@@ -22,6 +23,7 @@ def faulty(request) -> FaultyBacktestClient:
 # ---------------------------------------------------------------------------
 # Normal behaviour before threshold
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.exchange
 class TestNormalBehaviourBeforeThreshold:
@@ -49,15 +51,14 @@ class TestNormalBehaviourBeforeThreshold:
             fail_on_methods=["get_price"],  # buy not targeted
         )
         client.set_price(50000.0)
-        order = await client.place_limit_buy_by_quote(
-            quote_usdt=500.0, price=50000.0, symbol=SYMBOL
-        )
+        order = await client.place_limit_buy_by_quote(quote_usdt=500.0, price=50000.0, symbol=SYMBOL)
         assert order["status"] == "FILLED"
 
 
 # ---------------------------------------------------------------------------
 # Raises configured exception after threshold
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.exchange
 class TestRaisesAfterThreshold:
@@ -93,13 +94,9 @@ class TestRaisesAfterThreshold:
         )
         client.set_price(50000.0)
         # First call succeeds
-        await client.place_limit_buy_by_quote(
-            quote_usdt=100.0, price=50000.0, symbol=SYMBOL
-        )
+        await client.place_limit_buy_by_quote(quote_usdt=100.0, price=50000.0, symbol=SYMBOL)
         with pytest.raises(ConnectionError):
-            await client.place_limit_buy_by_quote(
-                quote_usdt=100.0, price=50000.0, symbol=SYMBOL
-            )
+            await client.place_limit_buy_by_quote(quote_usdt=100.0, price=50000.0, symbol=SYMBOL)
 
     async def test_place_sell_raises_after_threshold(self):
         client = FaultyBacktestClient(
@@ -127,6 +124,7 @@ class TestRaisesAfterThreshold:
 # ---------------------------------------------------------------------------
 # Only fails on configured methods
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.exchange
 class TestOnlyFailsOnConfiguredMethods:
@@ -169,9 +167,7 @@ class TestOnlyFailsOnConfiguredMethods:
 
         # place_limit_buy_by_quote should fail immediately
         with pytest.raises(ConnectionError):
-            await client.place_limit_buy_by_quote(
-                quote_usdt=100.0, price=50000.0, symbol=SYMBOL
-            )
+            await client.place_limit_buy_by_quote(quote_usdt=100.0, price=50000.0, symbol=SYMBOL)
 
     async def test_each_method_has_independent_call_count(self):
         client = FaultyBacktestClient(
@@ -199,6 +195,7 @@ class TestOnlyFailsOnConfiguredMethods:
 # ---------------------------------------------------------------------------
 # reset_failures
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.exchange
 class TestResetFailures:
@@ -239,6 +236,7 @@ class TestResetFailures:
 # ---------------------------------------------------------------------------
 # Different exception types
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.exchange
 class TestDifferentExceptionTypes:
@@ -299,6 +297,4 @@ class TestDifferentExceptionTypes:
         )
         client.set_price(50000.0)
         with pytest.raises(RuntimeError, match="Exchange refused"):
-            await client.place_limit_buy_by_quote(
-                quote_usdt=100.0, price=50000.0, symbol=SYMBOL
-            )
+            await client.place_limit_buy_by_quote(quote_usdt=100.0, price=50000.0, symbol=SYMBOL)

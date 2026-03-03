@@ -1,8 +1,8 @@
 """Integration tests for admin API endpoints."""
+
 from __future__ import annotations
 
-import uuid
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 import pytest_asyncio
@@ -77,9 +77,7 @@ async def test_admin_overview_returns_stats(admin_client_with_engine):
 @pytest.mark.asyncio
 async def test_admin_trades_pagination(admin_client_with_engine):
     """GET /api/admin/trades with limit/offset params must return 200 with pagination keys."""
-    response = await admin_client_with_engine.get(
-        "/api/admin/trades", params={"limit": 10, "offset": 0}
-    )
+    response = await admin_client_with_engine.get("/api/admin/trades", params={"limit": 10, "offset": 0})
     assert response.status_code == 200
     data = response.json()
     assert "trades" in data
@@ -98,9 +96,7 @@ async def test_admin_trades_pagination(admin_client_with_engine):
 @pytest.mark.asyncio
 async def test_admin_lots_filtering(admin_client_with_engine):
     """GET /api/admin/lots with status param must return 200 with pagination keys."""
-    response = await admin_client_with_engine.get(
-        "/api/admin/lots", params={"status": "OPEN"}
-    )
+    response = await admin_client_with_engine.get("/api/admin/lots", params={"status": "OPEN"})
     assert response.status_code == 200
     data = response.json()
     assert "lots" in data

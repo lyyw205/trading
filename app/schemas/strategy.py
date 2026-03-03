@@ -22,6 +22,7 @@ SellLogicInfo = LogicInfo
 
 # --- Combo schemas ---
 
+
 class ComboCreate(BaseModel):
     name: str
     symbols: list[str]

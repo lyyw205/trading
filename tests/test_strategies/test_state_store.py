@@ -1,14 +1,13 @@
 """Tests for StrategyStateStore — unit (mock session) + integration (db_session)."""
+
 from __future__ import annotations
 
 import uuid
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-import pytest_asyncio
 
 from app.strategies.state_store import StrategyStateStore
-
 
 # ---------------------------------------------------------------------------
 # Helpers

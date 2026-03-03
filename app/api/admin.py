@@ -49,19 +49,26 @@ async def _get_active_accounts_cached(session: AsyncSession) -> list:
 
 @router.get("/accounts")
 @limiter.limit("60/minute")
-async def admin_list_accounts(request: Request, admin: dict = Depends(require_admin), session: AsyncSession = Depends(get_trading_session)):
+async def admin_list_accounts(
+    request: Request, admin: dict = Depends(require_admin), session: AsyncSession = Depends(get_trading_session)
+):
     accounts = await _get_active_accounts_cached(session)
     engine = request.app.state.trading_engine
     health = engine.get_account_health()
-    return [{
-        **AccountResponse.model_validate(a).model_dump(),
-        "health": health.get(str(a.id), {}),
-    } for a in accounts]
+    return [
+        {
+            **AccountResponse.model_validate(a).model_dump(),
+            "health": health.get(str(a.id), {}),
+        }
+        for a in accounts
+    ]
 
 
 @router.get("/users")
 @limiter.limit("60/minute")
-async def admin_list_users(request: Request, admin: dict = Depends(require_admin), session: AsyncSession = Depends(get_trading_session)):
+async def admin_list_users(
+    request: Request, admin: dict = Depends(require_admin), session: AsyncSession = Depends(get_trading_session)
+):
     account_count_sq = (
         select(TradingAccount.owner_id, sa_func.count().label("account_count"))
         .group_by(TradingAccount.owner_id)
@@ -74,12 +81,24 @@ async def admin_list_users(request: Request, admin: dict = Depends(require_admin
     )
     result = await session.execute(stmt)
     rows = result.all()
-    return [{"id": str(u.id), "email": u.email, "role": u.role, "is_active": u.is_active, "created_at": str(u.created_at), "account_count": cnt} for u, cnt in rows]
+    return [
+        {
+            "id": str(u.id),
+            "email": u.email,
+            "role": u.role,
+            "is_active": u.is_active,
+            "created_at": str(u.created_at),
+            "account_count": cnt,
+        }
+        for u, cnt in rows
+    ]
 
 
 @router.get("/overview")
 @limiter.limit("60/minute")
-async def admin_overview(request: Request, admin: dict = Depends(require_admin), session: AsyncSession = Depends(get_trading_session)):
+async def admin_overview(
+    request: Request, admin: dict = Depends(require_admin), session: AsyncSession = Depends(get_trading_session)
+):
     engine = request.app.state.trading_engine
     total_users_result = await session.execute(select(sa_func.count(UserProfile.id)))
     total_users = total_users_result.scalar() or 0
@@ -94,7 +113,13 @@ async def admin_overview(request: Request, admin: dict = Depends(require_admin),
 
 @router.put("/users/{user_id}/role")
 @limiter.limit("30/minute")
-async def admin_set_role(user_id: str, body: SetRoleRequest, request: Request, admin: dict = Depends(require_admin), session: AsyncSession = Depends(get_trading_session)):
+async def admin_set_role(
+    user_id: str,
+    body: SetRoleRequest,
+    request: Request,
+    admin: dict = Depends(require_admin),
+    session: AsyncSession = Depends(get_trading_session),
+):
     role = body.role
     stmt = select(UserProfile).where(UserProfile.id == UUID(user_id))
     result = await session.execute(stmt)
@@ -126,7 +151,9 @@ async def admin_create_user(req: CreateUserRequest, request: Request, admin: dic
 
 @router.post("/users/{user_id}/reset-password")
 @limiter.limit("10/minute")
-async def admin_reset_password(user_id: str, req: ResetPasswordRequest, request: Request, admin: dict = Depends(require_admin)):
+async def admin_reset_password(
+    user_id: str, req: ResetPasswordRequest, request: Request, admin: dict = Depends(require_admin)
+):
     """관리자: 사용자 비밀번호 초기화"""
     auth_service = request.app.state.auth_service
     try:
@@ -294,23 +321,26 @@ async def admin_list_lots(
     rows = result.all()
 
     return {
-        "lots": [{
-            "lot_id": lot.lot_id,
-            "account_id": str(lot.account_id),
-            "account_name": account_name,
-            "symbol": lot.symbol,
-            "strategy_name": lot.strategy_name,
-            "buy_price": float(lot.buy_price),
-            "buy_qty": float(lot.buy_qty),
-            "invested_usdt": round(float(lot.buy_price) * float(lot.buy_qty), 2),
-            "buy_time": str(lot.buy_time),
-            "status": lot.status,
-            "sell_price": float(lot.sell_price) if lot.sell_price else None,
-            "sell_time": str(lot.sell_time) if lot.sell_time else None,
-            "fee_usdt": float(lot.fee_usdt) if lot.fee_usdt else None,
-            "net_profit_usdt": float(lot.net_profit_usdt) if lot.net_profit_usdt else None,
-            "combo_id": str(lot.combo_id) if lot.combo_id else None,
-        } for lot, account_name in rows],
+        "lots": [
+            {
+                "lot_id": lot.lot_id,
+                "account_id": str(lot.account_id),
+                "account_name": account_name,
+                "symbol": lot.symbol,
+                "strategy_name": lot.strategy_name,
+                "buy_price": float(lot.buy_price),
+                "buy_qty": float(lot.buy_qty),
+                "invested_usdt": round(float(lot.buy_price) * float(lot.buy_qty), 2),
+                "buy_time": str(lot.buy_time),
+                "status": lot.status,
+                "sell_price": float(lot.sell_price) if lot.sell_price else None,
+                "sell_time": str(lot.sell_time) if lot.sell_time else None,
+                "fee_usdt": float(lot.fee_usdt) if lot.fee_usdt else None,
+                "net_profit_usdt": float(lot.net_profit_usdt) if lot.net_profit_usdt else None,
+                "combo_id": str(lot.combo_id) if lot.combo_id else None,
+            }
+            for lot, account_name in rows
+        ],
         "total": total,
         "limit": limit,
         "offset": offset,
@@ -329,13 +359,11 @@ async def admin_list_strategies(
 ):
     """List all registered buy/sell strategies with adoption counts."""
     # Count combos per buy/sell logic name
-    buy_counts_stmt = (
-        select(TradingCombo.buy_logic_name, sa_func.count().label("cnt"))
-        .group_by(TradingCombo.buy_logic_name)
+    buy_counts_stmt = select(TradingCombo.buy_logic_name, sa_func.count().label("cnt")).group_by(
+        TradingCombo.buy_logic_name
     )
-    sell_counts_stmt = (
-        select(TradingCombo.sell_logic_name, sa_func.count().label("cnt"))
-        .group_by(TradingCombo.sell_logic_name)
+    sell_counts_stmt = select(TradingCombo.sell_logic_name, sa_func.count().label("cnt")).group_by(
+        TradingCombo.sell_logic_name
     )
     buy_result = await session.execute(buy_counts_stmt)
     sell_result = await session.execute(sell_counts_stmt)
@@ -343,12 +371,10 @@ async def admin_list_strategies(
     sell_counts = {row[0]: row[1] for row in sell_result.all()}
 
     buy_strategies = [
-        {**s, "category": "buy", "adoption_count": buy_counts.get(s["name"], 0)}
-        for s in BuyLogicRegistry.list_all()
+        {**s, "category": "buy", "adoption_count": buy_counts.get(s["name"], 0)} for s in BuyLogicRegistry.list_all()
     ]
     sell_strategies = [
-        {**s, "category": "sell", "adoption_count": sell_counts.get(s["name"], 0)}
-        for s in SellLogicRegistry.list_all()
+        {**s, "category": "sell", "adoption_count": sell_counts.get(s["name"], 0)} for s in SellLogicRegistry.list_all()
     ]
     return {"buy": buy_strategies, "sell": sell_strategies}
 
@@ -388,8 +414,7 @@ async def admin_list_combos(
         .join(TradingAccount, TradingCombo.account_id == TradingAccount.id)
         .outerjoin(
             open_lots_sq,
-            (TradingCombo.id == open_lots_sq.c.combo_id)
-            & (TradingCombo.account_id == open_lots_sq.c.account_id),
+            (TradingCombo.id == open_lots_sq.c.combo_id) & (TradingCombo.account_id == open_lots_sq.c.account_id),
         )
         .order_by(TradingAccount.name, TradingCombo.name)
     )
@@ -408,19 +433,22 @@ async def admin_list_combos(
     result = await session.execute(stmt)
     rows = result.all()
 
-    return [{
-        "id": str(combo.id),
-        "account_id": str(combo.account_id),
-        "account_name": account_name,
-        "name": combo.name,
-        "buy_logic_name": combo.buy_logic_name,
-        "sell_logic_name": combo.sell_logic_name,
-        "is_enabled": combo.is_enabled,
-        "open_lots": int(open_lots),
-        "total_invested": round(float(total_invested), 2),
-        "created_at": str(combo.created_at),
-        "updated_at": str(combo.updated_at),
-    } for combo, account_name, open_lots, total_invested in rows]
+    return [
+        {
+            "id": str(combo.id),
+            "account_id": str(combo.account_id),
+            "account_name": account_name,
+            "name": combo.name,
+            "buy_logic_name": combo.buy_logic_name,
+            "sell_logic_name": combo.sell_logic_name,
+            "is_enabled": combo.is_enabled,
+            "open_lots": int(open_lots),
+            "total_invested": round(float(total_invested), 2),
+            "created_at": str(combo.created_at),
+            "updated_at": str(combo.updated_at),
+        }
+        for combo, account_name, open_lots, total_invested in rows
+    ]
 
 
 # ============================================================
@@ -450,15 +478,18 @@ async def admin_list_positions(
     result = await session.execute(stmt)
     rows = result.all()
 
-    return [{
-        "account_id": str(pos.account_id),
-        "account_name": account_name,
-        "symbol": pos.symbol,
-        "qty": float(pos.qty),
-        "cost_basis_usdt": round(float(pos.cost_basis_usdt), 2),
-        "avg_entry": float(pos.avg_entry),
-        "updated_at": str(pos.updated_at),
-    } for pos, account_name in rows]
+    return [
+        {
+            "account_id": str(pos.account_id),
+            "account_name": account_name,
+            "symbol": pos.symbol,
+            "qty": float(pos.qty),
+            "cost_basis_usdt": round(float(pos.cost_basis_usdt), 2),
+            "avg_entry": float(pos.avg_entry),
+            "updated_at": str(pos.updated_at),
+        }
+        for pos, account_name in rows
+    ]
 
 
 # ============================================================
@@ -507,21 +538,27 @@ async def admin_list_earnings(
 
     return {
         "total_pending_usdt": round(total_pending, 2),
-        "pending_accounts": [{
-            "account_id": str(r[0]),
-            "account_name": r[1],
-            "pending_usdt": round(float(r[2]), 2),
-        } for r in pending_rows],
-        "history": [{
-            "id": h.id,
-            "account_id": str(h.account_id),
-            "account_name": account_name,
-            "symbol": h.symbol,
-            "btc_qty": float(h.btc_qty),
-            "cost_usdt": round(float(h.cost_usdt), 2),
-            "source": h.source,
-            "created_at": str(h.created_at),
-        } for h, account_name in rows],
+        "pending_accounts": [
+            {
+                "account_id": str(r[0]),
+                "account_name": r[1],
+                "pending_usdt": round(float(r[2]), 2),
+            }
+            for r in pending_rows
+        ],
+        "history": [
+            {
+                "id": h.id,
+                "account_id": str(h.account_id),
+                "account_name": account_name,
+                "symbol": h.symbol,
+                "btc_qty": float(h.btc_qty),
+                "cost_usdt": round(float(h.cost_usdt), 2),
+                "source": h.source,
+                "created_at": str(h.created_at),
+            }
+            for h, account_name in rows
+        ],
         "total": total,
         "limit": limit,
         "offset": offset,
@@ -566,21 +603,24 @@ async def admin_list_fills(
     rows = result.all()
 
     return {
-        "fills": [{
-            "trade_id": f.trade_id,
-            "account_id": str(f.account_id),
-            "account_name": account_name,
-            "order_id": f.order_id,
-            "symbol": f.symbol,
-            "side": f.side,
-            "price": float(f.price) if f.price else None,
-            "qty": float(f.qty) if f.qty else None,
-            "quote_qty": float(f.quote_qty) if f.quote_qty else None,
-            "commission": float(f.commission) if f.commission else None,
-            "commission_asset": f.commission_asset,
-            "trade_time_ms": f.trade_time_ms,
-            "inserted_at": str(f.inserted_at),
-        } for f, account_name in rows],
+        "fills": [
+            {
+                "trade_id": f.trade_id,
+                "account_id": str(f.account_id),
+                "account_name": account_name,
+                "order_id": f.order_id,
+                "symbol": f.symbol,
+                "side": f.side,
+                "price": float(f.price) if f.price else None,
+                "qty": float(f.qty) if f.qty else None,
+                "quote_qty": float(f.quote_qty) if f.quote_qty else None,
+                "commission": float(f.commission) if f.commission else None,
+                "commission_asset": f.commission_asset,
+                "trade_time_ms": f.trade_time_ms,
+                "inserted_at": str(f.inserted_at),
+            }
+            for f, account_name in rows
+        ],
         "total": total,
         "limit": limit,
         "offset": offset,
@@ -599,16 +639,14 @@ async def admin_system_health(
 ):
     """Consolidated system health: DB, WebSocket, candles, engine."""
     import logging
+
     _logger = logging.getLogger(__name__)
 
     # --- DB connections ---
     active_connections = None
     try:
         result = await session.execute(
-            text(
-                "SELECT count(*) FROM pg_stat_activity "
-                "WHERE state IS NOT NULL AND datname = current_database()"
-            )
+            text("SELECT count(*) FROM pg_stat_activity WHERE state IS NOT NULL AND datname = current_database()")
         )
         active_connections = result.scalar_one()
     except Exception as exc:
@@ -626,9 +664,7 @@ async def admin_system_health(
     # --- Slow queries (optional) ---
     slow_queries_count = None
     try:
-        result = await session.execute(
-            text("SELECT count(*) FROM pg_stat_statements WHERE mean_exec_time > 1000")
-        )
+        result = await session.execute(text("SELECT count(*) FROM pg_stat_statements WHERE mean_exec_time > 1000"))
         slow_queries_count = result.scalar_one()
     except Exception:
         pass
@@ -637,15 +673,9 @@ async def admin_system_health(
     dead_tuples = []
     try:
         result = await session.execute(
-            text(
-                "SELECT relname, n_dead_tup, n_live_tup "
-                "FROM pg_stat_user_tables ORDER BY n_dead_tup DESC LIMIT 10"
-            )
+            text("SELECT relname, n_dead_tup, n_live_tup FROM pg_stat_user_tables ORDER BY n_dead_tup DESC LIMIT 10")
         )
-        dead_tuples = [
-            {"table": row[0], "dead_tuples": row[1], "live_tuples": row[2]}
-            for row in result.fetchall()
-        ]
+        dead_tuples = [{"table": row[0], "dead_tuples": row[1], "live_tuples": row[2]} for row in result.fetchall()]
     except Exception:
         pass
 
@@ -673,10 +703,7 @@ async def admin_system_health(
             "ORDER BY tbl, symbol"
         )
         result = await session.execute(union_sql)
-        candle_stats = [
-            {"table": row[0], "symbol": row[1], "count": row[2]}
-            for row in result.fetchall()
-        ]
+        candle_stats = [{"table": row[0], "symbol": row[1], "count": row[2]} for row in result.fetchall()]
     except Exception:
         pass
 

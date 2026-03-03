@@ -8,6 +8,7 @@ Covers:
 - Circuit breaker trigger path (5 consecutive failures -> disabled)
 - Duplicate order prevention
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -58,34 +59,22 @@ class TestPartialFillHandling:
     """
 
     async def test_cancelled_buy_returns_full_locked_usdt(self):
-        client = BacktestClient(
-            symbol=SYMBOL, initial_balance_usdt=10_000.0, initial_balance_btc=0.0
-        )
+        client = BacktestClient(symbol=SYMBOL, initial_balance_usdt=10_000.0, initial_balance_btc=0.0)
         client.set_price(60_000.0)  # above order price → stays open
-        order = await client.place_limit_buy_by_quote(
-            quote_usdt=1_000.0, price=50_000.0, symbol=SYMBOL
-        )
+        order = await client.place_limit_buy_by_quote(quote_usdt=1_000.0, price=50_000.0, symbol=SYMBOL)
         locked_after_place = (await client.get_balance("USDT"))["locked"]
         assert locked_after_place > 0, "USDT must be locked after placing buy"
 
         await client.cancel_order(order["orderId"], SYMBOL)
 
         bal = await client.get_balance("USDT")
-        assert bal["locked"] == pytest.approx(0.0, abs=1e-6), (
-            "All locked USDT must be released after cancel"
-        )
-        assert bal["free"] == pytest.approx(10_000.0, rel=1e-6), (
-            "Free USDT must be fully restored after cancel"
-        )
+        assert bal["locked"] == pytest.approx(0.0, abs=1e-6), "All locked USDT must be released after cancel"
+        assert bal["free"] == pytest.approx(10_000.0, rel=1e-6), "Free USDT must be fully restored after cancel"
 
     async def test_cancelled_sell_returns_full_locked_btc(self):
-        client = BacktestClient(
-            symbol=SYMBOL, initial_balance_usdt=10_000.0, initial_balance_btc=1.0
-        )
+        client = BacktestClient(symbol=SYMBOL, initial_balance_usdt=10_000.0, initial_balance_btc=1.0)
         client.set_price(40_000.0)  # below sell price → stays open
-        order = await client.place_limit_sell(
-            qty_base=0.5, price=55_000.0, symbol=SYMBOL
-        )
+        order = await client.place_limit_sell(qty_base=0.5, price=55_000.0, symbol=SYMBOL)
         locked_btc = (await client.get_balance("BTC"))["locked"]
         assert locked_btc > 0, "BTC must be locked after placing sell"
 
@@ -96,16 +85,10 @@ class TestPartialFillHandling:
         assert bal["free"] == pytest.approx(1.0, rel=1e-4)
 
     async def test_open_orders_empty_after_both_orders_cancelled(self):
-        client = BacktestClient(
-            symbol=SYMBOL, initial_balance_usdt=10_000.0, initial_balance_btc=1.0
-        )
+        client = BacktestClient(symbol=SYMBOL, initial_balance_usdt=10_000.0, initial_balance_btc=1.0)
         client.set_price(50_000.0)
-        buy_order = await client.place_limit_buy_by_quote(
-            quote_usdt=500.0, price=40_000.0, symbol=SYMBOL
-        )
-        sell_order = await client.place_limit_sell(
-            qty_base=0.1, price=60_000.0, symbol=SYMBOL
-        )
+        buy_order = await client.place_limit_buy_by_quote(quote_usdt=500.0, price=40_000.0, symbol=SYMBOL)
+        sell_order = await client.place_limit_sell(qty_base=0.1, price=60_000.0, symbol=SYMBOL)
         assert len(await client.get_open_orders(SYMBOL)) == 2
 
         await client.cancel_order(buy_order["orderId"], SYMBOL)
@@ -115,18 +98,12 @@ class TestPartialFillHandling:
 
     async def test_fill_does_not_leave_residual_locked_funds(self):
         """After a buy fills, USDT locked must return to 0."""
-        client = BacktestClient(
-            symbol=SYMBOL, initial_balance_usdt=10_000.0, initial_balance_btc=0.0
-        )
+        client = BacktestClient(symbol=SYMBOL, initial_balance_usdt=10_000.0, initial_balance_btc=0.0)
         client.set_price(50_000.0)
-        await client.place_limit_buy_by_quote(
-            quote_usdt=1_000.0, price=50_000.0, symbol=SYMBOL
-        )
+        await client.place_limit_buy_by_quote(quote_usdt=1_000.0, price=50_000.0, symbol=SYMBOL)
         # Price at order level → fills immediately
         bal = await client.get_balance("USDT")
-        assert bal["locked"] == pytest.approx(0.0, abs=1e-6), (
-            "No USDT should remain locked after fill"
-        )
+        assert bal["locked"] == pytest.approx(0.0, abs=1e-6), "No USDT should remain locked after fill"
         assert await client.get_free_balance("BTC") > 0
 
 
@@ -146,9 +123,7 @@ class TestTimeoutDuringOrderOperations:
         )
         client.set_price(50_000.0)
         with pytest.raises(TimeoutError):
-            await client.place_limit_buy_by_quote(
-                quote_usdt=500.0, price=50_000.0, symbol=SYMBOL
-            )
+            await client.place_limit_buy_by_quote(quote_usdt=500.0, price=50_000.0, symbol=SYMBOL)
 
     async def test_timeout_on_place_sell_raises_timeout_error(self):
         client = _faulty(
@@ -160,9 +135,7 @@ class TestTimeoutDuringOrderOperations:
         )
         client.set_price(50_000.0)
         with pytest.raises(TimeoutError):
-            await client.place_limit_sell(
-                qty_base=0.1, price=55_000.0, symbol=SYMBOL
-            )
+            await client.place_limit_sell(qty_base=0.1, price=55_000.0, symbol=SYMBOL)
 
     async def test_balance_unchanged_when_buy_times_out(self):
         """A timed-out buy must not deduct any USDT."""
@@ -174,9 +147,7 @@ class TestTimeoutDuringOrderOperations:
         )
         client.set_price(50_000.0)
         with contextlib.suppress(TimeoutError):
-            await client.place_limit_buy_by_quote(
-                quote_usdt=500.0, price=50_000.0, symbol=SYMBOL
-            )
+            await client.place_limit_buy_by_quote(quote_usdt=500.0, price=50_000.0, symbol=SYMBOL)
 
         bal = await client.get_balance("USDT")
         assert bal["free"] == pytest.approx(10_000.0), (
@@ -193,9 +164,7 @@ class TestTimeoutDuringOrderOperations:
         )
         client.set_price(45_000.0)
         with contextlib.suppress(TimeoutError):
-            await client.place_limit_buy_by_quote(
-                quote_usdt=100.0, price=45_000.0, symbol=SYMBOL
-            )
+            await client.place_limit_buy_by_quote(quote_usdt=100.0, price=45_000.0, symbol=SYMBOL)
 
         price = await client.get_price(SYMBOL)
         assert price == pytest.approx(45_000.0)
@@ -218,34 +187,22 @@ class TestTimeoutDuringOrderOperations:
 @pytest.mark.exchange
 class TestZeroStalePriceGuards:
     async def test_place_buy_raises_on_zero_price(self):
-        client = BacktestClient(
-            symbol=SYMBOL, initial_balance_usdt=10_000.0, initial_balance_btc=0.0
-        )
+        client = BacktestClient(symbol=SYMBOL, initial_balance_usdt=10_000.0, initial_balance_btc=0.0)
         client.set_price(0.0)
         with pytest.raises(ValueError, match="price must be > 0"):
-            await client.place_limit_buy_by_quote(
-                quote_usdt=100.0, price=0.0, symbol=SYMBOL
-            )
+            await client.place_limit_buy_by_quote(quote_usdt=100.0, price=0.0, symbol=SYMBOL)
 
     async def test_place_sell_raises_on_zero_price(self):
-        client = BacktestClient(
-            symbol=SYMBOL, initial_balance_usdt=0.0, initial_balance_btc=1.0
-        )
+        client = BacktestClient(symbol=SYMBOL, initial_balance_usdt=0.0, initial_balance_btc=1.0)
         client.set_price(0.0)
         with pytest.raises(ValueError, match="price must be > 0"):
-            await client.place_limit_sell(
-                qty_base=0.1, price=0.0, symbol=SYMBOL
-            )
+            await client.place_limit_sell(qty_base=0.1, price=0.0, symbol=SYMBOL)
 
     async def test_place_buy_raises_on_negative_price(self):
-        client = BacktestClient(
-            symbol=SYMBOL, initial_balance_usdt=10_000.0, initial_balance_btc=0.0
-        )
+        client = BacktestClient(symbol=SYMBOL, initial_balance_usdt=10_000.0, initial_balance_btc=0.0)
         client.set_price(50_000.0)
         with pytest.raises(ValueError):
-            await client.place_limit_buy_by_quote(
-                quote_usdt=100.0, price=-1.0, symbol=SYMBOL
-            )
+            await client.place_limit_buy_by_quote(quote_usdt=100.0, price=-1.0, symbol=SYMBOL)
 
     async def test_get_price_returns_zero_when_stale(self):
         """Stale price scenario: no set_price called → returns 0.0."""
@@ -258,15 +215,11 @@ class TestZeroStalePriceGuards:
         If price is so high that qty rounds down to 0, place_limit_buy_by_quote
         must raise rather than silently place a zero-qty order.
         """
-        client = BacktestClient(
-            symbol=SYMBOL, initial_balance_usdt=10_000.0, initial_balance_btc=0.0
-        )
+        client = BacktestClient(symbol=SYMBOL, initial_balance_usdt=10_000.0, initial_balance_btc=0.0)
         client.set_price(1.0)
         # quote=0.000001 at price=1e10 → qty rounds to 0
         with pytest.raises(ValueError):
-            await client.place_limit_buy_by_quote(
-                quote_usdt=0.000001, price=1e10, symbol=SYMBOL
-            )
+            await client.place_limit_buy_by_quote(quote_usdt=0.000001, price=1e10, symbol=SYMBOL)
 
 
 # ---------------------------------------------------------------------------
@@ -367,9 +320,7 @@ class TestDuplicateOrderPrevention:
         clientOrderId, so two orders with the same clientOrderId get different
         exchange IDs — callers must not assume idempotency.
         """
-        client = BacktestClient(
-            symbol=SYMBOL, initial_balance_usdt=10_000.0, initial_balance_btc=0.0
-        )
+        client = BacktestClient(symbol=SYMBOL, initial_balance_usdt=10_000.0, initial_balance_btc=0.0)
         client.set_price(60_000.0)  # above both order prices → stays open
 
         o1 = await client.place_limit_buy_by_quote(
@@ -378,21 +329,13 @@ class TestDuplicateOrderPrevention:
         o2 = await client.place_limit_buy_by_quote(
             quote_usdt=100.0, price=50_000.0, symbol=SYMBOL, client_oid="dup-oid"
         )
-        assert o1["orderId"] != o2["orderId"], (
-            "Each place_limit_buy_by_quote must produce a unique exchange orderId"
-        )
+        assert o1["orderId"] != o2["orderId"], "Each place_limit_buy_by_quote must produce a unique exchange orderId"
 
     async def test_two_open_orders_tracked_independently(self):
-        client = BacktestClient(
-            symbol=SYMBOL, initial_balance_usdt=10_000.0, initial_balance_btc=0.0
-        )
+        client = BacktestClient(symbol=SYMBOL, initial_balance_usdt=10_000.0, initial_balance_btc=0.0)
         client.set_price(60_000.0)
-        o1 = await client.place_limit_buy_by_quote(
-            quote_usdt=200.0, price=50_000.0, symbol=SYMBOL
-        )
-        o2 = await client.place_limit_buy_by_quote(
-            quote_usdt=200.0, price=50_000.0, symbol=SYMBOL
-        )
+        o1 = await client.place_limit_buy_by_quote(quote_usdt=200.0, price=50_000.0, symbol=SYMBOL)
+        o2 = await client.place_limit_buy_by_quote(quote_usdt=200.0, price=50_000.0, symbol=SYMBOL)
         open_orders = await client.get_open_orders(SYMBOL)
         ids = {o["orderId"] for o in open_orders}
         assert o1["orderId"] in ids
@@ -400,16 +343,10 @@ class TestDuplicateOrderPrevention:
         assert len(ids) == 2
 
     async def test_cancelling_one_order_leaves_sibling_open(self):
-        client = BacktestClient(
-            symbol=SYMBOL, initial_balance_usdt=10_000.0, initial_balance_btc=0.0
-        )
+        client = BacktestClient(symbol=SYMBOL, initial_balance_usdt=10_000.0, initial_balance_btc=0.0)
         client.set_price(60_000.0)
-        o1 = await client.place_limit_buy_by_quote(
-            quote_usdt=200.0, price=50_000.0, symbol=SYMBOL
-        )
-        o2 = await client.place_limit_buy_by_quote(
-            quote_usdt=200.0, price=50_000.0, symbol=SYMBOL
-        )
+        o1 = await client.place_limit_buy_by_quote(quote_usdt=200.0, price=50_000.0, symbol=SYMBOL)
+        o2 = await client.place_limit_buy_by_quote(quote_usdt=200.0, price=50_000.0, symbol=SYMBOL)
         await client.cancel_order(o1["orderId"], SYMBOL)
 
         open_orders = await client.get_open_orders(SYMBOL)
@@ -417,13 +354,9 @@ class TestDuplicateOrderPrevention:
         assert open_orders[0]["orderId"] == o2["orderId"]
 
     async def test_get_order_returns_not_found_for_already_cancelled(self):
-        client = BacktestClient(
-            symbol=SYMBOL, initial_balance_usdt=10_000.0, initial_balance_btc=0.0
-        )
+        client = BacktestClient(symbol=SYMBOL, initial_balance_usdt=10_000.0, initial_balance_btc=0.0)
         client.set_price(60_000.0)
-        order = await client.place_limit_buy_by_quote(
-            quote_usdt=200.0, price=50_000.0, symbol=SYMBOL
-        )
+        order = await client.place_limit_buy_by_quote(quote_usdt=200.0, price=50_000.0, symbol=SYMBOL)
         await client.cancel_order(order["orderId"], SYMBOL)
 
         fetched = await client.get_order(order["orderId"], SYMBOL)

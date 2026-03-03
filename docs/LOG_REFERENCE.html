@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>로그 레퍼런스 — 크립토 멀티트레이더</title>
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --surface2: #1c2129; --border: #30363d;
+    --text: #e6edf3; --text-muted: #8b949e; --text-dim: #6e7681;
+    --accent: #58a6ff; --accent-dim: #1f6feb;
+    --critical: #f85149; --critical-bg: #f8514912;
+    --error: #f0883e; --error-bg: #f0883e12;
+    --warning: #d29922; --warning-bg: #d2992212;
+    --info: #58a6ff; --info-bg: #58a6ff12;
+    --debug: #8b949e; --debug-bg: #8b949e12;
+    --green: #3fb950; --green-bg: #3fb95012;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans KR', Helvetica, Arial, sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.7;
+    max-width: 1400px; margin: 0 auto; padding: 24px;
+  }
+  h1 { font-size: 26px; margin-bottom: 4px; }
+  .subtitle { color: var(--text-muted); margin-bottom: 24px; font-size: 14px; }
+  h2 {
+    font-size: 18px; margin: 36px 0 16px; padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* Toolbar */
+  .toolbar {
+    position: sticky; top: 0; z-index: 10; background: var(--bg);
+    padding: 12px 0 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+    border-bottom: 1px solid var(--border);
+  }
+  .toolbar input {
+    flex: 1; min-width: 180px; padding: 8px 14px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text);
+    font-size: 14px; outline: none;
+  }
+  .toolbar input:focus { border-color: var(--accent); }
+  .toolbar input::placeholder { color: var(--text-dim); }
+  .fbtn {
+    padding: 6px 14px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text-muted); cursor: pointer;
+    font-size: 12px; font-weight: 600; transition: all .15s; white-space: nowrap;
+  }
+  .fbtn:hover { border-color: var(--text-muted); color: var(--text); }
+  .fbtn.on { border-color: var(--accent); color: var(--accent); }
+  .fbtn[data-v="critical"].on { border-color: var(--critical); color: var(--critical); }
+  .fbtn[data-v="error"].on    { border-color: var(--error); color: var(--error); }
+  .fbtn[data-v="warning"].on  { border-color: var(--warning); color: var(--warning); }
+  .fbtn[data-v="info"].on     { border-color: var(--info); color: var(--info); }
+  .fbtn[data-v="debug"].on    { border-color: var(--debug); color: var(--debug); }
+  .cnt { color: var(--text-dim); font-size: 12px; margin-left: 4px; white-space: nowrap; }
+
+  /* Guide box */
+  .guide {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 20px 24px; margin: 16px 0 24px;
+  }
+  .guide h3 { font-size: 15px; margin-bottom: 12px; color: var(--accent); }
+  .guide-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+  .guide-card {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 10px 14px; border-radius: 8px; border: 1px solid var(--border);
+  }
+  .guide-card .dot {
+    width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; flex-shrink: 0;
+  }
+  .guide-card .title { font-weight: 700; font-size: 13px; }
+  .guide-card .desc { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+  /* Stats */
+  .stats { display: flex; gap: 10px; flex-wrap: wrap; margin: 16px 0 24px; }
+  .stat {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 18px; text-align: center; min-width: 100px;
+  }
+  .stat .n { font-size: 22px; font-weight: 700; }
+  .stat .l { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+  /* Sections */
+  details { margin-bottom: 10px; }
+  details > summary {
+    cursor: pointer; padding: 12px 16px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 10px;
+    font-weight: 600; font-size: 14px; list-style: none;
+    display: flex; align-items: center; gap: 10px; transition: background .15s;
+  }
+  details > summary:hover { background: var(--surface2); }
+  details > summary::before { content: '▸'; transition: transform .2s; display: inline-block; width: 14px; color: var(--text-dim); }
+  details[open] > summary::before { transform: rotate(90deg); }
+  details[open] > summary { border-radius: 10px 10px 0 0; border-bottom-color: var(--border); }
+  details > .inner {
+    border: 1px solid var(--border); border-top: 0; border-radius: 0 0 10px 10px;
+    padding: 16px; background: var(--surface);
+  }
+  .badge {
+    font-family: 'SFMono-Regular', Consolas, monospace; font-size: 11px;
+    padding: 2px 8px; border-radius: 5px; background: var(--accent-dim)30; color: var(--accent);
+  }
+  .sdesc { color: var(--text-muted); font-size: 13px; }
+  .lcnt { font-size: 12px; color: var(--text-dim); margin-left: auto; }
+
+  /* Table */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
+  thead th {
+    text-align: left; padding: 8px 10px; background: var(--surface2);
+    border-bottom: 2px solid var(--border); color: var(--text-muted);
+    font-size: 11px; font-weight: 700; letter-spacing: .3px;
+  }
+  tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: #1c212940; }
+  tbody tr.hidden { display: none; }
+  tbody tr.hl { background: var(--accent)10; }
+  td { padding: 8px 10px; vertical-align: top; }
+  td.msg-cell { font-family: 'SFMono-Regular', Consolas, monospace; font-size: 12px; color: #c9d1d9; word-break: break-all; }
+
+  /* Level */
+  .lv {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 10px; border-radius: 6px;
+    font-size: 11px; font-weight: 700; white-space: nowrap;
+  }
+  .lv::before { content: ''; width: 7px; height: 7px; border-radius: 50%; }
+  .lv-c { background: var(--critical-bg); color: var(--critical); }
+  .lv-c::before { background: var(--critical); }
+  .lv-e { background: var(--error-bg); color: var(--error); }
+  .lv-e::before { background: var(--error); }
+  .lv-w { background: var(--warning-bg); color: var(--warning); }
+  .lv-w::before { background: var(--warning); }
+  .lv-i { background: var(--info-bg); color: var(--info); }
+  .lv-i::before { background: var(--info); }
+  .lv-d { background: var(--debug-bg); color: var(--debug); }
+  .lv-d::before { background: var(--debug); }
+
+  /* Action tag */
+  .act {
+    display: inline-block; padding: 2px 8px; border-radius: 5px;
+    font-size: 11px; font-weight: 600;
+  }
+  .act-now  { background: var(--critical-bg); color: var(--critical); }
+  .act-soon { background: var(--error-bg); color: var(--error); }
+  .act-watch { background: var(--warning-bg); color: var(--warning); }
+  .act-ok   { background: var(--green-bg); color: var(--green); }
+
+  /* Code */
+  code {
+    font-family: 'SFMono-Regular', Consolas, monospace; font-size: 12px;
+    background: var(--surface2); padding: 2px 6px; border-radius: 4px; color: #c9d1d9;
+  }
+  pre {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 16px; overflow-x: auto; font-size: 13px; line-height: 1.5; margin: 8px 0;
+  }
+  pre code { background: none; padding: 0; }
+
+  /* Priority section */
+  .pri-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
+  @media (max-width: 768px) { .pri-grid { grid-template-columns: 1fr; } }
+  .pri-card {
+    background: var(--surface); border-radius: 10px; padding: 16px 20px;
+    border-left: 4px solid;
+  }
+  .pri-card h4 { font-size: 14px; margin-bottom: 10px; }
+  .pri-card ul { list-style: none; padding: 0; }
+  .pri-card li { font-size: 13px; padding: 4px 0; border-bottom: 1px solid var(--border); }
+  .pri-card li:last-child { border-bottom: none; }
+  .pri-card li .m { font-family: monospace; font-size: 12px; color: var(--accent); }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    body { padding: 12px; }
+    table { font-size: 12px; }
+    td, th { padding: 6px 7px; }
+    .toolbar { flex-direction: column; }
+    .guide-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<h1>로그 레퍼런스 가이드</h1>
+<p class="subtitle">크립토 멀티트레이더가 운영 중 출력하는 모든 로그의 의미와 대응 방법</p>
+
+<!-- 로그 읽는 법 -->
+<div class="guide">
+  <h3>로그 읽는 법</h3>
+  <p style="font-size:13px; color:var(--text-muted); margin-bottom:14px">
+    모든 로그는 JSON 한 줄로 출력됩니다. 핵심 필드는 <code>level</code>(긴급도)과 <code>msg</code>(내용)입니다.
+    <code>account_id</code>로 어떤 계정인지, <code>cycle_id</code>로 어떤 매매 사이클인지 추적할 수 있습니다.
+  </p>
+  <pre><code>{"ts":"2026-03-03 12:00:00", "level":"WARNING", "account_id":"a1b2c3d4-...", "cycle_id":"abc123", "msg":"Balance check failed: timeout, skipping buy evaluation"}</code></pre>
+
+  <h3 style="margin-top:20px">긴급도 구분</h3>
+  <div class="guide-grid">
+    <div class="guide-card">
+      <div class="dot" style="background:var(--critical)"></div>
+      <div><div class="title">위험 (CRITICAL)</div><div class="desc">거래가 완전히 중단됨. 즉시 확인 필요</div></div>
+    </div>
+    <div class="guide-card">
+      <div class="dot" style="background:var(--error)"></div>
+      <div><div class="title">오류 (ERROR)</div><div class="desc">특정 작업이 실패함. 반복되면 거래 중단 가능</div></div>
+    </div>
+    <div class="guide-card">
+      <div class="dot" style="background:var(--warning)"></div>
+      <div><div class="title">주의 (WARNING)</div><div class="desc">일부 기능이 제한됨. 상황 지켜보기</div></div>
+    </div>
+    <div class="guide-card">
+      <div class="dot" style="background:var(--info)"></div>
+      <div><div class="title">알림 (INFO)</div><div class="desc">정상 작동 기록. 별도 조치 불필요</div></div>
+    </div>
+  </div>
+
+  <h3 style="margin-top:20px">대응 필요도</h3>
+  <div class="guide-grid">
+    <div class="guide-card">
+      <div><span class="act act-now">즉시 대응</span><span class="desc" style="margin-left:8px">지금 바로 확인하세요</span></div>
+    </div>
+    <div class="guide-card">
+      <div><span class="act act-soon">빠른 확인</span><span class="desc" style="margin-left:8px">30분 이내 확인 권장</span></div>
+    </div>
+    <div class="guide-card">
+      <div><span class="act act-watch">모니터링</span><span class="desc" style="margin-left:8px">반복되면 확인</span></div>
+    </div>
+    <div class="guide-card">
+      <div><span class="act act-ok">정상</span><span class="desc" style="margin-left:8px">조치 불필요</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- Toolbar -->
+<div class="toolbar">
+  <input type="text" id="search" placeholder="로그 메시지, 모듈명으로 검색..." autocomplete="off">
+  <button class="fbtn on" data-v="all">전체</button>
+  <button class="fbtn" data-v="critical">위험</button>
+  <button class="fbtn" data-v="error">오류</button>
+  <button class="fbtn" data-v="warning">주의</button>
+  <button class="fbtn" data-v="info">알림</button>
+  <button class="fbtn" data-v="debug">디버그</button>
+  <span class="cnt" id="cnt"></span>
+</div>
+
+<!-- Section: 로그 통계 -->
+<h2 id="sec2">로그 레벨 현황</h2>
+<div class="stats">
+  <div class="stat"><div class="n" style="color:var(--critical)">2</div><div class="l">위험 (CRITICAL)</div></div>
+  <div class="stat"><div class="n" style="color:var(--error)">~22</div><div class="l">오류 (ERROR)</div></div>
+  <div class="stat"><div class="n" style="color:var(--warning)">~27</div><div class="l">주의 (WARNING)</div></div>
+  <div class="stat"><div class="n" style="color:var(--info)">~35</div><div class="l">알림 (INFO)</div></div>
+  <div class="stat"><div class="n" style="color:var(--debug)">~1</div><div class="l">디버그 (DEBUG)</div></div>
+</div>
+
+<!-- 발생 빈도 -->
+<h2>일반적인 로그 발생 빈도</h2>
+<table>
+<thead><tr><th>상황</th><th>빈도</th><th>예시</th></tr></thead>
+<tbody>
+<tr><td>매매 사이클 (정상)</td><td>60초마다 2~5건</td><td>가격 확인, 매수/매도 판단 결과</td></tr>
+<tr><td>주문 체결/상태 변경</td><td>거래 발생 시</td><td>매수 주문 성공, TP 매도 체결</td></tr>
+<tr><td>캔들 데이터 정리</td><td>6시간마다 1~3건</td><td>오래된 캔들 압축</td></tr>
+<tr><td>서킷브레이커 복구 체크</td><td>10분마다 0~1건</td><td>장애 계정 자동 재시작 시도</td></tr>
+<tr><td>서버 시작/종료</td><td>시작·종료 시 8~10건</td><td>엔진 시작, 계정 연결, 종료</td></tr>
+<tr><td>오류/장애</td><td>정상 시 0건</td><td>오류 발생 시에만 출력</td></tr>
+</tbody>
+</table>
+
+<!-- ============ 모듈별 상세 ============ -->
+<h2>모듈별 상세 로그</h2>
+
+<!-- account_trader -->
+<details open id="m-at">
+<summary>
+  <span class="badge">account_trader</span>
+  <span class="sdesc">— 계정별 자동매매 루프 (핵심 엔진)</span>
+  <span class="lcnt">19건</span>
+</summary>
+<div class="inner">
+<p style="font-size:13px; color:var(--text-muted); margin-bottom:12px">
+  각 계정마다 60초 간격으로 매수/매도를 반복 실행하는 핵심 루프입니다. 여기서 발생하는 오류가 누적(5회)되면 해당 계정의 거래가 자동으로 중단됩니다.
+</p>
+<table>
+<thead><tr><th>긴급도</th><th>로그 메시지 (영문 원문)</th><th>무슨 뜻인가요?</th><th>대응</th></tr></thead>
+<tbody>
+<tr data-level="critical"><td><span class="lv lv-c">위험</span></td><td class="msg-cell">Circuit breaker triggered: 5 consecutive failures</td><td>5회 연속 오류가 발생하여 <strong>이 계정의 모든 거래가 자동 중단</strong>되었습니다.</td><td><span class="act act-now">즉시 대응</span></td></tr>
+<tr data-level="error"><td><span class="lv lv-e">오류</span></td><td class="msg-cell">_init_client() failed: InvalidAPIKey</td><td>계정의 API 키가 잘못되었거나 만료되어 <strong>거래를 시작할 수 없습니다</strong>.</td><td><span class="act act-now">즉시 대응</span></td></tr>
+<tr data-level="error"><td><span class="lv lv-e">오류</span></td><td class="msg-cell">step() timed out (180s), failures: 3</td><td>매매 사이클이 3분 안에 완료되지 못했습니다. 바이낸스 API가 느리거나 DB 응답이 지연 중입니다.</td><td><span class="act act-soon">빠른 확인</span></td></tr>
+<tr data-level="error"><td><span class="lv lv-e">오류</span></td><td class="msg-cell">Permanent error, triggering CB: InvalidAPIKey</td><td>복구 불가능한 영구 오류입니다. API 키 무효, 계정 정지 등. <strong>즉시 서킷브레이커가 발동</strong>됩니다.</td><td><span class="act act-now">즉시 대응</span></td></tr>
+<tr data-level="error"><td><span class="lv lv-e">오류</span></td><td class="msg-cell">Transient error (2x): ConnectionReset</td><td>일시적 연결 오류가 2회 누적되었습니다. 5회 도달 시 거래가 중단됩니다.</td><td><span class="act act-soon">빠른 확인</span></td></tr>
+<tr data-level="warning"><td><span class="lv lv-w">주의</span></td><td class="msg-cell">Circuit breaker already tripped (5 failures), not starting</td><td>이전에 발생한 장애로 거래가 중단된 상태입니다. 아직 복구되지 않았습니다.</td><td><span class="act act-soon">빠른 확인</span></td></tr>
+<tr data-level="warning"><td><span class="lv lv-w">주의</span></td><td class="msg-cell">DB connection error (attempt 1/3): conn refused</td><td>데이터베이스 연결에 실패했습니다. 최대 3회 재시도합니다.</td><td><span class="act act-watch">모니터링</span></td></tr>
+<tr data-level="warning"><td><span class="lv lv-w">주의</span></td><td class="msg-cell">Balance check failed: timeout, skipping buy evaluation</td><td>잔고 조회에 실패하여 이번 사이클에서는 <strong>매수를 건너뜁니다</strong>. 매도는 정상 진행됩니다.</td><td><span class="act act-watch">모니터링</span></td></tr>
+<tr data-level="warning"><td><span class="lv lv-w">주의</span></td><td class="msg-cell">Price is 0 for BTCUSDT, skipping</td><td>이 심볼의 현재가를 가져올 수 없어 <strong>이번 사이클을 건너뜁니다</strong>.</td><td><span class="act act-watch">모니터링</span></td></tr>
+<tr data-level="warning"><td><span class="lv lv-w">주의</span></td><td class="msg-cell">Rate limited, backing off 120s: -1003</td><td>바이낸스 API 호출 한도를 초과했습니다. <strong>2분간 대기</strong> 후 자동 재개됩니다.</td><td><span class="act act-watch">모니터링</span></td></tr>
+<tr data-level="warning"><td><span class="lv lv-w">주의</span></td><td class="msg-cell">Open orders sync failed for BTCUSDT: timeout</td><td>미체결 주문 동기화에 실패했습니다. 다음 사이클에 재시도합니다.</td><td><span class="act act-watch">모니터링</span></td></tr>
+<tr data-level="warning"><td><span class="lv lv-w">주의</span></td><td class="msg-cell">Fills sync failed for BTCUSDT: timeout</td><td>체결 내역 동기화에 실패했습니다. 다음 사이클에 재시도합니다.</td><td><span class="act act-watch">모니터링</span></td></tr>
+<tr data-level="warning"><td><span class="lv lv-w">주의</span></td><td class="msg-cell">Fills processing failed for BTCUSDT: ...</td><td>체결 데이터 처리 중 오류가 발생했습니다.</td><td><span class="act act-watch">모니터링</span></td></tr>
+<tr data-level="warning"><td><span class="lv lv-w">주의</span></td><td class="msg-cell">Order 12345678 sync failed: timeout</td><td>특정 주문의 상태 확인에 실패했습니다.</td><td><span class="act act-watch">모니터링</span></td></tr>
+<tr data-level="warning"><td><span class="lv lv-w">주의</span></td><td class="msg-cell">Fill order 12345678 sync failed: timeout</td><td>체결 관련 주문 정보 조회에 실패했습니다.</td><td><span class="act act-watch">모니터링</span></td></tr>
+<tr data-level="warning"><td><span class="lv lv-w">주의</span></td><td class="msg-cell">Cannot parse symbol INVALID, skipping</td><td>심볼 이름이 잘못 설정되어 처리할 수 없습니다.</td><td><span class="act act-soon">빠른 확인</span></td></tr>
+<tr data-level="warning"><td><span class="lv lv-w">주의</span></td><td class="msg-cell">Failed to send CB alert: ConnectTimeout</td><td>서킷브레이커 알림을 텔레그램으로 보내지 못했습니다. 거래 중단은 이미 진행됨.</td><td><span class="act act-watch">모니터링</span></td></tr>
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">Trading loop started</td><td>이 계정의 자동매매가 정상 시작되었습니다.</td><td><span class="act act-ok">정상</span></td></tr>
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">Sell detected + balance recovered → will resume</td><td>매도가 체결되어 잔고가 회복되었습니다. <strong>매수가 곧 재개</strong>됩니다.</td><td><span class="act act-ok">정상</span></td></tr>
+</tbody>
+</table>
+</div>
+</details>
+
+<!-- trading_engine -->
+<details id="m-te">
+<summary>
+  <span class="badge">trading_engine</span>
+  <span class="sdesc">— 전체 엔진 관리 (시작/중지/복구)</span>
+  <span class="lcnt">9건</span>
+</summary>
+<div class="inner">
+<p style="font-size:13px; color:var(--text-muted); margin-bottom:12px">모든 계정의 매매 루프를 관리하는 상위 엔진입니다.</p>
+<table>
+<thead><tr><th>긴급도</th><th>로그 메시지</th><th>무슨 뜻인가요?</th><th>대응</th></tr></thead>
+<tbody>
+<tr data-level="error"><td><span class="lv lv-e">오류</span></td><td class="msg-cell">Failed to start account a1b2: InvalidAPIKey</td><td>계정 시작에 실패했습니다. API 키 문제일 수 있습니다.</td><td><span class="act act-now">즉시 대응</span></td></tr>
+<tr data-level="error"><td><span class="lv lv-e">오류</span></td><td class="msg-cell">CB recovery loop error: DBError</td><td>자동 복구 시스템에 오류가 발생했습니다.</td><td><span class="act act-soon">빠른 확인</span></td></tr>
+<tr data-level="warning"><td><span class="lv lv-w">주의</span></td><td class="msg-cell">Account a1b2 has active circuit breaker, skipping start</td><td>이전 장애로 중단된 계정입니다. 자동 복구를 기다리는 중.</td><td><span class="act act-watch">모니터링</span></td></tr>
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">Starting trading engine with 3 active accounts</td><td>엔진이 시작됩니다. 3개 계정이 활성 상태.</td><td><span class="act act-ok">정상</span></td></tr>
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">Started trader for account a1b2</td><td>해당 계정의 매매가 시작되었습니다.</td><td><span class="act act-ok">정상</span></td></tr>
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">Stopped trader for account a1b2</td><td>해당 계정의 매매가 중지되었습니다.</td><td><span class="act act-ok">정상</span></td></tr>
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">Refreshed subscriptions for a1b2</td><td>계정의 거래 심볼 목록이 갱신되었습니다.</td><td><span class="act act-ok">정상</span></td></tr>
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">Stopping all traders...</td><td>모든 계정의 매매를 종료하는 중입니다.</td><td><span class="act act-ok">정상</span></td></tr>
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">Auto-recovering CB-tripped account a1b2 (attempt 1)</td><td>장애 계정의 자동 복구를 시도합니다. (30분 쿨다운 후)</td><td><span class="act act-ok">정상</span></td></tr>
+</tbody>
+</table>
+</div>
+</details>
+
+<!-- buy_pause_manager -->
+<details id="m-bp">
+<summary>
+  <span class="badge">buy_pause_manager</span>
+  <span class="sdesc">— 잔고 부족 시 매수 일시정지</span>
+  <span class="lcnt">4건</span>
+</summary>
+<div class="inner">
+<p style="font-size:13px; color:var(--text-muted); margin-bottom:12px">
+  잔고가 부족하면 매수만 자동으로 멈추고, 매도(이익 실현)는 계속 진행합니다.
+  잔고가 회복되면 자동으로 매수를 재개합니다.
+</p>
+<table>
+<thead><tr><th>긴급도</th><th>로그 메시지</th><th>무슨 뜻인가요?</th><th>대응</th></tr></thead>
+<tbody>
+<tr data-level="warning"><td><span class="lv lv-w">주의</span></td><td class="msg-cell">Buy pause → PAUSED (consecutive=3)</td><td>잔고 부족이 3회 연속 감지되어 <strong>매수가 완전히 중지</strong>되었습니다. 매도는 계속됩니다.</td><td><span class="act act-soon">빠른 확인</span></td></tr>
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">Buy pause cleared → ACTIVE</td><td>잔고가 회복되어 <strong>매수가 재개</strong>되었습니다.</td><td><span class="act act-ok">정상</span></td></tr>
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">Sell occurred but balance still low, staying PAUSED (count=4)</td><td>매도가 체결되었지만 잔고가 아직 부족하여 매수 중지 상태를 유지합니다.</td><td><span class="act act-watch">모니터링</span></td></tr>
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">Buy pause manually resumed → ACTIVE</td><td>관리자가 수동으로 매수를 재개했습니다.</td><td><span class="act act-ok">정상</span></td></tr>
+</tbody>
+</table>
+</div>
+</details>
+
+<!-- kline_ws_manager -->
+<details id="m-kw">
+<summary>
+  <span class="badge">kline_ws_manager</span>
+  <span class="sdesc">— 실시간 가격 수신 (WebSocket)</span>
+  <span class="lcnt">14건</span>
+</summary>
+<div class="inner">
+<p style="font-size:13px; color:var(--text-muted); margin-bottom:12px">바이낸스에서 실시간으로 가격 데이터를 받아오는 모듈입니다. 연결이 끊기면 자동으로 재연결합니다.</p>
+<table>
+<thead><tr><th>긴급도</th><th>로그 메시지</th><th>무슨 뜻인가요?</th><th>대응</th></tr></thead>
+<tbody>
+<tr data-level="error"><td><span class="lv lv-e">오류</span></td><td class="msg-cell">KlineWsManager: Failed to create AsyncClient: timeout</td><td>바이낸스 연결 초기화에 실패했습니다. <strong>실시간 가격을 못 받는 상태</strong>.</td><td><span class="act act-now">즉시 대응</span></td></tr>
+<tr data-level="error"><td><span class="lv lv-e">오류</span></td><td class="msg-cell">KlineWsManager: WS fatal error: ConnectionClosed, retrying in 10s</td><td>실시간 연결이 끊겼습니다. 10초 후 자동 재연결을 시도합니다.</td><td><span class="act act-watch">모니터링</span></td></tr>
+<tr data-level="error"><td><span class="lv lv-e">오류</span></td><td class="msg-cell">KlineWsManager: failed to recreate client: timeout</td><td>재연결에도 실패했습니다. 계속 재시도하지만 <strong>가격 데이터가 지연</strong>됩니다.</td><td><span class="act act-soon">빠른 확인</span></td></tr>
+<tr data-level="error"><td><span class="lv lv-e">오류</span></td><td class="msg-cell">KlineWsManager: failed to parse candle for BTCUSDT: KeyError</td><td>바이낸스에서 온 데이터 형식이 예상과 다릅니다. 매우 드문 상황.</td><td><span class="act act-watch">모니터링</span></td></tr>
+<tr data-level="error"><td><span class="lv lv-e">오류</span></td><td class="msg-cell">KlineWsManager: failed to store candle for BTCUSDT: DBError</td><td>가격 데이터를 DB에 저장하지 못했습니다.</td><td><span class="act act-soon">빠른 확인</span></td></tr>
+<tr data-level="warning"><td><span class="lv lv-w">주의</span></td><td class="msg-cell">KlineWsManager: backfill failed for btcusdt: timeout</td><td>과거 캔들 데이터를 보충하지 못했습니다. 거래에는 영향 없음.</td><td><span class="act act-watch">모니터링</span></td></tr>
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">KlineWsManager: AsyncClient created (public streams)</td><td>바이낸스 실시간 연결이 성공적으로 생성되었습니다.</td><td><span class="act act-ok">정상</span></td></tr>
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">KlineWsManager: subscribed to btcusdt (new)</td><td>새로운 심볼의 실시간 가격 수신을 시작합니다.</td><td><span class="act act-ok">정상</span></td></tr>
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">KlineWsManager: unsubscribed from btcusdt</td><td>해당 심볼의 실시간 가격 수신을 중지했습니다.</td><td><span class="act act-ok">정상</span></td></tr>
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">KlineWsManager: no symbols, WS idle</td><td>수신할 심볼이 없어 대기 상태입니다.</td><td><span class="act act-ok">정상</span></td></tr>
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">KlineWsManager: recreated AsyncClient after failure</td><td>연결 장애 후 정상 복구되었습니다.</td><td><span class="act act-ok">정상</span></td></tr>
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">KlineWsManager: backfilled 58/60 candles for BTCUSDT</td><td>과거 캔들 데이터 58개를 성공적으로 보충했습니다.</td><td><span class="act act-ok">정상</span></td></tr>
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">KlineWsManager: starting multiplex for 2 symbols: ['BTCUSDT','ETHUSDT']</td><td>2개 심볼의 실시간 스트림을 시작합니다.</td><td><span class="act act-ok">정상</span></td></tr>
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">KlineWsManager: stopped</td><td>실시간 가격 수신이 정상 종료되었습니다.</td><td><span class="act act-ok">정상</span></td></tr>
+</tbody>
+</table>
+</div>
+</details>
+
+<!-- candle_aggregator -->
+<details id="m-ca">
+<summary>
+  <span class="badge">candle_aggregator</span>
+  <span class="sdesc">— 캔들 데이터 압축 (6시간 주기)</span>
+  <span class="lcnt">7건</span>
+</summary>
+<div class="inner">
+<p style="font-size:13px; color:var(--text-muted); margin-bottom:12px">오래된 1분 캔들을 5분/1시간/1일 단위로 압축하여 DB를 효율적으로 유지합니다.</p>
+<table>
+<thead><tr><th>긴급도</th><th>로그 메시지</th><th>무슨 뜻인가요?</th><th>대응</th></tr></thead>
+<tbody>
+<tr data-level="error"><td><span class="lv lv-e">오류</span></td><td class="msg-cell">CandleAggregator: BTCUSDT 1m->5m failed: DBError</td><td>캔들 압축 작업 중 DB 오류가 발생했습니다.</td><td><span class="act act-watch">모니터링</span></td></tr>
+<tr data-level="error"><td><span class="lv lv-e">오류</span></td><td class="msg-cell">CandleAggregator: unexpected error: DBError</td><td>예상치 못한 오류가 발생했습니다.</td><td><span class="act act-watch">모니터링</span></td></tr>
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">CandleAggregator: BTCUSDT 1m->5m: aggregated=288, deleted=288</td><td>288개의 1분 캔들을 5분 캔들로 압축 완료.</td><td><span class="act act-ok">정상</span></td></tr>
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">CandleAggregator: background loop started (interval: 21600s)</td><td>캔들 압축 스케줄러가 시작됨 (6시간 간격).</td><td><span class="act act-ok">정상</span></td></tr>
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">CandleAggregator: completed — {summary}</td><td>이번 주기의 캔들 압축이 정상 완료되었습니다.</td><td><span class="act act-ok">정상</span></td></tr>
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">CandleAggregator: background loop cancelled</td><td>서버 종료로 캔들 압축이 중단되었습니다.</td><td><span class="act act-ok">정상</span></td></tr>
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">CandleAggregator: background loop cancelled during sleep</td><td>대기 중 서버가 종료되었습니다.</td><td><span class="act act-ok">정상</span></td></tr>
+</tbody>
+</table>
+</div>
+</details>
+
+<!-- lot_stacking + trend + fixed_tp -->
+<details id="m-strategy">
+<summary>
+  <span class="badge">전략 (매수/매도)</span>
+  <span class="sdesc">— lot_stacking, trend, fixed_tp</span>
+  <span class="lcnt">34건</span>
+</summary>
+<div class="inner">
+<p style="font-size:13px; color:var(--text-muted); margin-bottom:12px">
+  실제 매수/매도 주문을 관리하는 전략 모듈입니다. 주문 체결, 가격 재조정, 주문 실패 등의 이벤트를 기록합니다.
+</p>
+<table>
+<thead><tr><th>긴급도</th><th>로그 메시지</th><th>무슨 뜻인가요?</th><th>대응</th></tr></thead>
+<tbody>
+<!-- 매수 체결/주문 (Critical events) -->
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">lot_stacking_buy: LOT buy filled qty_net=0.00105 avg=95000.00</td><td><strong>매수 주문이 체결</strong>되었습니다. 새로운 랏이 생성됨.</td><td><span class="act act-ok">정상</span></td></tr>
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">lot_stacking_buy: placed LOT buy order 12345 at trigger=95000.00 usdt=100.00</td><td>매수 주문이 바이낸스에 접수되었습니다.</td><td><span class="act act-ok">정상</span></td></tr>
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">trend_buy: TREND buy filled qty_net=0.00050 avg=98000.00</td><td><strong>트렌드 매수가 체결</strong>되었습니다.</td><td><span class="act act-ok">정상</span></td></tr>
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">trend_buy: placed TREND buy order 12345 at trigger=97000.00 usdt=50.00</td><td>트렌드 매수 주문이 접수되었습니다.</td><td><span class="act act-ok">정상</span></td></tr>
+<!-- 매도 체결 (Critical events) -->
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">fixed_tp: lot 42 TP filled sell=98135.00 profit=3.25 pending_earnings+=3.25</td><td><strong>이익 실현 매도가 체결</strong>되었습니다! 수익: 3.25 USDT</td><td><span class="act act-ok">정상</span></td></tr>
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">fixed_tp: placed TP sell order 67890 for lot 42 at 98135.00 qty=0.00105</td><td>이익 실현 매도 주문이 접수되었습니다.</td><td><span class="act act-ok">정상</span></td></tr>
+<!-- 주문 실패 -->
+<tr data-level="error"><td><span class="lv lv-e">오류</span></td><td class="msg-cell">lot_stacking_buy: place LOT buy failed: BinanceAPIException(-2010)</td><td><strong>매수 주문 실패</strong>. 잔고 부족이나 바이낸스 오류일 수 있습니다.</td><td><span class="act act-soon">빠른 확인</span></td></tr>
+<tr data-level="error"><td><span class="lv lv-e">오류</span></td><td class="msg-cell">trend_buy: place TREND buy failed: APIError</td><td><strong>트렌드 매수 주문 실패</strong>.</td><td><span class="act act-soon">빠른 확인</span></td></tr>
+<tr data-level="error"><td><span class="lv lv-e">오류</span></td><td class="msg-cell">fixed_tp: place TP sell for lot 42 failed: APIError</td><td><strong>이익 실현 매도 주문 실패</strong>. 이익 보호가 안 되는 상태입니다.</td><td><span class="act act-now">즉시 대응</span></td></tr>
+<!-- 기타 ERROR -->
+<tr data-level="error"><td><span class="lv lv-e">오류</span></td><td class="msg-cell">lot_stacking_buy: failed to fetch pending order 12345: timeout</td><td>대기 중인 주문의 상태 확인에 실패했습니다.</td><td><span class="act act-watch">모니터링</span></td></tr>
+<tr data-level="error"><td><span class="lv lv-e">오류</span></td><td class="msg-cell">lot_stacking_buy: cancel timed-out order 12345 failed: APIError</td><td>3시간 미체결 주문 취소에 실패했습니다.</td><td><span class="act act-soon">빠른 확인</span></td></tr>
+<tr data-level="error"><td><span class="lv lv-e">오류</span></td><td class="msg-cell">lot_stacking_buy: cancel rebound order 12345 failed: APIError</td><td>가격 반등으로 인한 주문 취소에 실패했습니다.</td><td><span class="act act-soon">빠른 확인</span></td></tr>
+<tr data-level="error"><td><span class="lv lv-e">오류</span></td><td class="msg-cell">fixed_tp: failed to get sell order 67890 for lot 42: APIError</td><td>매도 주문 상태 확인에 실패했습니다.</td><td><span class="act act-watch">모니터링</span></td></tr>
+<!-- WARNING -->
+<tr data-level="warning"><td><span class="lv lv-w">주의</span></td><td class="msg-cell">lot_stacking_buy: pending buy order 12345 timed out, cancelling</td><td>매수 주문이 3시간 동안 체결되지 않아 자동 취소합니다.</td><td><span class="act act-watch">모니터링</span></td></tr>
+<tr data-level="warning"><td><span class="lv lv-w">주의</span></td><td class="msg-cell">lot_stacking_buy: buy_usdt 5.00 below min_trade_usdt 6.00</td><td>매수 금액(5 USDT)이 최소 금액(6 USDT) 미만이라 매수를 건너뜁니다.</td><td><span class="act act-watch">모니터링</span></td></tr>
+<tr data-level="warning"><td><span class="lv lv-w">주의</span></td><td class="msg-cell">lot_stacking_buy: estimated notional below min_notional</td><td>주문 금액이 바이낸스 최소 주문 금액보다 작습니다.</td><td><span class="act act-watch">모니터링</span></td></tr>
+<tr data-level="warning"><td><span class="lv lv-w">주의</span></td><td class="msg-cell">trend_buy: no reference_combo_id configured, skipping</td><td>트렌드 전략에 참조 콤보가 설정되지 않았습니다. 설정을 확인하세요.</td><td><span class="act act-soon">빠른 확인</span></td></tr>
+<tr data-level="warning"><td><span class="lv lv-w">주의</span></td><td class="msg-cell">fixed_tp: lot 42 notional 4.50 below minimum, skipping TP</td><td>매도 금액이 너무 작아(4.50 USDT) 이번에는 이익 실현을 건너뜁니다.</td><td><span class="act act-watch">모니터링</span></td></tr>
+<!-- INFO (기타) -->
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">lot_stacking_buy: pending buy order 12345 FILLED</td><td>대기 중이던 매수 주문이 체결되었습니다.</td><td><span class="act act-ok">정상</span></td></tr>
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">lot_stacking_buy: INIT buy filled qty=0.01050 cost=100.00 avg=95238.10</td><td>초기 리저브 매수가 체결되었습니다. (최초 1회)</td><td><span class="act act-ok">정상</span></td></tr>
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">lot_stacking_buy: recentering base_price from 95000.00 to EMA 97000.00</td><td>시장 가격 상승에 따라 기준 매수가를 재조정했습니다.</td><td><span class="act act-ok">정상</span></td></tr>
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">lot_stacking_buy: initialized base_price to 97000.00</td><td>콤보의 최초 기준 매수가가 설정되었습니다.</td><td><span class="act act-ok">정상</span></td></tr>
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">lot_stacking_buy: rebound detected, cancelling order 12345</td><td>가격이 반등하여 매수 주문을 취소했습니다.</td><td><span class="act act-ok">정상</span></td></tr>
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">fixed_tp: sell order 67890 for lot 42 CANCELED, clearing</td><td>매도 주문이 취소되어 정리합니다. 다음 사이클에 재등록됩니다.</td><td><span class="act act-ok">정상</span></td></tr>
+</tbody>
+</table>
+</div>
+</details>
+
+<!-- alert_service -->
+<details id="m-as">
+<summary>
+  <span class="badge">alert_service</span>
+  <span class="sdesc">— 텔레그램 알림</span>
+  <span class="lcnt">5건</span>
+</summary>
+<div class="inner">
+<table>
+<thead><tr><th>긴급도</th><th>로그 메시지</th><th>무슨 뜻인가요?</th><th>대응</th></tr></thead>
+<tbody>
+<tr data-level="error"><td><span class="lv lv-e">오류</span></td><td class="msg-cell">Alert service circuit breaker tripped after 5 failures</td><td>텔레그램 알림이 5회 연속 실패하여 <strong>알림 시스템이 중단</strong>되었습니다. 거래 자체는 정상.</td><td><span class="act act-soon">빠른 확인</span></td></tr>
+<tr data-level="warning"><td><span class="lv lv-w">주의</span></td><td class="msg-cell">Alert send failed: ConnectTimeout</td><td>텔레그램 알림 발송에 실패했습니다.</td><td><span class="act act-watch">모니터링</span></td></tr>
+<tr data-level="warning"><td><span class="lv lv-w">주의</span></td><td class="msg-cell">Telegram API returned 429: {"ok":false,...}</td><td>텔레그램 API가 과부하 응답을 보냈습니다.</td><td><span class="act act-watch">모니터링</span></td></tr>
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">Alert service circuit breaker reset</td><td>알림 시스템이 정상 복구되었습니다.</td><td><span class="act act-ok">정상</span></td></tr>
+<tr data-level="debug"><td><span class="lv lv-d">디버그</span></td><td class="msg-cell">Alert rate-limited: ...</td><td>단시간에 알림이 너무 많아 일부를 생략합니다.</td><td><span class="act act-ok">정상</span></td></tr>
+</tbody>
+</table>
+</div>
+</details>
+
+<!-- reconciliation -->
+<details id="m-rc">
+<summary>
+  <span class="badge">reconciliation</span>
+  <span class="sdesc">— 거래소-DB 데이터 일치 검사</span>
+  <span class="lcnt">7건</span>
+</summary>
+<div class="inner">
+<table>
+<thead><tr><th>긴급도</th><th>로그 메시지</th><th>무슨 뜻인가요?</th><th>대응</th></tr></thead>
+<tbody>
+<tr data-level="warning"><td><span class="lv lv-w">주의</span></td><td class="msg-cell">Reconciliation drift for a1b2: 1 position diffs, 2 fill gaps</td><td>바이낸스와 DB 사이에 <strong>데이터 불일치</strong>가 발견되었습니다.</td><td><span class="act act-now">즉시 대응</span></td></tr>
+<tr data-level="error"><td><span class="lv lv-e">오류</span></td><td class="msg-cell">Reconciliation error for a1b2: DBError</td><td>일치 검사 중 오류가 발생했습니다.</td><td><span class="act act-soon">빠른 확인</span></td></tr>
+<tr data-level="error"><td><span class="lv lv-e">오류</span></td><td class="msg-cell">Failed to fetch trades from exchange for repair: timeout</td><td>불일치 수리를 위한 거래소 데이터 조회에 실패했습니다.</td><td><span class="act act-soon">빠른 확인</span></td></tr>
+<tr data-level="warning"><td><span class="lv lv-w">주의</span></td><td class="msg-cell">Failed to fetch exchange account info for a1b2: timeout</td><td>거래소 잔고 정보 조회에 실패했습니다.</td><td><span class="act act-watch">모니터링</span></td></tr>
+<tr data-level="warning"><td><span class="lv lv-w">주의</span></td><td class="msg-cell">Fill gap check failed for a1b2/BTCUSDT: timeout</td><td>체결 내역 점검에 실패했습니다.</td><td><span class="act act-watch">모니터링</span></td></tr>
+<tr data-level="warning"><td><span class="lv lv-w">주의</span></td><td class="msg-cell">Failed to send drift alert: ConnectTimeout</td><td>불일치 알림 발송에 실패했습니다.</td><td><span class="act act-watch">모니터링</span></td></tr>
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">Repaired 15 fills for a1b2/BTCUSDT</td><td>누락된 체결 내역 15건을 성공적으로 복구했습니다.</td><td><span class="act act-ok">정상</span></td></tr>
+</tbody>
+</table>
+</div>
+</details>
+
+<!-- main + health + etc -->
+<details id="m-sys">
+<summary>
+  <span class="badge">시스템</span>
+  <span class="sdesc">— 서버 시작/종료, 헬스체크, 인증, DB</span>
+  <span class="lcnt">17건</span>
+</summary>
+<div class="inner">
+<table>
+<thead><tr><th>긴급도</th><th>로그 메시지</th><th>무슨 뜻인가요?</th><th>대응</th></tr></thead>
+<tbody>
+<tr data-level="critical"><td><span class="lv lv-c">위험</span></td><td class="msg-cell">Trading engine crashed: RuntimeError(...)</td><td><strong>전체 매매 엔진이 크래시</strong>되었습니다. 모든 거래가 중단됩니다.</td><td><span class="act act-now">즉시 대응</span></td></tr>
+<tr data-level="error"><td><span class="lv lv-e">오류</span></td><td class="msg-cell">Database health check failed: ConnectionRefused</td><td><strong>데이터베이스 연결 불가</strong>. 모든 기능이 영향받습니다.</td><td><span class="act act-now">즉시 대응</span></td></tr>
+<tr data-level="error"><td><span class="lv lv-e">오류</span></td><td class="msg-cell">Backtest a1b2 failed: ValueError(...)</td><td>백테스트 실행 중 오류가 발생했습니다. 실거래에 영향 없음.</td><td><span class="act act-watch">모니터링</span></td></tr>
+<tr data-level="error"><td><span class="lv lv-e">오류</span></td><td class="msg-cell">combo reapply failed: APIError</td><td>콤보 설정 재적용 중 오류가 발생했습니다.</td><td><span class="act act-soon">빠른 확인</span></td></tr>
+<tr data-level="warning"><td><span class="lv lv-w">주의</span></td><td class="msg-cell">Account locked: user@example.com (failed 5 times)</td><td>로그인 5회 실패로 계정이 30분간 잠겼습니다.</td><td><span class="act act-watch">모니터링</span></td></tr>
+<tr data-level="warning"><td><span class="lv lv-w">주의</span></td><td class="msg-cell">SLOW_QUERY duration_ms=1250.3 query=SELECT ...</td><td>DB 쿼리가 1.25초 걸렸습니다 (정상: 0.2초 이내).</td><td><span class="act act-watch">모니터링</span></td></tr>
+<tr data-level="warning"><td><span class="lv lv-w">주의</span></td><td class="msg-cell">Binance time sync failed, using offset=0</td><td>바이낸스 서버 시간 동기화에 실패. 서명 오류가 발생할 수 있습니다.</td><td><span class="act act-soon">빠른 확인</span></td></tr>
+<tr data-level="warning"><td><span class="lv lv-w">주의</span></td><td class="msg-cell">Failed to auto-save backtest a1b2</td><td>백테스트 결과 자동 저장에 실패했습니다.</td><td><span class="act act-watch">모니터링</span></td></tr>
+<tr data-level="warning"><td><span class="lv lv-w">주의</span></td><td class="msg-cell">Failed to clean up orphan backtests: DBError</td><td>이전 크래시로 남은 미완료 백테스트 정리에 실패.</td><td><span class="act act-watch">모니터링</span></td></tr>
+<tr data-level="warning"><td><span class="lv lv-w">주의</span></td><td class="msg-cell">Price fetch failed for BTCUSDT: BinanceAPIException(-1003)</td><td>가격 조회에 실패했습니다.</td><td><span class="act act-watch">모니터링</span></td></tr>
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">Starting crypto-multi-trader...</td><td>서버가 시작되고 있습니다.</td><td><span class="act act-ok">정상</span></td></tr>
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">Shutting down trading engine...</td><td>서버가 정상 종료 중입니다.</td><td><span class="act act-ok">정상</span></td></tr>
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">Trading engine stopped</td><td>서버가 정상 종료되었습니다.</td><td><span class="act act-ok">정상</span></td></tr>
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">Marked 2 orphan backtests as FAILED</td><td>이전 크래시로 남은 미완료 백테스트 2개를 정리했습니다.</td><td><span class="act act-ok">정상</span></td></tr>
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">combo_reapply: cancelled pending buy order 12345</td><td>콤보 재적용으로 대기 매수 주문을 취소했습니다.</td><td><span class="act act-ok">정상</span></td></tr>
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">combo_reapply: cancelled TP sell order 67890</td><td>콤보 재적용으로 매도 주문을 취소했습니다.</td><td><span class="act act-ok">정상</span></td></tr>
+<tr data-level="info"><td><span class="lv lv-i">알림</span></td><td class="msg-cell">combo_reapply: combo c1d2 result: {summary}</td><td>콤보 재적용이 완료되었습니다.</td><td><span class="act act-ok">정상</span></td></tr>
+</tbody>
+</table>
+</div>
+</details>
+
+<!-- Section: 긴급 대응 가이드 -->
+<h2 id="sec5">긴급 대응 가이드</h2>
+
+<div class="pri-grid">
+  <div class="pri-card" style="border-left-color: var(--critical);">
+    <h4 style="color:var(--critical)">즉시 대응 필요</h4>
+    <ul>
+      <li><span class="m">Circuit breaker triggered</span><br>→ 계정 거래 완전 중단. API 키·네트워크 확인 후 수동 재시작</li>
+      <li><span class="m">Trading engine crashed</span><br>→ 전체 서비스 다운. 서버 즉시 재시작 필요</li>
+      <li><span class="m">Reconciliation drift</span><br>→ 거래소와 DB 불일치. 포지션·체결 수동 확인</li>
+      <li><span class="m">place TP sell failed</span><br>→ 이익 실현 매도 불가. 수동으로 매도 주문 등록</li>
+    </ul>
+  </div>
+  <div class="pri-card" style="border-left-color: var(--error);">
+    <h4 style="color:var(--error)">30분 이내 확인</h4>
+    <ul>
+      <li><span class="m">_init_client() failed</span><br>→ API 키 확인, 계정 설정 점검</li>
+      <li><span class="m">Transient error (Nx)</span><br>→ 연속 오류 누적 중. 5회 도달 전 원인 파악</li>
+      <li><span class="m">WS fatal error / failed to recreate</span><br>→ 실시간 가격 수신 중단. 네트워크 상태 확인</li>
+      <li><span class="m">place LOT/TREND buy failed</span><br>→ 매수 주문 실패. 잔고·API 키 확인</li>
+      <li><span class="m">Buy pause → PAUSED</span><br>→ 잔고 부족으로 매수 중단. 입금 고려</li>
+    </ul>
+  </div>
+</div>
+
+<script>
+const search = document.getElementById('search');
+const btns = document.querySelectorAll('.fbtn');
+const cntEl = document.getElementById('cnt');
+let lvl = 'all';
+
+function run() {
+  const q = search.value.toLowerCase().trim();
+  const rows = document.querySelectorAll('tbody tr[data-level]');
+  let vis = 0, tot = rows.length;
+  rows.forEach(r => {
+    const rl = r.dataset.level;
+    const txt = r.textContent.toLowerCase();
+    const lm = lvl === 'all' || rl === lvl;
+    const tm = !q || txt.includes(q);
+    const show = lm && tm;
+    r.classList.toggle('hidden', !show);
+    r.classList.toggle('hl', show && !!q);
+    if (show) vis++;
+  });
+  cntEl.textContent = q || lvl !== 'all' ? `${vis} / ${tot}건` : '';
+}
+
+search.addEventListener('input', run);
+btns.forEach(b => b.addEventListener('click', () => {
+  btns.forEach(x => x.classList.remove('on'));
+  b.classList.add('on');
+  lvl = b.dataset.v;
+  run();
+}));
+</script>
+
+</body>
+</html>

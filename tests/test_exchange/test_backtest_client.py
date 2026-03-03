@@ -1,4 +1,5 @@
 """BacktestClient unit tests."""
+
 import pytest
 
 from app.exchange.backtest_client import BacktestClient
@@ -19,6 +20,7 @@ def client_with_btc() -> BacktestClient:
 # ---------------------------------------------------------------------------
 # Initial state
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.exchange
 class TestInitialState:
@@ -49,6 +51,7 @@ class TestInitialState:
 # Price
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.exchange
 class TestPrice:
     async def test_get_price_returns_set_price(self, client):
@@ -68,14 +71,13 @@ class TestPrice:
 # place_limit_buy_by_quote
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.exchange
 class TestPlaceLimitBuy:
     async def test_reduces_free_usdt_increases_locked(self, client):
         # current price 300 > order price 200 → order stays open (not filled)
         client.set_price(300.0)
-        await client.place_limit_buy_by_quote(
-            quote_usdt=100.0, price=200.0, symbol=SYMBOL
-        )
+        await client.place_limit_buy_by_quote(quote_usdt=100.0, price=200.0, symbol=SYMBOL)
         bal = await client.get_balance("USDT")
         # price=200, adjust_qty(100/200=0.5, step=0.00001)=0.49999, cost=0.49999*200=99.998
         adj_qty = 0.49999
@@ -86,9 +88,7 @@ class TestPlaceLimitBuy:
     async def test_order_appears_in_open_orders(self, client):
         # current price 300 > order price 200 → order stays open
         client.set_price(300.0)
-        await client.place_limit_buy_by_quote(
-            quote_usdt=100.0, price=200.0, symbol=SYMBOL
-        )
+        await client.place_limit_buy_by_quote(quote_usdt=100.0, price=200.0, symbol=SYMBOL)
         orders = await client.get_open_orders(SYMBOL)
         assert len(orders) == 1
         assert orders[0]["side"] == "BUY"
@@ -97,9 +97,7 @@ class TestPlaceLimitBuy:
     async def test_order_fills_when_price_at_or_below_order_price(self, client):
         # Place buy at 200, then set current price at 200 (equal fills)
         client.set_price(300.0)
-        await client.place_limit_buy_by_quote(
-            quote_usdt=200.0, price=200.0, symbol=SYMBOL
-        )
+        await client.place_limit_buy_by_quote(quote_usdt=200.0, price=200.0, symbol=SYMBOL)
         # Now price drops to fill level
         client.set_price(200.0)
         orders = await client.get_open_orders(SYMBOL)
@@ -110,9 +108,7 @@ class TestPlaceLimitBuy:
     async def test_immediate_fill_when_current_price_below_order_price(self, client):
         # Current price 50 < order price 100 → fills immediately on place
         client.set_price(50.0)
-        await client.place_limit_buy_by_quote(
-            quote_usdt=500.0, price=100.0, symbol=SYMBOL
-        )
+        await client.place_limit_buy_by_quote(quote_usdt=500.0, price=100.0, symbol=SYMBOL)
         orders = await client.get_open_orders(SYMBOL)
         assert len(orders) == 0
         assert await client.get_free_balance("BTC") > 0
@@ -120,9 +116,7 @@ class TestPlaceLimitBuy:
     async def test_fill_increases_btc_balance(self, client):
         client.set_price(50000.0)
         # Buy 1000 USDT at 50000 → qty = 1000/50000 = 0.02 BTC
-        await client.place_limit_buy_by_quote(
-            quote_usdt=1000.0, price=50000.0, symbol=SYMBOL
-        )
+        await client.place_limit_buy_by_quote(quote_usdt=1000.0, price=50000.0, symbol=SYMBOL)
         # Set price equal to order price to fill
         client.set_price(50000.0)
         btc_free = await client.get_free_balance("BTC")
@@ -131,27 +125,19 @@ class TestPlaceLimitBuy:
     async def test_raises_on_insufficient_usdt(self, client):
         client.set_price(100.0)
         with pytest.raises(ValueError, match="Insufficient USDT"):
-            await client.place_limit_buy_by_quote(
-                quote_usdt=20000.0, price=100.0, symbol=SYMBOL
-            )
+            await client.place_limit_buy_by_quote(quote_usdt=20000.0, price=100.0, symbol=SYMBOL)
 
     async def test_raises_on_zero_price(self, client):
         with pytest.raises(ValueError, match="price must be > 0"):
-            await client.place_limit_buy_by_quote(
-                quote_usdt=100.0, price=0.0, symbol=SYMBOL
-            )
+            await client.place_limit_buy_by_quote(quote_usdt=100.0, price=0.0, symbol=SYMBOL)
 
     async def test_raises_on_negative_price(self, client):
         with pytest.raises(ValueError):
-            await client.place_limit_buy_by_quote(
-                quote_usdt=100.0, price=-1.0, symbol=SYMBOL
-            )
+            await client.place_limit_buy_by_quote(quote_usdt=100.0, price=-1.0, symbol=SYMBOL)
 
     async def test_order_contains_expected_fields(self, client):
         client.set_price(100.0)
-        order = await client.place_limit_buy_by_quote(
-            quote_usdt=100.0, price=200.0, symbol=SYMBOL
-        )
+        order = await client.place_limit_buy_by_quote(quote_usdt=100.0, price=200.0, symbol=SYMBOL)
         for field in ("orderId", "symbol", "side", "type", "status", "price", "origQty"):
             assert field in order
 
@@ -167,15 +153,14 @@ class TestPlaceLimitBuy:
 # place_limit_sell
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.exchange
 class TestPlaceLimitSell:
     async def test_reduces_free_btc_increases_locked(self, client_with_btc):
         # current price 50000 < sell price 55000 → order stays open
         # adjust_qty(0.5, step_size=0.00001) = 0.49999 due to float floor
         client_with_btc.set_price(50000.0)
-        await client_with_btc.place_limit_sell(
-            qty_base=0.5, price=55000.0, symbol=SYMBOL
-        )
+        await client_with_btc.place_limit_sell(qty_base=0.5, price=55000.0, symbol=SYMBOL)
         bal = await client_with_btc.get_balance("BTC")
         adj_qty = 0.49999
         assert bal["free"] == pytest.approx(1.0 - adj_qty, rel=1e-4)
@@ -183,18 +168,14 @@ class TestPlaceLimitSell:
 
     async def test_order_appears_in_open_orders(self, client_with_btc):
         client_with_btc.set_price(50000.0)
-        await client_with_btc.place_limit_sell(
-            qty_base=0.1, price=55000.0, symbol=SYMBOL
-        )
+        await client_with_btc.place_limit_sell(qty_base=0.1, price=55000.0, symbol=SYMBOL)
         orders = await client_with_btc.get_open_orders(SYMBOL)
         assert len(orders) == 1
         assert orders[0]["side"] == "SELL"
 
     async def test_fills_when_price_reaches_sell_price(self, client_with_btc):
         client_with_btc.set_price(40000.0)
-        await client_with_btc.place_limit_sell(
-            qty_base=1.0, price=50000.0, symbol=SYMBOL
-        )
+        await client_with_btc.place_limit_sell(qty_base=1.0, price=50000.0, symbol=SYMBOL)
         client_with_btc.set_price(50000.0)
         orders = await client_with_btc.get_open_orders(SYMBOL)
         assert len(orders) == 0
@@ -203,9 +184,7 @@ class TestPlaceLimitSell:
         # adjust_qty(1.0, step_size=0.00001) = 0.99999; proceeds = 0.99999 * 50000 * (1 - fee)
         initial_usdt = await client_with_btc.get_free_balance("USDT")
         client_with_btc.set_price(40000.0)
-        order = await client_with_btc.place_limit_sell(
-            qty_base=1.0, price=50000.0, symbol=SYMBOL
-        )
+        order = await client_with_btc.place_limit_sell(qty_base=1.0, price=50000.0, symbol=SYMBOL)
         adj_qty = float(order["origQty"])
         client_with_btc.set_price(50000.0)
         final_usdt = await client_with_btc.get_free_balance("USDT")
@@ -216,24 +195,16 @@ class TestPlaceLimitSell:
     async def test_raises_on_insufficient_btc(self, client):
         client.set_price(50000.0)
         with pytest.raises(ValueError, match="Insufficient BTC"):
-            await client.place_limit_sell(
-                qty_base=1.0, price=50000.0, symbol=SYMBOL
-            )
+            await client.place_limit_sell(qty_base=1.0, price=50000.0, symbol=SYMBOL)
 
     async def test_raises_on_zero_price(self, client_with_btc):
         with pytest.raises(ValueError, match="price must be > 0"):
-            await client_with_btc.place_limit_sell(
-                qty_base=0.1, price=0.0, symbol=SYMBOL
-            )
+            await client_with_btc.place_limit_sell(qty_base=0.1, price=0.0, symbol=SYMBOL)
 
-    async def test_immediate_fill_when_current_price_above_order_price(
-        self, client_with_btc
-    ):
+    async def test_immediate_fill_when_current_price_above_order_price(self, client_with_btc):
         # Current price 60000 > order sell price 50000 → fills immediately
         client_with_btc.set_price(60000.0)
-        await client_with_btc.place_limit_sell(
-            qty_base=1.0, price=50000.0, symbol=SYMBOL
-        )
+        await client_with_btc.place_limit_sell(qty_base=1.0, price=50000.0, symbol=SYMBOL)
         orders = await client_with_btc.get_open_orders(SYMBOL)
         assert len(orders) == 0
 
@@ -242,14 +213,13 @@ class TestPlaceLimitSell:
 # cancel_order
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.exchange
 class TestCancelOrder:
     async def test_cancel_returns_locked_usdt_to_free(self, client):
         # current price 300 > order price 200 → order stays open (not filled)
         client.set_price(300.0)
-        order = await client.place_limit_buy_by_quote(
-            quote_usdt=1000.0, price=200.0, symbol=SYMBOL
-        )
+        order = await client.place_limit_buy_by_quote(quote_usdt=1000.0, price=200.0, symbol=SYMBOL)
         order_id = order["orderId"]
         free_before = await client.get_free_balance("USDT")
         locked_before = (await client.get_balance("USDT"))["locked"]
@@ -264,18 +234,14 @@ class TestCancelOrder:
     async def test_cancel_removes_order_from_open_orders(self, client):
         # current price 300 > order price 200 → order stays open
         client.set_price(300.0)
-        order = await client.place_limit_buy_by_quote(
-            quote_usdt=500.0, price=200.0, symbol=SYMBOL
-        )
+        order = await client.place_limit_buy_by_quote(quote_usdt=500.0, price=200.0, symbol=SYMBOL)
         await client.cancel_order(order["orderId"], SYMBOL)
         orders = await client.get_open_orders(SYMBOL)
         assert len(orders) == 0
 
     async def test_cancel_sell_returns_locked_btc_to_free(self, client_with_btc):
         client_with_btc.set_price(40000.0)
-        order = await client_with_btc.place_limit_sell(
-            qty_base=0.5, price=55000.0, symbol=SYMBOL
-        )
+        order = await client_with_btc.place_limit_sell(qty_base=0.5, price=55000.0, symbol=SYMBOL)
         await client_with_btc.cancel_order(order["orderId"], SYMBOL)
         btc_bal = await client_with_btc.get_balance("BTC")
         assert btc_bal["free"] == pytest.approx(1.0)
@@ -289,9 +255,7 @@ class TestCancelOrder:
     async def test_cancel_returns_canceled_status(self, client):
         # current price 300 > order price 200 → order stays open
         client.set_price(300.0)
-        order = await client.place_limit_buy_by_quote(
-            quote_usdt=500.0, price=200.0, symbol=SYMBOL
-        )
+        order = await client.place_limit_buy_by_quote(quote_usdt=500.0, price=200.0, symbol=SYMBOL)
         result = await client.cancel_order(order["orderId"], SYMBOL)
         assert result["status"] == "CANCELED"
 
@@ -300,14 +264,13 @@ class TestCancelOrder:
 # get_my_trades
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.exchange
 class TestGetMyTrades:
     async def test_returns_trades_filtered_by_symbol(self, client):
         # Place buy that fills immediately
         client.set_price(50000.0)
-        await client.place_limit_buy_by_quote(
-            quote_usdt=500.0, price=50000.0, symbol=SYMBOL
-        )
+        await client.place_limit_buy_by_quote(quote_usdt=500.0, price=50000.0, symbol=SYMBOL)
         trades = await client.get_my_trades(SYMBOL)
         assert len(trades) == 1
         assert all(t["symbol"] == SYMBOL for t in trades)
@@ -319,26 +282,20 @@ class TestGetMyTrades:
             btc_free = await client_with_btc.get_free_balance("BTC")
             if btc_free < 0.1:
                 break
-            await client_with_btc.place_limit_sell(
-                qty_base=0.1, price=50000.0, symbol=SYMBOL
-            )
+            await client_with_btc.place_limit_sell(qty_base=0.1, price=50000.0, symbol=SYMBOL)
         trades = await client_with_btc.get_my_trades(SYMBOL, limit=2)
         assert len(trades) <= 2
 
     async def test_filters_by_order_id(self, client):
         client.set_price(50000.0)
-        order = await client.place_limit_buy_by_quote(
-            quote_usdt=500.0, price=50000.0, symbol=SYMBOL
-        )
+        order = await client.place_limit_buy_by_quote(quote_usdt=500.0, price=50000.0, symbol=SYMBOL)
         order_id = order["orderId"]
         trades = await client.get_my_trades(SYMBOL, order_id=order_id)
         assert all(t["orderId"] == order_id for t in trades)
 
     async def test_returns_empty_for_unknown_order_id(self, client):
         client.set_price(50000.0)
-        await client.place_limit_buy_by_quote(
-            quote_usdt=500.0, price=50000.0, symbol=SYMBOL
-        )
+        await client.place_limit_buy_by_quote(quote_usdt=500.0, price=50000.0, symbol=SYMBOL)
         trades = await client.get_my_trades(SYMBOL, order_id=99999)
         assert trades == []
 
@@ -347,14 +304,13 @@ class TestGetMyTrades:
 # get_order
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.exchange
 class TestGetOrder:
     async def test_returns_open_order_by_id(self, client):
         # current price 300 > order price 200 → order stays open (not filled)
         client.set_price(300.0)
-        order = await client.place_limit_buy_by_quote(
-            quote_usdt=500.0, price=200.0, symbol=SYMBOL
-        )
+        order = await client.place_limit_buy_by_quote(quote_usdt=500.0, price=200.0, symbol=SYMBOL)
         fetched = await client.get_order(order["orderId"], SYMBOL)
         assert fetched["orderId"] == order["orderId"]
         assert fetched["status"] == "NEW"
@@ -366,9 +322,7 @@ class TestGetOrder:
 
     async def test_returns_filled_order_after_fill(self, client):
         client.set_price(50000.0)
-        order = await client.place_limit_buy_by_quote(
-            quote_usdt=500.0, price=50000.0, symbol=SYMBOL
-        )
+        order = await client.place_limit_buy_by_quote(quote_usdt=500.0, price=50000.0, symbol=SYMBOL)
         fetched = await client.get_order(order["orderId"], SYMBOL)
         assert fetched["status"] == "FILLED"
 
@@ -376,6 +330,7 @@ class TestGetOrder:
 # ---------------------------------------------------------------------------
 # adjust_qty and adjust_price
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.exchange
 class TestAdjustments:
@@ -409,6 +364,7 @@ class TestAdjustments:
 # Full buy → fill → sell → fill cycle
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.exchange
 class TestFullCycle:
     async def test_buy_fill_sell_fill_usdt_balance(self, client):
@@ -420,9 +376,7 @@ class TestFullCycle:
 
         # Step 1: place buy, price matches → immediate fill
         client.set_price(50000.0)
-        buy_order = await client.place_limit_buy_by_quote(
-            quote_usdt=1000.0, price=50000.0, symbol=SYMBOL
-        )
+        buy_order = await client.place_limit_buy_by_quote(quote_usdt=1000.0, price=50000.0, symbol=SYMBOL)
         btc_qty = float(buy_order["origQty"])
         assert btc_qty > 0
 
@@ -434,9 +388,7 @@ class TestFullCycle:
         # Buy fill deducts fee from received BTC, so use actual balance
         btc_received = await client.get_free_balance("BTC")
         client.set_price(40000.0)  # below sell price → order stays open
-        await client.place_limit_sell(
-            qty_base=btc_received, price=55000.0, symbol=SYMBOL
-        )
+        await client.place_limit_sell(qty_base=btc_received, price=55000.0, symbol=SYMBOL)
         # Fill the sell
         client.set_price(55000.0)
 
@@ -458,12 +410,8 @@ class TestFullCycle:
     async def test_multiple_buy_orders_tracked_independently(self, client):
         # current price 500 > both order prices (200, 300) → both stay open
         client.set_price(500.0)
-        o1 = await client.place_limit_buy_by_quote(
-            quote_usdt=200.0, price=200.0, symbol=SYMBOL
-        )
-        o2 = await client.place_limit_buy_by_quote(
-            quote_usdt=300.0, price=300.0, symbol=SYMBOL
-        )
+        o1 = await client.place_limit_buy_by_quote(quote_usdt=200.0, price=200.0, symbol=SYMBOL)
+        o2 = await client.place_limit_buy_by_quote(quote_usdt=300.0, price=300.0, symbol=SYMBOL)
         orders = await client.get_open_orders(SYMBOL)
         assert len(orders) == 2
         ids = {o["orderId"] for o in orders}

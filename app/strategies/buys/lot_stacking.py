@@ -26,7 +26,9 @@ _ORDER_COOLDOWN_SEC = 5.0
 class LotStackingBuy(BaseBuyLogic):
     name = "lot_stacking"
     display_name = "LOT \uc801\ub9bd \ub9e4\uc218"
-    description = "\uae30\uc900\uac00 \ud558\ub77d \uc2dc \ubd84\ud560 \ub9e4\uc218, \ub9ac\uc800\ube0c BTC \uc801\ub9bd"
+    description = (
+        "\uae30\uc900\uac00 \ud558\ub77d \uc2dc \ubd84\ud560 \ub9e4\uc218, \ub9ac\uc800\ube0c BTC \uc801\ub9bd"
+    )
     version = "1.0.0"
 
     default_params = {
@@ -57,42 +59,70 @@ class LotStackingBuy(BaseBuyLogic):
             "group": "sizing",
         },
         "buy_usdt": {
-            "type": "float", "min": 10.0, "max": 500.0, "step": 1.0,
-            "title": "롯 매수금액", "unit": "USDT",
+            "type": "float",
+            "min": 10.0,
+            "max": 500.0,
+            "step": 1.0,
+            "title": "롯 매수금액",
+            "unit": "USDT",
             "visible_when": {"sizing_mode": "fixed"},
             "group": "sizing",
         },
         "buy_balance_pct": {
-            "type": "float", "min": 1.0, "max": 50.0, "step": 0.5,
-            "title": "잔고 대비 매수 비율", "unit": "%",
+            "type": "float",
+            "min": 1.0,
+            "max": 50.0,
+            "step": 0.5,
+            "title": "잔고 대비 매수 비율",
+            "unit": "%",
             "visible_when": {"sizing_mode": "pct_balance"},
             "group": "sizing",
         },
         "plan_x_pct": {
-            "type": "float", "min": 0.1, "max": 10.0, "step": 0.1,
-            "title": "단계별 기본 비율 (x%)", "unit": "%",
+            "type": "float",
+            "min": 0.1,
+            "max": 10.0,
+            "step": 0.1,
+            "title": "단계별 기본 비율 (x%)",
+            "unit": "%",
             "visible_when": {"sizing_mode": "scaled_plan"},
             "group": "sizing",
         },
         "max_buy_usdt": {
-            "type": "float", "min": 10.0, "max": 5000.0, "step": 10.0,
-            "title": "최대 매수 금액", "unit": "USDT",
+            "type": "float",
+            "min": 10.0,
+            "max": 5000.0,
+            "step": 10.0,
+            "title": "최대 매수 금액",
+            "unit": "USDT",
             "visible_when": {"sizing_mode": ["pct_balance", "scaled_plan"]},
             "group": "sizing",
         },
         "drop_pct": {
-            "type": "float", "min": 0.006, "max": 0.02, "step": 0.0005,
-            "title": "\ud558\ub77d \ud2b8\ub9ac\uac70 \ube44\uc728", "unit": "%",
+            "type": "float",
+            "min": 0.006,
+            "max": 0.02,
+            "step": 0.0005,
+            "title": "\ud558\ub77d \ud2b8\ub9ac\uac70 \ube44\uc728",
+            "unit": "%",
             "group": "condition",
         },
         "recenter_pct": {
-            "type": "float", "min": 0.005, "max": 0.05, "step": 0.0005,
-            "title": "\uae30\uc900\uac00 \ub9ac\uc13c\ud130 \ube44\uc728", "unit": "%",
+            "type": "float",
+            "min": 0.005,
+            "max": 0.05,
+            "step": 0.0005,
+            "title": "\uae30\uc900\uac00 \ub9ac\uc13c\ud130 \ube44\uc728",
+            "unit": "%",
             "group": "condition",
         },
         "recenter_ema_n": {
-            "type": "int", "min": 5, "max": 200, "step": 1,
-            "title": "EMA \uae30\uac04", "unit": "N",
+            "type": "int",
+            "min": 5,
+            "max": 200,
+            "step": 1,
+            "title": "EMA \uae30\uac04",
+            "unit": "N",
             "group": "condition",
         },
         "recenter_enabled": {
@@ -126,11 +156,21 @@ class LotStackingBuy(BaseBuyLogic):
         combo_id: UUID,
     ) -> None:
         has_pending = await self._process_pending_buy(
-            ctx, state, exchange, account_state, repos, combo_id,
+            ctx,
+            state,
+            exchange,
+            account_state,
+            repos,
+            combo_id,
         )
         if not has_pending:
             await self._maybe_buy_on_drop(
-                ctx, state, exchange, account_state, repos, combo_id,
+                ctx,
+                state,
+                exchange,
+                account_state,
+                repos,
+                combo_id,
             )
 
     # ------------------------------------------------------------------
@@ -168,8 +208,14 @@ class LotStackingBuy(BaseBuyLogic):
         if status == "FILLED":
             logger.info("lot_stacking_buy: pending buy order %s FILLED", order_id)
             await self._handle_filled_buy(
-                ctx, state, order_data, account_state, repos, combo_id,
-                kind=pending_kind, core_bucket_locked=pending_bucket,
+                ctx,
+                state,
+                order_data,
+                account_state,
+                repos,
+                combo_id,
+                kind=pending_kind,
+                core_bucket_locked=pending_bucket,
             )
             await state.clear_keys(*PENDING_KEYS)
             return True
@@ -196,7 +242,9 @@ class LotStackingBuy(BaseBuyLogic):
             if ctx.current_price >= rebound_price:
                 logger.info(
                     "lot_stacking_buy: rebound detected (cur=%.2f >= %.2f), cancelling order %s",
-                    ctx.current_price, rebound_price, order_id,
+                    ctx.current_price,
+                    rebound_price,
+                    order_id,
                 )
                 try:
                     cancel_resp = await exchange.cancel_order(order_id, ctx.symbol)
@@ -251,7 +299,9 @@ class LotStackingBuy(BaseBuyLogic):
             state.session.add(history)
             logger.info(
                 "lot_stacking_buy: INIT buy filled qty=%.8f cost=%.2f avg=%.2f",
-                bought_qty_net, spent_usdt, avg_price,
+                bought_qty_net,
+                spent_usdt,
+                avg_price,
             )
         else:
             # reserve 자동 변환 제거 - 전체 매수 수량을 lot으로 생성
@@ -276,7 +326,8 @@ class LotStackingBuy(BaseBuyLogic):
 
             logger.info(
                 "lot_stacking_buy: LOT buy filled qty_net=%.8f avg=%.2f",
-                bought_qty_net, avg_price,
+                bought_qty_net,
+                avg_price,
             )
 
         await state.set("base_price", avg_price)
@@ -296,7 +347,11 @@ class LotStackingBuy(BaseBuyLogic):
         if not ctx.params.get("recenter_enabled", True):
             return
 
-        open_lots = ctx.open_lots if ctx.open_lots is not None else await repos.lot.get_open_lots_by_combo(ctx.account_id, ctx.symbol, combo_id)
+        open_lots = (
+            ctx.open_lots
+            if ctx.open_lots is not None
+            else await repos.lot.get_open_lots_by_combo(ctx.account_id, ctx.symbol, combo_id)
+        )
         if open_lots:
             return
 
@@ -320,13 +375,13 @@ class LotStackingBuy(BaseBuyLogic):
         if ema >= base_price * (1 + recenter_pct):
             logger.info(
                 "lot_stacking_buy: recentering base_price from %.2f to EMA %.2f (pct=%.4f)",
-                base_price, ema, recenter_pct,
+                base_price,
+                ema,
+                recenter_pct,
             )
             await state.set("base_price", ema)
 
-    async def _update_recenter_ema(
-        self, state: StrategyStateStore, price: float, n: int
-    ) -> float:
+    async def _update_recenter_ema(self, state: StrategyStateStore, price: float, n: int) -> float:
         alpha = 2.0 / (n + 1)
         prev = await state.get_float("recenter_ema", 0.0)
         ema = price if prev <= 0 else alpha * price + (1 - alpha) * prev
@@ -371,13 +426,17 @@ class LotStackingBuy(BaseBuyLogic):
         sizing_round = await state.get_int("sizing_round", 1)
         plan_5th_amt = await state.get_float("plan_5th_amount", 0.0)
         total_buy_usdt = resolve_buy_usdt(
-            ctx.params, free_balance, sizing_round, plan_5th_amt,
+            ctx.params,
+            free_balance,
+            sizing_round,
+            plan_5th_amt,
         )
 
         if total_buy_usdt < min_trade_usdt:
             logger.warning(
                 "lot_stacking_buy: buy_usdt %.2f below min_trade_usdt %.2f",
-                total_buy_usdt, min_trade_usdt,
+                total_buy_usdt,
+                min_trade_usdt,
             )
             return
 
@@ -402,16 +461,20 @@ class LotStackingBuy(BaseBuyLogic):
         placed_order_id = int(order_resp.get("orderId", 0))
         placed_time_ms = int(order_resp.get("transactTime", 0)) or int(self._now() * 1000)
 
-        await state.set_many({
-            "pending_order_id": placed_order_id,
-            "pending_time_ms": placed_time_ms,
-            "pending_bucket_usdt": 0,
-            "pending_kind": "LOT",
-            "pending_trigger_price": trigger_adjusted,
-        })
+        await state.set_many(
+            {
+                "pending_order_id": placed_order_id,
+                "pending_time_ms": placed_time_ms,
+                "pending_bucket_usdt": 0,
+                "pending_kind": "LOT",
+                "pending_trigger_price": trigger_adjusted,
+            }
+        )
         self._touch_order()
 
         logger.info(
             "lot_stacking_buy: placed LOT buy order %s at trigger=%.2f usdt=%.2f",
-            placed_order_id, trigger_adjusted, total_buy_usdt,
+            placed_order_id,
+            trigger_adjusted,
+            total_buy_usdt,
         )

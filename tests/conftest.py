@@ -1,4 +1,5 @@
 """Root conftest — DB fixtures, app factory, common test infrastructure."""
+
 import asyncio
 import os
 from unittest.mock import patch
@@ -68,6 +69,7 @@ async def test_db_engine():
 
     # Cleanup: drop all tables
     from app.models.base import Base
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
     await engine.dispose()
@@ -85,9 +87,7 @@ async def db_session(test_db_engine):
         trans = await conn.begin()
 
         # Create a session factory bound to this specific connection
-        TestSessionLocal = async_sessionmaker(
-            bind=conn, class_=AsyncSession, expire_on_commit=False
-        )
+        TestSessionLocal = async_sessionmaker(bind=conn, class_=AsyncSession, expire_on_commit=False)
 
         # Start a nested savepoint so service commit() doesn't end the outer transaction
         nested = await conn.begin_nested()
@@ -120,9 +120,7 @@ async def app_client(db_session, test_db_engine):
     from app.main import app
 
     # Override DB dependency to use test session
-    TestSessionLocal = async_sessionmaker(
-        bind=db_session.get_bind(), class_=AsyncSession, expire_on_commit=False
-    )
+    TestSessionLocal = async_sessionmaker(bind=db_session.get_bind(), class_=AsyncSession, expire_on_commit=False)
 
     async def override_get_session():
         async with TestSessionLocal() as session:

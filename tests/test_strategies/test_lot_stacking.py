@@ -1,15 +1,15 @@
 """Unit tests for LotStackingBuy — all mock-based, no DB."""
+
 from __future__ import annotations
 
 import uuid
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from app.strategies.base import RepositoryBundle, StrategyContext
 from app.strategies.buys.lot_stacking import LotStackingBuy
 from app.strategies.constants import PENDING_KEYS
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -92,14 +92,10 @@ def _make_exchange(
 ) -> AsyncMock:
     exchange = AsyncMock()
     exchange.get_free_balance = AsyncMock(return_value=10000.0)
-    exchange.get_symbol_filters = AsyncMock(
-        return_value=MagicMock(min_notional=10.0)
-    )
+    exchange.get_symbol_filters = AsyncMock(return_value=MagicMock(min_notional=10.0))
     exchange.adjust_price = AsyncMock(side_effect=lambda p, s: p)
     exchange.adjust_qty = AsyncMock(side_effect=lambda q, s: q)
-    exchange.place_limit_buy_by_quote = AsyncMock(
-        return_value={"orderId": order_id, "transactTime": 1_000_000}
-    )
+    exchange.place_limit_buy_by_quote = AsyncMock(return_value={"orderId": order_id, "transactTime": 1_000_000})
     exchange.get_order = AsyncMock(
         return_value={
             "orderId": order_id,
@@ -109,9 +105,7 @@ def _make_exchange(
             "updateTime": 1_000_000,
         }
     )
-    exchange.cancel_order = AsyncMock(
-        return_value={"orderId": order_id, "status": "CANCELED"}
-    )
+    exchange.cancel_order = AsyncMock(return_value={"orderId": order_id, "status": "CANCELED"})
     return exchange
 
 
@@ -186,13 +180,15 @@ async def test_pending_filled_creates_lot():
     combo_id = uuid.uuid4()
 
     ctx = _make_ctx(price=49000.0)
-    state, _ = _make_state_store({
-        "pending_order_id": "12345",
-        "pending_time_ms": "1000000",
-        "pending_bucket_usdt": "0",
-        "pending_kind": "LOT",
-        "pending_trigger_price": "49700.0",
-    })
+    state, _ = _make_state_store(
+        {
+            "pending_order_id": "12345",
+            "pending_time_ms": "1000000",
+            "pending_bucket_usdt": "0",
+            "pending_kind": "LOT",
+            "pending_trigger_price": "49700.0",
+        }
+    )
     exchange = _make_exchange(order_status="FILLED", executed_qty="0.001", cumulative_quote="50.0")
     repos = _make_repos()
     account_state = _make_account_state()
@@ -214,13 +210,15 @@ async def test_pending_rebound_cancels():
     # trigger=49700, cancel_rebound_pct=0.004 -> rebound=49700*(1.004)=49898.8
     # Set price above rebound threshold
     ctx = _make_ctx(price=49900.0)
-    state, _ = _make_state_store({
-        "pending_order_id": "12345",
-        "pending_time_ms": "1000000",
-        "pending_bucket_usdt": "0",
-        "pending_kind": "LOT",
-        "pending_trigger_price": "49700.0",
-    })
+    state, _ = _make_state_store(
+        {
+            "pending_order_id": "12345",
+            "pending_time_ms": "1000000",
+            "pending_bucket_usdt": "0",
+            "pending_kind": "LOT",
+            "pending_trigger_price": "49700.0",
+        }
+    )
     exchange = _make_exchange(order_status="NEW")
     repos = _make_repos()
     account_state = _make_account_state()
@@ -259,10 +257,12 @@ async def test_recenter_ema():
     # base_price=50000, recenter_pct=0.02 -> threshold=51000
     # Use a high current_price so EMA initialises above threshold
     ctx = _make_ctx(price=52000.0, open_lots=[])  # open_lots=[] so recenter can run
-    state, state_dict = _make_state_store({
-        "base_price": "50000.0",
-        "recenter_ema": "0",   # will be initialised to current_price on first call
-    })
+    state, state_dict = _make_state_store(
+        {
+            "base_price": "50000.0",
+            "recenter_ema": "0",  # will be initialised to current_price on first call
+        }
+    )
     exchange = _make_exchange()
     repos = _make_repos()
 

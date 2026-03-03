@@ -1,4 +1,5 @@
 """Tests for fault recovery: error classification, circuit breaker recovery, DB retry."""
+
 from __future__ import annotations
 
 import asyncio
@@ -34,7 +35,10 @@ class TestErrorClassification:
         """Binance -1015 (too many requests) → RATE_LIMIT."""
         try:
             from binance.exceptions import BinanceAPIException
-            exc = BinanceAPIException(MagicMock(status_code=429, text='', headers={}), code=-1015, message="Too many requests")
+
+            exc = BinanceAPIException(
+                MagicMock(status_code=429, text="", headers={}), code=-1015, message="Too many requests"
+            )
             # BinanceAPIException constructor varies; try direct attribute set
         except (ImportError, TypeError):
             pytest.skip("binance not installed or API changed")
@@ -46,6 +50,7 @@ class TestErrorClassification:
         # Just verify the logic paths with a real BinanceAPIException if available
         try:
             from binance.exceptions import BinanceAPIException
+
             # Create a mock response
             mock_response = MagicMock()
             mock_response.status_code = 429
@@ -62,6 +67,7 @@ class TestErrorClassification:
         """Binance -2015 (invalid API key) → PERMANENT."""
         try:
             from binance.exceptions import BinanceAPIException
+
             mock_response = MagicMock()
             mock_response.status_code = 401
             mock_response.text = '{"code": -2015, "msg": "Invalid API-key"}'
@@ -77,6 +83,7 @@ class TestErrorClassification:
         """Binance -1001 (disconnected) → TRANSIENT."""
         try:
             from binance.exceptions import BinanceAPIException
+
             mock_response = MagicMock()
             mock_response.status_code = 500
             mock_response.text = '{"code": -1001, "msg": "Disconnected"}'

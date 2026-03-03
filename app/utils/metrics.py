@@ -1,4 +1,5 @@
 """Prometheus metrics definitions for crypto-multi-trader."""
+
 from __future__ import annotations
 
 from prometheus_client import Counter, Gauge, Histogram

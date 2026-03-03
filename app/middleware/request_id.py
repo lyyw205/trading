@@ -1,4 +1,5 @@
 """Request ID middleware — injects unique request_id into every API request's context."""
+
 from uuid import uuid4
 
 from app.utils.logging import current_request_id
