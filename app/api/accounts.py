@@ -10,6 +10,7 @@ from app.db.session import get_trading_session
 from app.dependencies import get_current_user, get_owned_account, limiter
 from app.schemas.account import AccountCreate, AccountListResponse, AccountResponse, AccountUpdate
 from app.services.account_service import AccountService
+from app.services.account_state_manager import AccountStateManager
 from app.utils.encryption import EncryptionManager
 from app.utils.logging import audit_log
 
@@ -150,6 +151,7 @@ async def delete_account(
 ):
     engine = request.app.state.trading_engine
     await engine.stop_account(account.id)
+    AccountStateManager.remove_lock(account.id)
     await session.delete(account)
     await session.commit()
 

@@ -5,6 +5,7 @@ from uuid import UUID
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import defer
 
 from app.models.lot import Lot
 
@@ -22,6 +23,7 @@ class LotRepository:
         """Get all OPEN lots for an account/symbol/strategy."""
         stmt = (
             select(Lot)
+            .options(defer(Lot.metadata_))
             .where(
                 Lot.account_id == account_id,
                 Lot.symbol == symbol,
@@ -42,6 +44,7 @@ class LotRepository:
         """특정 조합의 미결 로트 조회."""
         stmt = (
             select(Lot)
+            .options(defer(Lot.metadata_))
             .where(
                 Lot.account_id == account_id,
                 Lot.symbol == symbol,

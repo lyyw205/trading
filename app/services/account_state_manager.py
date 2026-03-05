@@ -38,6 +38,11 @@ class AccountStateManager:
             cls._reserve_locks[account_id] = asyncio.Lock()
         return cls._reserve_locks[account_id]
 
+    @classmethod
+    def remove_lock(cls, account_id: UUID) -> None:
+        """Remove lock for a deleted/deactivated account to prevent memory leak."""
+        cls._reserve_locks.pop(account_id, None)
+
     # ---- reserve (shared scope KV, guarded by asyncio lock) ----
 
     async def get_reserve_qty(self) -> float:

@@ -130,6 +130,7 @@ class AccountTrader:
     async def _do_step(self) -> int:
         """Inner step logic. Returns loop_interval_sec for run_forever."""
         start_time = time.perf_counter()
+        result = 60  # default interval; assigned here to avoid UnboundLocalError on mid-step exceptions
         # Generate cycle ID for correlation across logs
         cycle_id = uuid4().hex[:12]
         cycle_token = current_cycle_id.set(cycle_id)
@@ -185,7 +186,7 @@ class AccountTrader:
                 combos = list(combo_result.scalars().all())
 
                 if not combos:
-                    return
+                    return result
 
                 # Sync orders and fills for all combo symbols
                 all_combo_symbols = {account.symbol}

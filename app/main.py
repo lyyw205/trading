@@ -218,6 +218,7 @@ class LazyAuthMiddleware:
     # Prefix-match public paths (trailing slash prevents overmatch)
     _PUBLIC_PREFIX = ("/static/", "/api/auth/")
     _USER_CACHE_TTL = 60  # seconds
+    _USER_CACHE_MAX_SIZE = 200  # max entries to prevent unbounded growth
 
     def __init__(self, app):
         self.app = app
@@ -235,6 +236,10 @@ class LazyAuthMiddleware:
             return None
 
         db_user = await auth_service.get_user_by_id(uid)
+        # Evict oldest entries when cache exceeds max size
+        if len(self._user_cache) >= self._USER_CACHE_MAX_SIZE:
+            oldest_key = min(self._user_cache, key=lambda k: self._user_cache[k][0])
+            del self._user_cache[oldest_key]
         self._user_cache[uid] = (now, db_user)
         return db_user
 

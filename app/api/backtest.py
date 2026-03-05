@@ -10,6 +10,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import defer, load_only
 
 from app.db.session import get_trading_session
 from app.dependencies import require_admin
@@ -111,7 +112,17 @@ async def get_backtest_status(
     session: AsyncSession = Depends(get_trading_session),
 ):
     """Poll backtest status."""
-    run = await session.get(BacktestRun, run_id)
+    run = await session.get(
+        BacktestRun,
+        run_id,
+        options=[load_only(
+            BacktestRun.id,
+            BacktestRun.status,
+            BacktestRun.error_message,
+            BacktestRun.started_at,
+            BacktestRun.completed_at,
+        )],
+    )
     if not run:
         raise HTTPException(status_code=404, detail="Backtest not found")
     return BacktestStatusResponse(
@@ -244,7 +255,12 @@ async def list_backtests(
     session: AsyncSession = Depends(get_trading_session),
 ):
     """List all backtest runs (newest first)."""
-    stmt = select(BacktestRun).order_by(desc(BacktestRun.created_at)).limit(50)
+    stmt = (
+        select(BacktestRun)
+        .options(defer(BacktestRun.trade_log), defer(BacktestRun.equity_curve))
+        .order_by(desc(BacktestRun.created_at))
+        .limit(50)
+    )
     result = await session.execute(stmt)
     runs = result.scalars().all()
 
@@ -292,7 +308,11 @@ async def delete_backtest(
     session: AsyncSession = Depends(get_trading_session),
 ):
     """Delete a backtest run."""
-    run = await session.get(BacktestRun, run_id)
+    run = await session.get(
+        BacktestRun,
+        run_id,
+        options=[load_only(BacktestRun.id, BacktestRun.status)],
+    )
     if not run:
         raise HTTPException(status_code=404, detail="Backtest not found")
     if run.status == "RUNNING":

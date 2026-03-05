@@ -9,6 +9,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy import func as sa_func
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import defer
 from starlette.responses import Response
 
 from app.db.account_repo import AccountRepository
@@ -248,7 +249,7 @@ async def admin_list_trades(
     side: str | None = Query(default=None),
 ):
     """Cross-account trade history with pagination."""
-    stmt = select(Order).order_by(Order.update_time_ms.desc())
+    stmt = select(Order).options(defer(Order.raw_json)).order_by(Order.update_time_ms.desc())
     count_stmt = select(sa_func.count(Order.order_id))
 
     if account_id:
@@ -297,6 +298,7 @@ async def admin_list_lots(
     """Cross-account lot listing with filtering and pagination."""
     stmt = (
         select(Lot, TradingAccount.name.label("account_name"))
+        .options(defer(Lot.metadata_))
         .join(TradingAccount, Lot.account_id == TradingAccount.id)
         .order_by(Lot.buy_time.desc())
     )
@@ -582,6 +584,7 @@ async def admin_list_fills(
     """Cross-account fill listing for audit."""
     stmt = (
         select(Fill, TradingAccount.name.label("account_name"))
+        .options(defer(Fill.raw_json))
         .join(TradingAccount, Fill.account_id == TradingAccount.id)
         .order_by(Fill.inserted_at.desc())
     )
