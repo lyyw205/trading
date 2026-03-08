@@ -30,6 +30,22 @@
 .chart-tooltip .tt-row { display:contents; }
 .chart-tooltip .tt-key { color:var(--text-muted); }
 .chart-tooltip .tt-val { font-variant-numeric:tabular-nums; text-align:left; }
+/* Strategy Param Cards */
+.sp-combo-header { font-size:1rem; font-weight:700; color:var(--text); margin-bottom:0.75rem; display:flex; align-items:center; gap:0.5rem; }
+.sp-combo-badge { font-size:0.7rem; font-weight:600; padding:2px 8px; border-radius:12px; background:var(--primary); color:#fff; }
+.sp-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:0.75rem; margin-bottom:1.25rem; }
+.sp-card { background:var(--card-bg, var(--bg-secondary)); border:1px solid var(--border); border-radius:10px; padding:0; overflow:hidden; transition:border-color 0.15s; }
+.sp-card:hover { border-color:var(--text-muted); }
+.sp-card-header { display:flex; align-items:center; gap:0.5rem; padding:0.6rem 0.85rem; border-bottom:1px solid var(--border); }
+.sp-card-icon { width:28px; height:28px; border-radius:8px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.sp-card-icon svg { width:15px; height:15px; stroke-width:2; }
+.sp-card-title { font-size:0.82rem; font-weight:700; color:var(--text); }
+.sp-card-body { padding:0.5rem 0.85rem; }
+.sp-row { display:flex; justify-content:space-between; align-items:center; padding:0.3rem 0; font-size:0.82rem; }
+.sp-row + .sp-row { border-top:1px solid color-mix(in srgb, var(--border) 50%, transparent); }
+.sp-row-key { color:var(--text-muted); }
+.sp-row-val { font-weight:600; color:var(--text); font-variant-numeric:tabular-nums; }
+@media (max-width:640px) { .sp-grid { grid-template-columns:1fr; } }
 </style>
 <div class="page-header" style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap;">
   <div style="flex:1;">
@@ -86,7 +102,7 @@
   <div class="section-header">
     <h2 class="section-title">Strategy Parameters</h2>
   </div>
-  <div id="bt-params" class="tune-panels">
+  <div id="bt-params">
     <div class="loading-spinner">Loading...</div>
   </div>
 </section>
@@ -231,35 +247,59 @@ function renderStrategyParams(report) {
 
   const cfg = report.config;
 
-  // Readable labels
+  // Readable labels (Korean)
   const labels = {
-    buy_logic: 'Buy Logic', sell_logic: 'Sell Logic', reference: 'Reference Combo',
-    drop_pct: 'Drop %', tp_pct: 'TP %', buy_usdt: 'Buy USDT',
-    prebuy_pct: 'Pre-buy %', cancel_rebound_pct: 'Cancel Rebound %',
-    recenter_pct: 'Recenter %', recenter_ema_n: 'Recenter EMA N',
-    recenter_enabled: 'Recenter Enabled', min_trade_usdt: 'Min Trade USDT',
-    use_fixed_usdt_reference: 'Fixed USDT Ref',
-    enable_pct: 'Enable %', step_pct: 'Step %',
-    sizing_mode: 'Sizing Mode', buy_balance_pct: 'Balance %',
-    max_buy_usdt: 'Max Buy USDT', base_price_update_mode: 'Base Price Mode',
+    buy_logic: '매수 전략', sell_logic: '매도 전략', reference: '참조 콤보',
+    drop_pct: '하락률 %', tp_pct: 'TP %', buy_usdt: '매수 금액 (USDT)',
+    prebuy_pct: '프리바이 %', cancel_rebound_pct: '반등 취소 %',
+    recenter_pct: '리센터 %', recenter_ema_n: '리센터 EMA N',
+    recenter_enabled: '리센터 활성화', min_trade_usdt: '최소 거래 금액',
+    use_fixed_usdt_reference: '고정 USDT 참조',
+    enable_pct: '활성화 %', step_pct: '스텝 %',
+    sizing_mode: '사이징 모드', buy_balance_pct: '잔고 비율 %',
+    max_buy_usdt: '최대 매수 금액', base_price_update_mode: '기준가 모드',
     plan_x_pct: 'Plan X %',
   };
 
-  // Category definitions: [category_label, [...keys]]
+  // Category definitions with icon SVGs and accent colors
   const categories = [
-    ['Strategy', ['buy_logic', 'sell_logic', 'reference']],
-    ['Sizing', ['sizing_mode', 'buy_usdt', 'buy_balance_pct', 'plan_x_pct', 'max_buy_usdt', 'min_trade_usdt']],
-    ['Buy Conditions', ['drop_pct', 'prebuy_pct', 'cancel_rebound_pct', 'enable_pct', 'step_pct']],
-    ['Recenter', ['recenter_enabled', 'recenter_pct', 'recenter_ema_n', 'use_fixed_usdt_reference']],
-    ['Sell (TP)', ['tp_pct', 'base_price_update_mode']],
+    ['전략', ['buy_logic', 'sell_logic', 'reference'], '#6366f1',
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>'],
+    ['사이징', ['sizing_mode', 'buy_usdt', 'buy_balance_pct', 'plan_x_pct', 'max_buy_usdt', 'min_trade_usdt'], '#0ea5e9',
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 0 1 0 4H8"/><path d="M12 18V6"/></svg>'],
+    ['매수 조건', ['drop_pct', 'prebuy_pct', 'cancel_rebound_pct', 'enable_pct', 'step_pct'], '#0ecb81',
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>'],
+    ['리센터', ['recenter_enabled', 'recenter_pct', 'recenter_ema_n', 'use_fixed_usdt_reference'], '#f59e0b',
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>'],
+    ['매도 (TP)', ['tp_pct', 'base_price_update_mode'], '#f6465d',
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg>'],
   ];
 
   function fmtVal(v) {
-    if (typeof v === 'boolean') return v ? 'Yes' : 'No';
+    if (typeof v === 'boolean') return v ? '예' : '아니오';
     return String(v);
   }
 
-  function renderComboCard(combo) {
+  function renderCategoryCard(cat, keys, color, iconSvg, allParams) {
+    const items = keys
+      .filter(k => allParams[k] !== undefined && allParams[k] !== null)
+      .map(k => [labels[k] || k, fmtVal(allParams[k])]);
+    if (!items.length) return '';
+
+    const rows = items.map(([label, val]) =>
+      `<div class="sp-row"><span class="sp-row-key">${escapeHtml(label)}</span><span class="sp-row-val">${escapeHtml(val)}</span></div>`
+    ).join('');
+
+    return `<div class="sp-card">
+      <div class="sp-card-header">
+        <div class="sp-card-icon" style="background:${color}20;color:${color};">${iconSvg}</div>
+        <div class="sp-card-title">${escapeHtml(cat)}</div>
+      </div>
+      <div class="sp-card-body">${rows}</div>
+    </div>`;
+  }
+
+  function renderComboCards(combo) {
     const title = combo.name || combo.buy_logic_name;
     const allParams = {
       buy_logic: combo.buy_logic_name,
@@ -269,40 +309,41 @@ function renderStrategyParams(report) {
     };
     if (combo.reference_combo_name) allParams.reference = combo.reference_combo_name;
 
-    const grouped = categories.map(([cat, keys]) => {
-      const items = keys
-        .filter(k => allParams[k] !== undefined && allParams[k] !== null)
-        .map(k => [labels[k] || k, fmtVal(allParams[k])]);
-      return items.length ? [cat, items] : null;
-    }).filter(Boolean);
+    let cards = categories.map(([cat, keys, color, icon]) =>
+      renderCategoryCard(cat, keys, color, icon, allParams)
+    ).filter(Boolean);
 
     // Collect uncategorized keys
     const categorized = new Set(categories.flatMap(([, keys]) => keys));
-    const extra = Object.entries(allParams)
+    const extraItems = Object.entries(allParams)
       .filter(([k]) => !categorized.has(k))
       .map(([k, v]) => [labels[k] || k, fmtVal(v)]);
-    if (extra.length) grouped.push(['Other', extra]);
-
-    if (!grouped.length) {
-      return `<div class="tune-panel">
-        <h3 class="tune-panel-title">${escapeHtml(title)}</h3>
-        <p style="color: var(--text-muted); font-size: 0.85rem;">Default parameters used</p>
-      </div>`;
+    if (extraItems.length) {
+      const rows = extraItems.map(([label, val]) =>
+        `<div class="sp-row"><span class="sp-row-key">${escapeHtml(label)}</span><span class="sp-row-val">${escapeHtml(val)}</span></div>`
+      ).join('');
+      cards.push(`<div class="sp-card">
+        <div class="sp-card-header">
+          <div class="sp-card-icon" style="background:#64748b20;color:#64748b;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+          </div>
+          <div class="sp-card-title">기타</div>
+        </div>
+        <div class="sp-card-body">${rows}</div>
+      </div>`);
     }
 
-    const sections = grouped.map(([cat, items]) => {
-      const rows = items.map(([label, val]) =>
-        `<div class="param-row"><span class="param-key">${escapeHtml(label)}</span><span class="param-val">${escapeHtml(val)}</span></div>`
-      ).join('');
-      return `<div class="param-cat"><div class="param-cat-label">${escapeHtml(cat)}</div>${rows}</div>`;
-    }).join('');
+    if (!cards.length) {
+      return `<p style="color:var(--text-muted);font-size:0.85rem;">기본 파라미터 사용</p>`;
+    }
 
-    return `<div class="tune-panel"><h3 class="tune-panel-title">${escapeHtml(title)}</h3>${sections}</div>`;
+    const header = `<div class="sp-combo-header">${escapeHtml(title)}<span class="sp-combo-badge">${escapeHtml(combo.buy_logic_name)}</span></div>`;
+    return `${header}<div class="sp-grid">${cards.join('')}</div>`;
   }
 
   // Combo-based format
   if (cfg.combos && cfg.combos.length) {
-    container.innerHTML = cfg.combos.map(renderComboCard).join('');
+    container.innerHTML = cfg.combos.map(renderComboCards).join('');
     return;
   }
 
@@ -310,13 +351,13 @@ function renderStrategyParams(report) {
   const params = cfg.strategy_params || {};
   const strategies = cfg.strategies || [];
   if (!strategies.length) {
-    container.innerHTML = '<p style="color: var(--text-muted);">No strategy parameters</p>';
+    container.innerHTML = '<p style="color:var(--text-muted);">전략 파라미터가 없습니다</p>';
     return;
   }
   container.innerHTML = strategies.map(strat => {
     const title = strat === 'lot_stacking' ? 'LOT Stacking' : strat === 'trend_buy' ? 'TREND Buy' : strat;
     const fakeCombo = { name: title, buy_logic_name: strat, sell_logic_name: '-', buy_params: params[strat] || {}, sell_params: {} };
-    return renderComboCard(fakeCombo);
+    return renderComboCards(fakeCombo);
   }).join('');
 }
 
@@ -366,13 +407,37 @@ function renderPriceChart(report, tfMinutes) {
   candles.forEach(c => { _cachedCandleMap[c.time] = c; });
 
   // Pre-compute trade groups by candle time
-  const intervalSec = (tfMinutes || 1) * 60;
+  const intervalSec = (report.candle_interval_sec || (tfMinutes || 1) * 60);
   _cachedTradeGroups = {};
   if (report.trade_log) {
+    // Build sorted candle times array for nearest-candle snapping
+    const sortedCandleTimes = Object.keys(_cachedCandleMap).map(Number).sort((a, b) => a - b);
+
+    // Binary search: snap trade time to nearest actual candle time
+    function snapToCandle(t) {
+      if (_cachedCandleMap[t]) return t;
+      let lo = 0, hi = sortedCandleTimes.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (sortedCandleTimes[mid] < t) lo = mid + 1;
+        else hi = mid;
+      }
+      const candidates = [];
+      if (lo < sortedCandleTimes.length) candidates.push(sortedCandleTimes[lo]);
+      if (lo > 0) candidates.push(sortedCandleTimes[lo - 1]);
+      let best = candidates[0], bestDist = Math.abs(t - best);
+      for (const c of candidates) {
+        const d = Math.abs(t - c);
+        if (d < bestDist) { best = c; bestDist = d; }
+      }
+      return best;
+    }
+
     report.trade_log
       .filter(t => t.ts_ms && t.price)
       .forEach(t => {
-        const time = Math.floor(Math.floor(t.ts_ms / 1000) / intervalSec) * intervalSec;
+        let time = Math.floor(Math.floor(t.ts_ms / 1000) / intervalSec) * intervalSec;
+        time = snapToCandle(time);
         if (!_cachedTradeGroups[time]) _cachedTradeGroups[time] = [];
         _cachedTradeGroups[time].push({
           time,
@@ -398,16 +463,7 @@ function renderPriceChart(report, tfMinutes) {
   });
 
   _candleSeries.setData(candles);
-  // Show last ~120 bars initially (not all candles — user can zoom out)
-  const initBars = 120;
-  if (candles.length > initBars) {
-    _priceChart.timeScale().setVisibleLogicalRange({
-      from: candles.length - initBars,
-      to: candles.length - 1,
-    });
-  } else {
-    _priceChart.timeScale().fitContent();
-  }
+  _priceChart.timeScale().fitContent();
 
   // Debounced overlay render (RAF-based — max once per frame)
   const scheduleOverlay = () => {

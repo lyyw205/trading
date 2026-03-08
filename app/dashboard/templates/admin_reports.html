@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+{% block title %}일일 리포트{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>일일 리포트</h1>
+    <button class="btn btn-primary btn-sm" id="generate-btn" onclick="generateReport()">지금 생성</button>
+</div>
+
+<div id="reports-list" class="reports-container">
+    <div class="loading-spinner">로딩 중...</div>
+</div>
+
+<style>
+.reports-container { max-width: 900px; }
+.report-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 12px;
+    overflow: hidden;
+}
+.report-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 18px;
+    cursor: pointer;
+    user-select: none;
+    gap: 16px;
+}
+.report-header:hover { background: var(--hover-bg); }
+.report-date {
+    font-weight: 600;
+    font-size: 0.95rem;
+    min-width: 100px;
+}
+.report-stats {
+    display: flex;
+    gap: 16px;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    flex: 1;
+}
+.report-stats span { white-space: nowrap; }
+.health-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 52px;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-weight: 700;
+    font-size: 0.82rem;
+}
+.health-good { background: rgba(34,197,94,0.15); color: #16a34a; }
+.health-warn { background: rgba(234,179,8,0.15); color: #ca8a04; }
+.health-bad { background: rgba(239,68,68,0.15); color: #dc2626; }
+.report-body {
+    display: none;
+    padding: 0 18px 16px;
+    border-top: 1px solid var(--border);
+}
+.report-body.open { display: block; }
+.report-detail-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 12px;
+}
+.detail-section h4 {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.detail-section ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+.detail-section li {
+    font-size: 0.88rem;
+    padding: 3px 0;
+    display: flex;
+    justify-content: space-between;
+}
+.detail-section li .count {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+.account-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+    padding: 4px 0;
+}
+.account-row .acct-id {
+    font-family: monospace;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+}
+.cb-indicator {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #dc2626;
+}
+.telegram-status {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+}
+.empty-state {
+    text-align: center;
+    padding: 48px 20px;
+    color: var(--text-secondary);
+}
+@media (max-width: 640px) {
+    .report-detail-grid { grid-template-columns: 1fr; }
+    .report-stats { flex-wrap: wrap; gap: 8px; }
+}
+</style>
+
+<script>
+function _esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+}
+
+async function loadReports() {
+    const container = document.getElementById('reports-list');
+    try {
+        const res = await fetch('/api/reports/daily?limit=30');
+        if (!res.ok) throw new Error(res.statusText);
+        const reports = await res.json();
+
+        if (!reports.length) {
+            container.innerHTML = '<div class="empty-state">아직 생성된 리포트가 없습니다.</div>';
+            return;
+        }
+
+        container.innerHTML = reports.map(r => {
+            const s = r.summary || {};
+            const score = r.health_score;
+            const cls = score >= 80 ? 'health-good' : score >= 50 ? 'health-warn' : 'health-bad';
+            const topMods = (s.top_error_modules || []).map(m =>
+                `<li><span>${_esc(m.module)}</span><span class="count">${parseInt(m.count) || 0}</span></li>`
+            ).join('') || '<li>없음</li>';
+            const accounts = (s.accounts || []).map(a =>
+                `<div class="account-row">
+                    <span class="acct-id">${a.account_id === 'system' ? 'System' : _esc(String(a.account_id).slice(0,8))}...</span>
+                    <span>E:${parseInt(a.errors) || 0} C:${parseInt(a.criticals) || 0}</span>
+                    ${a.cb_tripped ? '<span class="cb-indicator" title="CB 발동"></span>' : ''}
+                </div>`
+            ).join('') || '<div class="account-row">없음</div>';
+
+            return `<div class="report-card">
+                <div class="report-header" onclick="this.nextElementSibling.classList.toggle('open')">
+                    <span class="report-date">${r.report_date}</span>
+                    <div class="report-stats">
+                        <span>CRITICAL: ${s.total_criticals || 0}</span>
+                        <span>ERROR: ${s.total_errors || 0}</span>
+                        <span>CB: ${s.cb_events || 0}</span>
+                        ${r.telegram_sent_at ? '<span class="telegram-status">📨 전송됨</span>' : ''}
+                    </div>
+                    <span class="health-badge ${cls}">${score.toFixed(0)}</span>
+                </div>
+                <div class="report-body">
+                    <div class="report-detail-grid">
+                        <div class="detail-section">
+                            <h4>주요 에러 모듈</h4>
+                            <ul>${topMods}</ul>
+                        </div>
+                        <div class="detail-section">
+                            <h4>계정별 현황</h4>
+                            ${accounts}
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+        }).join('');
+    } catch (e) {
+        container.innerHTML = '<div class="empty-state">리포트를 불러오지 못했습니다.</div>';
+    }
+}
+
+async function generateReport() {
+    const btn = document.getElementById('generate-btn');
+    btn.disabled = true;
+    btn.textContent = '생성 중...';
+    try {
+        const today = new Date();
+        const dateStr = today.toISOString().split('T')[0];
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+        const res = await fetch(`/api/reports/daily/${dateStr}/generate`, {
+            method: 'POST',
+            headers: { 'x-csrf-token': csrfToken },
+        });
+        if (!res.ok) throw new Error(res.statusText);
+        const data = await res.json();
+        if (data.status === 'created') {
+            alert(`리포트 생성 완료 (건강 점수: ${data.health_score.toFixed(0)})`);
+        } else {
+            alert('이미 오늘 리포트가 존재합니다.');
+        }
+        loadReports();
+    } catch (e) {
+        alert('리포트 생성 실패: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '지금 생성';
+    }
+}
+
+document.addEventListener('DOMContentLoaded', loadReports);
+</script>
+{% endblock %}

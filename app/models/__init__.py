@@ -2,9 +2,11 @@ from app.models.account import TradingAccount
 from app.models.backtest_run import BacktestRun
 from app.models.base import Base
 from app.models.core_btc_history import CoreBtcHistory
+from app.models.daily_report import DailyReport
 from app.models.fill import Fill
 from app.models.lot import Lot
 from app.models.order import Order
+from app.models.persistent_log import PersistentLog
 from app.models.position import Position
 from app.models.price_candle import PriceCandle1d, PriceCandle1h, PriceCandle1m, PriceCandle5m
 from app.models.price_snapshot import PriceSnapshot
@@ -38,4 +40,7 @@ __all__ = [
     "PriceCandle1d",
     # Backtest
     "BacktestRun",
+    # Log Persistence
+    "PersistentLog",
+    "DailyReport",
 ]

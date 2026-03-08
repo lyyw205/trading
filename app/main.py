@@ -25,7 +25,9 @@ from app.api.combos import router as combos_router
 from app.api.dashboard import router as dashboard_router
 from app.api.debug import router as debug_router
 from app.api.health import router as health_router
+from app.api.logs import router as logs_router
 from app.api.metrics import router as metrics_router
+from app.api.reports import router as reports_router
 from app.config import get_settings
 from app.dashboard.routes import router as pages_router
 from app.db.session import TradingSessionLocal
@@ -128,6 +130,20 @@ async def lifespan(app: FastAPI):
     # Start candle aggregation background job
     aggregation_task = asyncio.create_task(run_aggregation_loop())
 
+    # Start log persister background task
+    from app.services.log_persister import LogPersister
+    from app.utils.logging import persist_handler
+
+    log_persister = None
+    if persist_handler:
+        log_persister = LogPersister(persist_handler.log_queue)
+        await log_persister.start()
+
+    # Start daily report scheduler
+    from app.services.daily_report_service import run_daily_report_loop
+
+    report_task = asyncio.create_task(run_daily_report_loop(alert_service))
+
     # Clean up orphan RUNNING backtests from previous crashes
     try:
         from sqlalchemy import update
@@ -148,6 +164,15 @@ async def lifespan(app: FastAPI):
         logger.warning("Failed to clean up orphan backtests: %s", e)
 
     yield
+
+    # Stop daily report scheduler
+    report_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await report_task
+
+    # Drain log persister
+    if log_persister:
+        await log_persister.stop()
 
     # Shutdown
     logger.info("Shutting down trading engine...")
@@ -413,6 +438,8 @@ if settings.debug or settings.environment != "production":
     app.include_router(debug_router)
 app.include_router(metrics_router)
 app.include_router(admin_db_router)
+app.include_router(logs_router)
+app.include_router(reports_router)
 
 # Include SSR page routes (must be after API routers)
 app.include_router(pages_router)

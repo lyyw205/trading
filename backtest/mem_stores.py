@@ -294,6 +294,10 @@ class MemOrder:
     update_time_ms: int | None = None
     raw_json: dict | None = None
 
+    @property
+    def cumulative_quote_qty(self) -> float | None:
+        return self.cum_quote_qty
+
 
 # ---------------------------------------------------------------------------
 # InMemoryOrderRepository — OrderRepository 대체

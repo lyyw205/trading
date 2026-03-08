@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.account import TradingAccount
+from app.models.trading_combo import TradingCombo
 
 
 class AccountRepository:
@@ -29,7 +30,11 @@ class AccountRepository:
         stmt = (
             select(TradingAccount)
             .where(TradingAccount.owner_id == owner_id)
-            .options(selectinload(TradingAccount.trading_combos))
+            .options(
+                selectinload(TradingAccount.trading_combos)
+                .defer(TradingCombo.buy_params)
+                .defer(TradingCombo.sell_params)
+            )
         )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
@@ -106,7 +111,9 @@ class AccountRepository:
         """Return all accounts with owner and trading_combos eagerly loaded."""
         stmt = select(TradingAccount).options(
             selectinload(TradingAccount.owner),
-            selectinload(TradingAccount.trading_combos),
+            selectinload(TradingAccount.trading_combos)
+            .defer(TradingCombo.buy_params)
+            .defer(TradingCombo.sell_params),
         )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())

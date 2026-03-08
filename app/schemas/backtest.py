@@ -77,7 +77,19 @@ class BacktestReportResponse(BaseModel):
     trade_log: list[dict[str, Any]] | None = None
     equity_curve: list[dict[str, Any]] | None = None
     candles: list[dict[str, Any]] | None = None
+    candle_interval_sec: int = 60
     pinned: bool = False
+
+
+class BacktestPresetSaveRequest(BaseModel):
+    name: str
+    combos: list[BacktestComboConfig]
+
+
+class BacktestPresetOut(BaseModel):
+    name: str
+    combos: list[BacktestComboConfig]
+    saved_at: str
 
 
 class BacktestListItem(BaseModel):

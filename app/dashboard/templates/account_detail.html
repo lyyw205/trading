@@ -247,22 +247,32 @@
   </div>
 </div>
 
-<!-- Sections 5 & 6: Status Row -->
-<div class="status-row">
-  <section class="dashboard-section">
+<!-- Sections 5+6: Logs + Protection Status (2-column) -->
+<div class="protection-logs-row">
+  <section class="dashboard-section logs-col">
     <div class="section-header">
-      <h2 class="section-title">Buy Pause Status</h2>
+      <h2 class="section-title">트레이딩 로그</h2>
+      <div style="display:flex;gap:0.5rem;align-items:center;">
+        <select id="log-level-filter" class="form-input" style="width:auto;padding:0.2rem 0.5rem;font-size:0.8rem;" onchange="loadAccountLogs()">
+          <option value="">전체 레벨</option>
+          <option value="CRITICAL">CRITICAL</option>
+          <option value="ERROR">ERROR</option>
+          <option value="WARNING">WARNING</option>
+          <option value="INFO">INFO</option>
+        </select>
+        <button class="btn btn-outline btn-sm" onclick="loadAccountLogs()" style="padding:0.2rem 0.5rem;font-size:0.8rem;">새로고침</button>
+      </div>
     </div>
-    <div id="buy-pause-panel">
-      <div class="loading-spinner">Loading...</div>
+    <div id="account-logs-panel" class="log-viewer">
+      <div class="loading-spinner">로딩 중...</div>
     </div>
   </section>
 
-  <section class="dashboard-section">
+  <section class="dashboard-section protection-col">
     <div class="section-header">
-      <h2 class="section-title">Circuit Breaker</h2>
+      <h2 class="section-title">거래 보호 상태</h2>
     </div>
-    <div id="circuit-breaker-panel" class="cb-panel">
+    <div id="protection-status-panel" class="protection-grid">
       <div class="loading-spinner">Loading...</div>
     </div>
   </section>
@@ -275,6 +285,20 @@
 .symbol-tag { display:inline-flex; align-items:center; gap:0.3rem; padding:0.15rem 0.5rem; border-radius:4px; background:var(--primary); color:#fff; font-size:0.8rem; font-weight:500; }
 .symbol-tag-remove { cursor:pointer; font-size:0.9rem; opacity:0.8; background:none; border:none; color:#fff; padding:0; line-height:1; }
 .symbol-tag-remove:hover { opacity:1; }
+.log-viewer { max-height:400px; overflow-y:auto; background:var(--bg-secondary); border:1px solid var(--border); border-radius:8px; padding:0.5rem; font-family:'Pretendard Variable',Pretendard,-apple-system,sans-serif; font-size:0.8rem; line-height:1.6; }
+.log-entry { padding:0.2rem 0.4rem; border-bottom:1px solid var(--border); display:grid; grid-template-columns:145px 70px 80px 1fr; gap:0.5rem; align-items:start; }
+.log-entry:last-child { border-bottom:none; }
+.log-entry:hover { background:rgba(255,255,255,0.03); }
+.log-ts { color:var(--text-muted); white-space:nowrap; }
+.log-level { font-weight:600; border-radius:3px; text-align:center; padding:0 4px; }
+.log-level-CRITICAL { color:#fff; background:#dc2626; }
+.log-level-ERROR { color:#fca5a5; }
+.log-level-WARNING { color:#fbbf24; }
+.log-level-INFO { color:#60a5fa; }
+.log-level-DEBUG { color:var(--text-muted); }
+.log-module { color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.log-msg { color:var(--text-primary); word-break:break-word; }
+.log-empty { text-align:center; color:var(--text-muted); padding:2rem; }
 </style>
 {% endblock %}
 
@@ -283,8 +307,86 @@
 <script>
 const ACCOUNT_ID = {{ account_id | tojson }};
 
+// ============================================================
+// Log Translation (English -> Korean) for user-visible logs
+// ============================================================
+const _userLogTranslations = [
+  { regex: /LOT buy filled/i, korean: "랏 매수 주문이 체결되었습니다" },
+  { regex: /TREND buy filled/i, korean: "트렌드 매수 주문이 체결되었습니다" },
+  { regex: /INIT buy filled/i, korean: "초기 리저브 매수가 체결되었습니다" },
+  { regex: /lot \d+ TP filled/i, korean: "TP(이익실현) 매도가 체결되었습니다" },
+  { regex: /placed LOT buy order/i, korean: "새 매수 리밋 주문이 배치되었습니다" },
+  { regex: /placed TREND buy order/i, korean: "트렌드 매수 리밋 주문이 배치되었습니다" },
+  { regex: /placed TP sell order/i, korean: "TP 매도 리밋 주문이 배치되었습니다" },
+  { regex: /Buy pause.*PAUSED/i, korean: "잔고 부족으로 매수가 일시정지되었습니다 (PAUSED)" },
+  { regex: /Buy pause.*THROTTLED/i, korean: "잔고 부족으로 매수가 감속되었습니다 (THROTTLED)" },
+  { regex: /Buy pause cleared/i, korean: "잔고가 회복되어 매수가 재개됩니다" },
+  { regex: /Buy pause manually resumed/i, korean: "관리자가 수동으로 매수를 재개했습니다" },
+  { regex: /Circuit breaker triggered/i, korean: "연속 실패로 자동매매가 중단되었습니다 (서킷 브레이커)" },
+  { regex: /Circuit breaker already tripped/i, korean: "이미 서킷 브레이커가 활성화되어 매매를 시작하지 않았습니다" },
+  { regex: /Auto-recovering CB/i, korean: "서킷 브레이커 자동 복구를 시도합니다" },
+  { regex: /buy_usdt .+ below min_trade_usdt/i, korean: "매수 금액이 최소 거래 금액보다 작아 매수를 건너뜁니다" },
+  { regex: /Insufficient .+ balance/i, korean: "잔고가 부족합니다" },
+  { regex: /notional .+ below minimum/i, korean: "주문 금액이 바이낸스 최소 금액 미만입니다" },
+  { regex: /Trading loop started/i, korean: "트레이딩 루프가 정상 시작되었습니다" },
+  { regex: /sell order \d+ for lot \d+ (CANCELED|EXPIRED)/i, korean: "매도 주문이 취소/만료되었습니다" },
+  { regex: /place (LOT|TREND|TP) (buy|sell) failed/i, korean: "주문 배치에 실패했습니다" },
+];
+
+function _translateUserLog(msg) {
+  for (const t of _userLogTranslations) {
+    if (t.regex.test(msg)) return t.korean;
+  }
+  return null;
+}
+
+async function loadAccountLogs() {
+  const panel = document.getElementById('account-logs-panel');
+  const levelFilter = document.getElementById('log-level-filter');
+  const level = levelFilter ? levelFilter.value : '';
+
+  try {
+    let url = '/api/logs/' + ACCOUNT_ID + '?limit=200&visibility=user';
+    if (level) url += '&level=' + level;
+    const resp = await apiFetch(url);
+    if (!resp.ok) { panel.innerHTML = '<div class="log-empty">로그를 불러오지 못했습니다</div>'; return; }
+    const logs = await resp.json();
+
+    if (!logs.length) {
+      panel.innerHTML = '<div class="log-empty">아직 로그가 없습니다</div>';
+      return;
+    }
+
+    let html = '';
+    for (const log of logs) {
+      const ts = log.ts || '';
+      const lvl = log.level || 'INFO';
+      const mod = log.module || '';
+      const rawMsg = log.msg || '';
+      const korean = _translateUserLog(rawMsg);
+      const displayMsg = korean ? escapeHtml(korean) : escapeHtml(rawMsg);
+      const tooltip = korean ? ' title="' + escapeHtml(rawMsg) + '"' : '';
+      html += '<div class="log-entry">'
+        + '<span class="log-ts">' + ts + '</span>'
+        + '<span class="log-level log-level-' + lvl + '">' + lvl + '</span>'
+        + '<span class="log-module" title="' + mod + '">' + mod + '</span>'
+        + '<span class="log-msg"' + tooltip + '>' + displayMsg + '</span>'
+        + '</div>';
+    }
+    panel.innerHTML = html;
+    // Auto-scroll to bottom (newest logs)
+    panel.scrollTop = panel.scrollHeight;
+  } catch (e) {
+    console.error('Failed to load logs', e);
+    panel.innerHTML = '<div class="log-empty">로그 로딩 중 오류 발생</div>';
+  }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   loadAccountDashboard(ACCOUNT_ID);
+  loadAccountLogs();
+  // Auto-refresh logs every 30 seconds
+  setInterval(loadAccountLogs, 30000);
 });
 </script>
 {% endblock %}

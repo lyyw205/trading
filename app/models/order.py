@@ -5,10 +5,10 @@ from sqlalchemy import BigInteger, ForeignKey, Index, Numeric, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.models.base import Base, TimestampMixin
+from app.models.base import Base, UpdatedAtMixin
 
 
-class Order(TimestampMixin, Base):
+class Order(UpdatedAtMixin, Base):
     __tablename__ = "orders"
     __table_args__ = (
         Index("idx_orders_status", "account_id", "status"),

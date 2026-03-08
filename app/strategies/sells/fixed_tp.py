@@ -129,6 +129,7 @@ class FixedTpSell(BaseSellLogic):
         target_price: float,
         base_mode: str,
     ) -> None:
+<<<<<<< HEAD
         # Use DB data first (_sync_orders_and_fills already synced), fallback to API
         db_order = await repos.order.get_order(ctx.account_id, lot.sell_order_id)
         if db_order:
@@ -144,6 +145,26 @@ class FixedTpSell(BaseSellLogic):
                 sell_order_data = await exchange.get_order(lot.sell_order_id, ctx.symbol)
                 await repos.order.upsert_order(ctx.account_id, sell_order_data)
             except Exception as exc:
+=======
+        # Always query exchange for authoritative status (DB may be stale for
+        # BacktestClient where _check_order_fills updates order status in-place
+        # after upsert_order has already saved the initial NEW status).
+        try:
+            sell_order_data = await exchange.get_order(lot.sell_order_id, ctx.symbol)
+            await repos.order.upsert_order(ctx.account_id, sell_order_data)
+        except Exception as exc:
+            # Fallback to DB if exchange query fails (production resilience)
+            db_order = await repos.order.get_order(ctx.account_id, lot.sell_order_id)
+            if db_order:
+                sell_order_data = {
+                    "orderId": db_order.order_id,
+                    "status": db_order.status,
+                    "executedQty": str(db_order.executed_qty or 0),
+                    "cummulativeQuoteQty": str(db_order.cumulative_quote_qty or 0),
+                    "updateTime": db_order.update_time_ms or 0,
+                }
+            else:
+>>>>>>> 774e92c (gg)
                 logger.error(
                     "fixed_tp: failed to get sell order %s for lot %s: %s",
                     lot.sell_order_id,
@@ -198,6 +219,10 @@ class FixedTpSell(BaseSellLogic):
                 if sell_price > current_base:
                     await state.set("base_price", sell_price)
 
+            # Reset recenter EMA to sell_price to prevent stale high EMA
+            # from pushing base_price upward on the next pre_tick
+            await state.set("recenter_ema", sell_price)
+
             logger.info(
                 "fixed_tp: lot %s TP filled sell=%.2f profit=%.4f pending_earnings+=%.4f",
                 lot.lot_id,
@@ -235,7 +260,7 @@ class FixedTpSell(BaseSellLogic):
         target_price: float,
         sell_qty: float,
     ) -> None:
-        if not self._cooldown_ok(_ORDER_COOLDOWN_SEC):
+        if self._sim_time is None and not self._cooldown_ok(_ORDER_COOLDOWN_SEC):
             return
 
         try:

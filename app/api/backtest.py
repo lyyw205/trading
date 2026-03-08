@@ -18,6 +18,8 @@ from app.models.backtest_run import BacktestRun
 from app.schemas.backtest import (
     BacktestConfigOut,
     BacktestListItem,
+    BacktestPresetOut,
+    BacktestPresetSaveRequest,
     BacktestReportResponse,
     BacktestRunRequest,
     BacktestRunResponse,
@@ -156,7 +158,7 @@ async def get_backtest_report(
 
     _MAX_CHART_CANDLES = 2000
 
-    def _load_candles() -> list[dict]:
+    def _load_candles() -> tuple[list[dict], int]:
         import pyarrow.compute as pc
         import pyarrow.parquet as pq
 
@@ -189,24 +191,32 @@ async def get_backtest_report(
             if len(rows) > _MAX_CHART_CANDLES:
                 n = len(rows)
                 bucket_size = -(-n // _MAX_CHART_CANDLES)  # ceil division
-                aggregated = []
-                for i in range(0, n, bucket_size):
-                    bucket = rows[i : i + bucket_size]
-                    aggregated.append(
-                        {
-                            "time": bucket[0]["time"],
-                            "open": bucket[0]["open"],
-                            "high": max(c["high"] for c in bucket),
-                            "low": min(c["low"] for c in bucket),
-                            "close": bucket[-1]["close"],
-                            "volume": sum(c["volume"] for c in bucket),
+                bucket_interval = bucket_size * 60  # seconds
+                aggregated: dict[int, dict] = {}
+                for row in rows:
+                    key = (row["time"] // bucket_interval) * bucket_interval
+                    if key not in aggregated:
+                        aggregated[key] = {
+                            "time": key,
+                            "open": row["open"],
+                            "high": row["high"],
+                            "low": row["low"],
+                            "close": row["close"],
+                            "volume": row.get("volume", 0.0),
                         }
-                    )
-                return aggregated
-            return rows
-        return []
+                    else:
+                        b = aggregated[key]
+                        if row["high"] > b["high"]:
+                            b["high"] = row["high"]
+                        if row["low"] < b["low"]:
+                            b["low"] = row["low"]
+                        b["close"] = row["close"]
+                        b["volume"] = b["volume"] + row.get("volume", 0.0)
+                return sorted(aggregated.values(), key=lambda x: x["time"]), bucket_interval
+            return rows, 60
+        return [], 60
 
-    candles = await asyncio.to_thread(_load_candles)
+    candles, candle_interval_sec = await asyncio.to_thread(_load_candles)
 
     config = BacktestConfigOut(
         symbol=run.symbol,
@@ -223,7 +233,7 @@ async def get_backtest_report(
         summary = BacktestSummaryOut(**run.result_summary)
 
     # Auto-save to JSON on first view (offload blocking I/O to thread)
-    await asyncio.to_thread(_auto_save, run, candles)
+    await asyncio.to_thread(_auto_save, run, candles)  # type: ignore[arg-type]
 
     # Check pinned status from saved file
     def _is_pinned() -> bool:
@@ -245,6 +255,7 @@ async def get_backtest_report(
         trade_log=run.trade_log,
         equity_curve=run.equity_curve,
         candles=candles,
+        candle_interval_sec=candle_interval_sec,
         pinned=pinned,
     )
 
@@ -389,3 +400,77 @@ async def delete_saved_report(
         raise HTTPException(status_code=404, detail="Saved report not found")
     await asyncio.to_thread(path.unlink)
     return {"status": "deleted", "id": run_id}
+
+
+# ---- Combo Presets (JSON file storage) ----
+
+PRESET_PATH = SAVED_DIR / "backtest_presets.json"
+
+
+def _load_presets() -> dict:
+    if not PRESET_PATH.exists():
+        return {}
+    try:
+        return json.loads(PRESET_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _save_presets(data: dict) -> None:
+    PRESET_PATH.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+
+@router.get("/presets", response_model=list[BacktestPresetOut])
+async def list_presets(
+    user: dict = Depends(require_admin),
+):
+    """List all saved combo presets."""
+    presets = await asyncio.to_thread(_load_presets)
+    return [
+        BacktestPresetOut(name=name, combos=p["combos"], saved_at=p.get("saved_at", ""))
+        for name, p in presets.items()
+    ]
+
+
+@router.post("/presets")
+async def save_preset(
+    req: BacktestPresetSaveRequest,
+    user: dict = Depends(require_admin),
+):
+    """Save combo configuration as a named preset (overwrites on name collision)."""
+    if not req.name.strip():
+        raise HTTPException(status_code=400, detail="Preset name is required")
+    if not req.combos:
+        raise HTTPException(status_code=400, detail="At least one combo is required")
+
+    def _save() -> None:
+        presets = _load_presets()
+        presets[req.name.strip()] = {
+            "combos": [c.model_dump() for c in req.combos],
+            "saved_at": datetime.now(UTC).isoformat(),
+        }
+        _save_presets(presets)
+
+    await asyncio.to_thread(_save)
+    return {"status": "ok", "name": req.name.strip()}
+
+
+@router.delete("/presets/{name}")
+async def delete_preset(
+    name: str,
+    user: dict = Depends(require_admin),
+):
+    """Delete a saved combo preset."""
+
+    def _delete() -> bool:
+        presets = _load_presets()
+        if name not in presets:
+            return False
+        del presets[name]
+        _save_presets(presets)
+        return True
+
+    found = await asyncio.to_thread(_delete)
+    if not found:
+        raise HTTPException(status_code=404, detail="Preset not found")
+    return {"status": "deleted", "name": name}

@@ -141,6 +141,24 @@ async def admin_trades_page(request: Request):
     return templates.TemplateResponse("admin_trades.html", {"request": request, "user": user})
 
 
+@router.get("/admin/logs", response_class=HTMLResponse)
+async def admin_logs_page(request: Request):
+    user, redirect = _require_admin_page(request)
+    if redirect:
+        return redirect
+    templates = request.app.state.templates
+    return templates.TemplateResponse("admin_logs.html", {"request": request, "user": user})
+
+
+@router.get("/admin/reports", response_class=HTMLResponse)
+async def admin_reports_page(request: Request):
+    user, redirect = _require_admin_page(request)
+    if redirect:
+        return redirect
+    templates = request.app.state.templates
+    return templates.TemplateResponse("admin_reports.html", {"request": request, "user": user})
+
+
 @router.get("/admin/backtest/{backtest_id}", response_class=HTMLResponse)
 async def backtest_report_page(request: Request, backtest_id: UUID):
     user, redirect = _require_admin_page(request)

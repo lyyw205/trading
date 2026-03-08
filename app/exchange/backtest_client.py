@@ -93,11 +93,23 @@ class BacktestClient(ExchangeClient):
                         self._balances[asset] = {"free": 0.0, "locked": 0.0}
                     fee_qty = qty * self._fee_rate
                     self._balances[asset]["free"] += qty - fee_qty
+                    order["fills"] = [{
+                        "price": str(px),
+                        "qty": str(qty),
+                        "commission": str(fee_qty),
+                        "commissionAsset": asset,
+                    }]
                 else:  # SELL
                     if asset not in self._balances:
                         self._balances[asset] = {"free": 0.0, "locked": 0.0}
                     self._balances[asset]["locked"] = max(0.0, self._balances[asset]["locked"] - qty)
                     self._balances["USDT"]["free"] += qty * px - fee
+                    order["fills"] = [{
+                        "price": str(px),
+                        "qty": str(qty),
+                        "commission": str(fee),
+                        "commissionAsset": "USDT",
+                    }]
 
                 self._filled_orders.append(order)
                 self._trades.append(

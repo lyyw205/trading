@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_PENDING_TIMEOUT_MS = 3 * 60 * 60 * 1000
+_PENDING_TIMEOUT_MS = 5 * 60 * 1000  # 5 minutes
 _ORDER_COOLDOWN_SEC = 5.0
 
 

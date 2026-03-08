@@ -6,16 +6,17 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
 
+import numpy as np
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 from sqlalchemy import update
 
-from app.db.session import TradingSessionLocal  # results/status 저장용
-from app.models.backtest_run import BacktestRun
-from app.exchange.backtest_client import BacktestClient
-from app.strategies.registry import BuyLogicRegistry, SellLogicRegistry
 import app.strategies.buys  # noqa: F401 — trigger @register decorators
 import app.strategies.sells  # noqa: F401
+from app.db.session import TradingSessionLocal  # results/status 저장용
+from app.exchange.backtest_client import BacktestClient
+from app.models.backtest_run import BacktestRun
+from app.strategies.registry import BuyLogicRegistry, SellLogicRegistry
 from backtest.mem_stores import (
     InMemoryAccountStateManager,
     InMemoryLotRepository,
@@ -61,7 +62,7 @@ class IsolatedBacktestRunner:
             initial_usdt = float(row.initial_usdt)
             start_ts_ms = row.start_ts_ms
             end_ts_ms = row.end_ts_ms
-            user_id = row.user_id
+            _ = row.user_id  # available if needed later
 
         if not combo_configs:
             await self._save_failure(run_id, "No combo configurations provided")
@@ -102,7 +103,7 @@ class IsolatedBacktestRunner:
             # ----------------------------------------------------------------
             combos = []
             name_to_idx = {}
-            for idx, cfg in enumerate(combo_configs):
+            for _idx, cfg in enumerate(combo_configs):
                 name = cfg["name"]
                 try:
                     buy_logic = BuyLogicRegistry.create_instance(cfg["buy_logic_name"])
@@ -131,6 +132,11 @@ class IsolatedBacktestRunner:
                 if ref_name and ref_name in name_to_idx:
                     combo["reference_combo_id"] = combos[name_to_idx[ref_name]]["combo_id"]
                 else:
+                    if ref_name and ref_name not in name_to_idx:
+                        logger.error(
+                            "Combo '%s': reference_combo_name '%s' not found in combos: %s. Trend buy will be disabled.",
+                            combo.get("name", "?"), ref_name, list(name_to_idx.keys()),
+                        )
                     combo["reference_combo_id"] = None
 
             # ----------------------------------------------------------------
@@ -218,6 +224,7 @@ class IsolatedBacktestRunner:
                         sell_logic._sim_time = sim_time
                         buy_ctx.current_price = price
                         sell_ctx.current_price = price
+                        buy_ctx.free_balance = client._balances.get("USDT", {"free": 0.0})["free"]
 
                         # 0. pre_tick
                         try:
@@ -244,6 +251,9 @@ class IsolatedBacktestRunner:
                                 "Backtest sell tick error (combo=%s, price=%.2f): %s",
                                 combo["name"], price, exc,
                             )
+
+                        # Update free_balance after sell (sell may have freed USDT)
+                        buy_ctx.free_balance = client._balances.get("USDT", {"free": 0.0})["free"]
 
                         # 2. buy
                         try:
@@ -465,17 +475,33 @@ class IsolatedBacktestRunner:
             "equity_curve": equity_curve,
         }
 
+    @staticmethod
+    def _json_safe(obj: object) -> object:
+        """Recursively convert numpy types to native Python for JSON serialization."""
+        if isinstance(obj, dict):
+            return {k: IsolatedBacktestRunner._json_safe(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [IsolatedBacktestRunner._json_safe(v) for v in obj]
+        if isinstance(obj, (np.integer,)):
+            return int(obj)
+        if isinstance(obj, (np.floating,)):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return obj
+
     async def _save_results(self, run_id: UUID, results: dict) -> None:
         """Persist results to backtest_runs table."""
+        safe_results = self._json_safe(results)
         async with TradingSessionLocal() as session:
             stmt = (
                 update(BacktestRun)
                 .where(BacktestRun.id == run_id)
                 .values(
                     status="COMPLETED",
-                    result_summary=results["summary"],
-                    trade_log=results["trade_log"],
-                    equity_curve=results["equity_curve"],
+                    result_summary=safe_results["summary"],
+                    trade_log=safe_results["trade_log"],
+                    equity_curve=safe_results["equity_curve"],
                     completed_at=datetime.now(UTC),
                 )
             )

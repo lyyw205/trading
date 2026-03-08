@@ -1,0 +1,682 @@
+{% extends "base.html" %}
+
+{% block title %}로그 - Crypto Multi-Trader{% endblock %}
+
+{% block content %}
+<div class="hero-banner">
+  <h1 class="page-title">트레이딩 로그</h1>
+  <p class="hero-subtitle">실시간 구조화된 로그 뷰어 (필터링 지원)</p>
+  <div class="hero-actions">
+    <button class="btn btn-hero btn-sm" onclick="openLogGuide()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      로그 가이드
+    </button>
+    <button class="btn btn-hero btn-sm" onclick="loadLogs()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+      새로고침
+    </button>
+  </div>
+</div>
+
+<!-- Critical Alerts Summary -->
+<section class="dashboard-section" id="alerts-section" style="display:none;">
+  <div class="section-header">
+    <h2 class="section-title">중요 알림</h2>
+    <span id="alerts-count" style="font-size:0.78rem;color:var(--danger);font-weight:600;"></span>
+  </div>
+  <div id="alerts-panel" class="alerts-grid"></div>
+</section>
+
+<!-- Filters -->
+<section class="dashboard-section">
+  <div class="section-header">
+    <h2 class="section-title">필터</h2>
+    <div style="display:flex;gap:0.5rem;align-items:center;">
+      <span id="log-count-badge" style="font-size:0.8rem;color:var(--text-muted);"></span>
+      <label style="display:flex;align-items:center;gap:0.3rem;font-size:0.8rem;color:var(--text-muted);cursor:pointer;">
+        <input type="checkbox" id="log-auto-refresh" checked>
+        자동 새로고침 (15초)
+      </label>
+    </div>
+  </div>
+  <div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;">
+    <select id="filter-account" class="form-input" style="width:auto;min-width:160px;padding:0.3rem 0.5rem;font-size:0.8rem;" onchange="loadLogs()">
+      <option value="">전체 계정</option>
+      <option value="system">시스템</option>
+    </select>
+    <select id="filter-level" class="form-input" style="width:auto;padding:0.3rem 0.5rem;font-size:0.8rem;" onchange="loadLogs()">
+      <option value="">전체 레벨</option>
+      <option value="CRITICAL">CRITICAL</option>
+      <option value="ERROR">ERROR</option>
+      <option value="WARNING">WARNING</option>
+      <option value="INFO">INFO</option>
+    </select>
+    <input type="text" id="filter-search" class="form-input" placeholder="메시지 검색..." style="width:auto;min-width:200px;padding:0.3rem 0.5rem;font-size:0.8rem;" onkeydown="if(event.key==='Enter')loadLogs();">
+    <button class="btn btn-outline btn-sm" onclick="clearFilters()" style="padding:0.3rem 0.5rem;font-size:0.8rem;">초기화</button>
+  </div>
+</section>
+
+<!-- Log Table -->
+<section class="dashboard-section">
+  <div id="logs-panel" class="admin-log-viewer">
+    <div class="loading-spinner">로딩 중...</div>
+  </div>
+</section>
+
+<!-- Log Guide Modal -->
+<div id="log-guide-modal" class="modal-overlay" style="display:none;">
+  <div class="modal-content" style="max-width:900px;max-height:90vh;overflow-y:auto;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+      <h3 style="margin:0;">로그 해결 가이드</h3>
+      <div style="display:flex;gap:0.5rem;align-items:center;">
+        <input type="text" id="guide-search" class="form-input" placeholder="로그 검색..." style="width:200px;padding:0.3rem 0.5rem;font-size:0.8rem;" oninput="filterGuide()">
+        <select id="guide-level-filter" class="form-input" style="width:auto;padding:0.3rem 0.5rem;font-size:0.8rem;" onchange="filterGuide()">
+          <option value="">전체 심각도</option>
+          <option value="Critical">심각</option>
+          <option value="High">높음</option>
+          <option value="Medium">보통</option>
+          <option value="Low">낮음</option>
+        </select>
+        <button class="btn btn-outline btn-sm" onclick="toggleAllGuide(true)" style="padding:0.2rem 0.4rem;font-size:0.75rem;">전체 펼치기</button>
+        <button class="btn btn-outline btn-sm" onclick="toggleAllGuide(false)" style="padding:0.2rem 0.4rem;font-size:0.75rem;">접기</button>
+        <button class="btn btn-outline btn-sm" onclick="closeLogGuide()">닫기</button>
+      </div>
+    </div>
+    <div id="guide-content"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_styles %}
+<style>
+/* Alerts Summary */
+.alerts-grid { display:flex; flex-direction:column; gap:0.5rem; }
+.alert-card { display:flex; align-items:flex-start; gap:0.65rem; padding:0.65rem 0.85rem; background:var(--bg-secondary); border:1px solid var(--border); border-radius:8px; transition:background 0.15s; }
+.alert-card:hover { background:var(--bg-tertiary); }
+.alert-card-icon { width:28px; height:28px; border-radius:6px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.alert-card-icon svg { width:14px; height:14px; }
+.alert-card-icon.critical { background:var(--danger-light); color:var(--danger); }
+.alert-card-icon.error { background:var(--warning-light); color:var(--warning); }
+.alert-card-body { flex:1; min-width:0; }
+.alert-card-header { display:flex; align-items:center; gap:0.4rem; margin-bottom:0.15rem; }
+.alert-card-account { font-size:0.72rem; font-weight:600; color:var(--primary); cursor:pointer; }
+.alert-card-account:hover { text-decoration:underline; }
+.alert-card-module { font-size:0.68rem; color:var(--text-muted); }
+.alert-card-time { font-size:0.68rem; color:var(--text-muted); margin-left:auto; white-space:nowrap; }
+.alert-card-msg { font-size:0.78rem; color:var(--text); line-height:1.5; }
+.alert-card-level { font-size:0.65rem; font-weight:700; padding:1px 5px; border-radius:3px; flex-shrink:0; }
+.alert-card-level.CRITICAL { background:#dc2626; color:#fff; }
+.alert-card-level.ERROR { color:#fca5a5; }
+
+.admin-log-viewer { max-height:calc(100vh - 340px); min-height:400px; overflow-y:auto; background:var(--bg-secondary); border:1px solid var(--border); border-radius:8px; padding:0.5rem; font-family:'Pretendard Variable',Pretendard,-apple-system,sans-serif; font-size:0.8rem; line-height:1.6; }
+.log-row { padding:0.25rem 0.4rem; border-bottom:1px solid var(--border); display:grid; grid-template-columns:145px 70px 100px 80px 1fr; gap:0.5rem; align-items:start; }
+.log-row:last-child { border-bottom:none; }
+.log-row:hover { background:rgba(255,255,255,0.03); }
+.log-row-ts { color:var(--text-muted); white-space:nowrap; }
+.log-row-level { font-weight:600; border-radius:3px; text-align:center; padding:0 4px; }
+.log-row-level-CRITICAL { color:#fff; background:#dc2626; }
+.log-row-level-ERROR { color:#fca5a5; }
+.log-row-level-WARNING { color:#fbbf24; }
+.log-row-level-INFO { color:#60a5fa; }
+.log-row-level-DEBUG { color:var(--text-muted); }
+.log-row-account { color:var(--primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; }
+.log-row-account:hover { text-decoration:underline; }
+.log-row-module { color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.log-row-msg { color:var(--text-primary); word-break:break-word; }
+.log-empty { text-align:center; color:var(--text-muted); padding:2rem; }
+@media (max-width: 768px) {
+  .log-row { grid-template-columns:1fr; gap:0.2rem; }
+  .log-row-ts, .log-row-account { font-size:0.7rem; }
+}
+/* Guide Modal */
+.guide-module { margin-bottom:1rem; }
+.guide-module-header { display:flex; align-items:center; gap:0.5rem; padding:0.5rem 0.75rem; background:var(--bg-secondary); border:1px solid var(--border); border-radius:6px; cursor:pointer; font-weight:600; font-size:0.9rem; }
+.guide-module-header:hover { background:var(--bg-tertiary, rgba(255,255,255,0.05)); }
+.guide-module-header .chevron { transition:transform 0.2s; font-size:0.7rem; color:var(--text-muted); }
+.guide-module-header.open .chevron { transform:rotate(90deg); }
+.guide-module-body { display:none; border:1px solid var(--border); border-top:none; border-radius:0 0 6px 6px; }
+.guide-module-body.open { display:block; }
+.guide-entry { border-bottom:1px solid var(--border); }
+.guide-entry:last-child { border-bottom:none; }
+.guide-entry-header { display:flex; align-items:center; gap:0.5rem; padding:0.4rem 0.75rem; cursor:pointer; font-size:0.8rem; }
+.guide-entry-header:hover { background:rgba(255,255,255,0.02); }
+.guide-entry-header .chevron { transition:transform 0.2s; font-size:0.6rem; color:var(--text-muted); }
+.guide-entry-header.open .chevron { transform:rotate(90deg); }
+.guide-severity { font-size:0.7rem; font-weight:600; padding:1px 6px; border-radius:3px; white-space:nowrap; }
+.guide-severity-Critical { background:#dc2626; color:#fff; }
+.guide-severity-High { background:#f59e0b; color:#000; }
+.guide-severity-Medium { background:#3b82f6; color:#fff; }
+.guide-severity-Low { background:var(--border); color:var(--text-muted); }
+.guide-level-badge { font-size:0.7rem; font-weight:600; padding:1px 5px; border-radius:3px; }
+.guide-level-CRITICAL { background:#dc2626; color:#fff; }
+.guide-level-ERROR { color:#fca5a5; }
+.guide-level-WARNING { color:#fbbf24; }
+.guide-level-INFO { color:#60a5fa; }
+.guide-entry-detail { display:none; padding:0.5rem 0.75rem 0.75rem 1.5rem; font-size:0.8rem; line-height:1.7; }
+.guide-entry-detail.open { display:block; }
+.guide-entry-detail dt { font-weight:600; color:var(--text-muted); margin-top:0.4rem; }
+.guide-entry-detail dd { margin:0 0 0.2rem 0; }
+.guide-entry-detail code { background:var(--bg-secondary); padding:1px 4px; border-radius:3px; font-size:0.75rem; }
+.guide-entry-pattern { font-family:'Pretendard Variable',Pretendard,-apple-system,sans-serif; font-size:0.8rem; color:var(--text-primary); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let _autoRefreshTimer = null;
+
+// ============================================================
+// Log Guide Data
+// ============================================================
+const LOG_GUIDE = [
+  { module: "account_trader.py", desc: "계정 트레이딩 루프 (19)", entries: [
+    { level:"CRITICAL", severity:"Critical", pattern:"Circuit breaker triggered: N consecutive failures", description:"5회 연속 트레이딩 사이클 실패로 해당 계정의 자동매매가 중단되었습니다.", cause:"API 키 만료/무효, 바이낸스 서버 장애, 네트워크 불안정, DB 장시간 미응답 등 복합적 원인으로 연속 실패 누적.", resolution:"1. /admin/system에서 해당 계정의 CB 상태 확인\n2. API 키가 유효한지 바이낸스 콘솔에서 확인\n3. 네트워크/DB 상태 점검\n4. 원인 해결 후 관리자 페이지에서 CB 리셋 (자동 복구는 30분 쿨다운 후 시도)" },
+    { level:"WARNING", severity:"Critical", pattern:"Circuit breaker already tripped", description:"트레이더 시작 시 이미 CB가 활성화되어 있어 루프를 시작하지 않았습니다.", cause:"이전에 CB가 발동된 후 아직 리셋되지 않은 상태.", resolution:"CB 원인을 해결한 후 관리자 페이지에서 수동 리셋하거나, 자동 복구(10분 간격 체크, 30분 쿨다운)를 기다리세요." },
+    { level:"ERROR", severity:"Critical", pattern:"_init_client() failed", description:"계정 초기화 실패. 바이낸스 클라이언트를 생성할 수 없어 매매가 불가합니다.", cause:"API 키/시크릿이 잘못되었거나, 바이낸스 서버 시간 동기화 실패, IP 화이트리스트 미설정.", resolution:"1. 해당 계정의 API 키가 올바른지 확인\n2. 바이낸스에서 IP 화이트리스트에 서버 IP가 포함되어 있는지 확인\n3. 서버 시간이 정확한지 확인 (ntpd/chrony)" },
+    { level:"ERROR", severity:"Critical", pattern:"step() timed out (180s)", description:"트레이딩 사이클 하나가 180초 내에 완료되지 못했습니다. CB 카운터가 증가합니다.", cause:"바이낸스 API 응답 지연, DB 쿼리 타임아웃, 또는 전략 로직 내 무한루프.", resolution:"1. System Health에서 DB 커넥션 풀 상태 확인\n2. 바이낸스 API 상태 페이지 확인\n3. 해당 시점의 슬로우 쿼리 로그 확인" },
+    { level:"ERROR", severity:"Critical", pattern:"Permanent error, triggering CB", description:"복구 불가능한 영구적 오류가 감지되어 즉시 CB가 발동됩니다.", cause:"InvalidAPIKey, AuthenticationError 등 재시도해도 해결 불가능한 오류.", resolution:"API 키를 교체하거나 계정 설정을 수정한 후 CB를 리셋하세요." },
+    { level:"ERROR", severity:"High", pattern:"Transient error (Nx)", description:"일시적 오류가 발생했습니다. 연속 누적 시 CB로 이어질 수 있습니다.", cause:"네트워크 순간 끊김, 바이낸스 일시적 503/504, DB 커넥션 풀 고갈.", resolution:"1~2회는 자동 복구됩니다. 반복되면 네트워크/DB/API 상태를 점검하세요." },
+    { level:"WARNING", severity:"High", pattern:"DB connection error (attempt N/3)", description:"DB 연결 실패로 재시도 중입니다. 3회까지 시도합니다.", cause:"PostgreSQL 다운, 커넥션 풀 고갈, 네트워크 문제.", resolution:"1. PostgreSQL 프로세스 상태 확인\n2. System Health에서 DB 풀 상태 확인\n3. pg_stat_activity에서 idle 커넥션 과다 여부 확인" },
+    { level:"WARNING", severity:"High", pattern:"Balance check failed, skipping buy", description:"잔고 조회 API 실패로 해당 사이클의 매수 평가를 건너뜁니다.", cause:"바이낸스 API 타임아웃 또는 레이트 리밋.", resolution:"일시적인 경우가 대부분입니다. 반복되면 API 키의 권한(읽기 권한) 및 레이트 리밋 상태를 확인하세요." },
+    { level:"WARNING", severity:"High", pattern:"Price is 0 for symbol, skipping", description:"해당 심볼의 가격을 가져올 수 없어 매매 평가를 건너뜁니다.", cause:"WebSocket 스트림 미연결 상태이고 REST 가격 조회도 실패.", resolution:"1. WebSocket 상태 확인 (System Health)\n2. 해당 심볼이 바이낸스에서 거래 가능한지 확인\n3. 심볼명 오타 확인" },
+    { level:"WARNING", severity:"High", pattern:"Rate limited, backing off", description:"바이낸스 API 레이트 리밋에 도달하여 일정 시간 대기합니다.", cause:"짧은 시간에 너무 많은 API 호출. 계정 수가 많거나 루프 간격이 너무 짧을 때 발생.", resolution:"1. 계정별 loop_interval_sec을 늘리기\n2. 불필요한 API 호출 줄이기\n3. 바이낸스 API 키 가중치 확인" },
+    { level:"WARNING", severity:"Medium", pattern:"Cannot parse symbol, skipping", description:"심볼 포맷이 올바르지 않아 처리를 건너뜁니다.", cause:"콤보에 잘못된 심볼명이 설정됨 (예: BTC/USDT 대신 BTCUSDT 필요).", resolution:"해당 콤보의 심볼 설정을 확인하고 바이낸스 표준 포맷(BTCUSDT)으로 수정하세요." },
+    { level:"WARNING", severity:"High", pattern:"Open orders sync failed", description:"미체결 주문 동기화 실패. 주문 상태가 DB와 불일치할 수 있습니다.", cause:"바이낸스 API 타임아웃 또는 일시적 오류.", resolution:"다음 사이클에서 자동 재시도됩니다. 반복되면 Reconciliation 수동 실행을 고려하세요." },
+    { level:"WARNING", severity:"Medium", pattern:"Order sync failed", description:"개별 주문 조회 실패. 해당 주문의 최신 상태를 DB에 반영하지 못했습니다.", cause:"바이낸스 API 타임아웃.", resolution:"다음 사이클에서 자동 재시도됩니다." },
+    { level:"WARNING", severity:"High", pattern:"Fills sync failed", description:"체결 내역 동기화 실패. 체결된 주문이 DB에 반영되지 않을 수 있습니다.", cause:"바이낸스 API 타임아웃.", resolution:"반복되면 관리자 페이지에서 Reconciliation repair를 실행하세요." },
+    { level:"WARNING", severity:"Medium", pattern:"Fill order sync failed", description:"체결 내역에 포함된 개별 주문 조회 실패.", cause:"바이낸스 API 타임아웃.", resolution:"다음 사이클에서 자동 재시도됩니다." },
+    { level:"WARNING", severity:"High", pattern:"Fills processing failed", description:"체결 처리 블록 전체에서 예외 발생. 해당 심볼의 체결이 미반영됩니다.", cause:"DB 오류 또는 데이터 파싱 오류.", resolution:"로그의 에러 상세를 확인하고, DB 상태를 점검하세요." },
+    { level:"INFO", severity:"Medium", pattern:"Trading loop started", description:"해당 계정의 트레이딩 루프가 정상 시작되었습니다.", cause:"정상 동작. 앱 시작 또는 계정 활성화 시 발생.", resolution:"조치 불필요. 정상 라이프사이클 이벤트입니다." },
+    { level:"INFO", severity:"High", pattern:"Sell detected + balance recovered", description:"매수 일시정지(PAUSED) 중 매도가 발생하고 잔고가 회복되어 매수를 재개합니다.", cause:"정상 동작. TP 매도로 USDT 잔고가 임계값 이상으로 회복됨.", resolution:"조치 불필요. 자동으로 ACTIVE 상태로 전환됩니다." },
+    { level:"WARNING", severity:"Medium", pattern:"Failed to send CB alert", description:"CB 발동 후 텔레그램 알림 전송 실패.", cause:"텔레그램 API 타임아웃.", resolution:"CB 자체는 정상 발동됨. 텔레그램 봇 설정을 확인하세요." },
+  ]},
+  { module: "trading_engine.py", desc: "엔진 관리 (9)", entries: [
+    { level:"INFO", severity:"High", pattern:"Starting trading engine with N", description:"트레이딩 엔진이 N개 활성 계정으로 시작되었습니다.", cause:"앱 시작 시 정상 발생.", resolution:"조치 불필요. 예상되는 계정 수와 일치하는지 확인하세요." },
+    { level:"ERROR", severity:"Critical", pattern:"Failed to start account", description:"특정 계정의 트레이더를 시작할 수 없습니다.", cause:"API 키 오류, DB 문제, 또는 계정 설정 불일치.", resolution:"해당 계정의 API 키와 설정을 확인하세요. 다른 계정은 정상 동작합니다." },
+    { level:"WARNING", severity:"High", pattern:"has active circuit breaker", description:"CB가 활성화된 계정을 시작하지 않고 건너뜁니다.", cause:"이전에 CB가 발동된 상태로 앱이 재시작됨.", resolution:"CB 원인을 해결하고 수동 리셋하거나 자동 복구를 기다리세요." },
+    { level:"INFO", severity:"Medium", pattern:"Started trader for account", description:"계정 트레이더가 성공적으로 시작되었습니다.", cause:"정상 초기화 완료.", resolution:"조치 불필요." },
+    { level:"INFO", severity:"Medium", pattern:"Stopped trader for account", description:"계정 트레이더가 중지되었습니다.", cause:"계정 비활성화, 리로드, 또는 앱 종료.", resolution:"조치 불필요." },
+    { level:"INFO", severity:"Low", pattern:"Refreshed subscriptions", description:"콤보 CRUD로 심볼 구독이 변경되었습니다.", cause:"콤보 생성/수정/삭제로 거래 심볼이 변경됨.", resolution:"조치 불필요." },
+    { level:"INFO", severity:"Medium", pattern:"Stopping all traders...", description:"모든 트레이더 종료가 시작되었습니다.", cause:"앱 종료(shutdown) 시그널 수신.", resolution:"조치 불필요. 정상 종료 프로세스입니다." },
+    { level:"INFO", severity:"High", pattern:"Auto-recovering CB-tripped account", description:"CB가 발동된 계정의 자동 복구를 시도합니다.", cause:"CB 발동 후 30분 쿨다운이 지나 10분 주기 체크에서 복구 시도.", resolution:"자동 복구 성공 시 trading loop이 재시작됩니다. 실패 시 원인을 수동 점검하세요." },
+    { level:"ERROR", severity:"High", pattern:"CB recovery loop error", description:"CB 자동 복구 루프에서 예외 발생.", cause:"DB 오류 또는 예기치 않은 런타임 에러.", resolution:"DB 상태를 확인하세요. 복구 루프는 다음 10분 체크에서 재시도됩니다." },
+  ]},
+  { module: "buy_pause_manager.py", desc: "매수 일시정지 상태 관리 (4)", entries: [
+    { level:"WARNING", severity:"High", pattern:"Buy pause -> STATE (consecutive=N)", description:"잔고 부족으로 매수 일시정지 상태가 변경되었습니다 (ACTIVE->THROTTLED->PAUSED).", cause:"USDT 잔고가 최소 매수 금액 미만. 연속 부족 시 THROTTLED->PAUSED 순서로 전환.", resolution:"1. 잔고를 추가 입금하거나\n2. 매도(TP)가 체결되어 잔고가 회복되기를 기다리거나\n3. 매수 금액 설정을 낮추세요" },
+    { level:"INFO", severity:"High", pattern:"Buy pause cleared -> ACTIVE", description:"잔고가 회복되어 매수가 재개됩니다 (-> ACTIVE).", cause:"USDT 잔고가 임계값 이상으로 회복됨 (매도 체결 또는 입금).", resolution:"조치 불필요. 정상적으로 매수가 재개됩니다." },
+    { level:"INFO", severity:"Medium", pattern:"Sell occurred but balance still low, staying PAUSED", description:"매도가 발생했으나 잔고가 여전히 부족하여 PAUSED를 유지합니다.", cause:"매도 금액이 작아서 잔고 회복이 충분하지 않음.", resolution:"추가 매도 체결을 기다리거나 잔고를 입금하세요." },
+    { level:"INFO", severity:"Medium", pattern:"Buy pause manually resumed -> ACTIVE", description:"관리자가 수동으로 매수를 재개했습니다.", cause:"관리자 액션.", resolution:"조치 불필요." },
+  ]},
+  { module: "kline_ws_manager.py", desc: "웹소켓 캔들 스트림 (14)", entries: [
+    { level:"INFO", severity:"Medium", pattern:"AsyncClient created (public streams)", description:"바이낸스 WebSocket 클라이언트가 성공적으로 생성되었습니다.", cause:"정상 초기화.", resolution:"조치 불필요." },
+    { level:"ERROR", severity:"Critical", pattern:"Failed to create AsyncClient", description:"WebSocket 클라이언트 생성 실패. 실시간 가격 데이터를 수신할 수 없습니다.", cause:"네트워크 문제 또는 바이낸스 API 장애.", resolution:"네트워크 연결 상태를 확인하세요. REST 가격 수집이 백업으로 동작합니다." },
+    { level:"INFO", severity:"Low", pattern:"stopped", description:"WebSocket 매니저가 정상 종료되었습니다.", cause:"앱 종료.", resolution:"조치 불필요." },
+    { level:"INFO", severity:"Medium", pattern:"subscribed to symbol (new)", description:"새 심볼에 대한 WebSocket 구독이 시작되었습니다.", cause:"콤보에 새 심볼 추가.", resolution:"조치 불필요." },
+    { level:"INFO", severity:"Medium", pattern:"unsubscribed from symbol", description:"심볼 WebSocket 구독이 해제되었습니다 (마지막 참조 제거).", cause:"해당 심볼을 사용하는 마지막 콤보가 삭제/변경됨.", resolution:"조치 불필요." },
+    { level:"INFO", severity:"Low", pattern:"no symbols, WS idle", description:"구독할 심볼이 없어 WebSocket이 유휴 상태입니다.", cause:"모든 심볼 구독이 해제됨.", resolution:"조치 불필요. 심볼이 추가되면 자동 재연결됩니다." },
+    { level:"ERROR", severity:"Critical", pattern:"WS fatal error, retrying", description:"WebSocket 연결이 끊어졌습니다. 실시간 가격 데이터가 중단됩니다.", cause:"네트워크 불안정, 바이낸스 WS 서버 장애, 또는 서버 리소스 부족.", resolution:"자동 재연결이 시도됩니다 (지수 백오프, 최대 300초). 반복되면 서버 네트워크 상태를 점검하세요." },
+    { level:"INFO", severity:"Medium", pattern:"recreated AsyncClient after failure", description:"WS 실패 후 클라이언트 재생성에 성공했습니다.", cause:"자동 복구 성공.", resolution:"조치 불필요. 정상 복구되었습니다." },
+    { level:"ERROR", severity:"Critical", pattern:"failed to recreate client", description:"WS 클라이언트 재생성도 실패. 이중 장애 상태입니다.", cause:"네트워크 완전 단절 또는 바이낸스 API 전면 장애.", resolution:"네트워크 상태를 확인하고, 필요시 앱을 재시작하세요." },
+    { level:"INFO", severity:"Medium", pattern:"backfilled N/M candles for SYMBOL", description:"REST API로 캔들 백필이 완료되었습니다.", cause:"WS 재연결 후 누락 구간 보충.", resolution:"조치 불필요." },
+    { level:"WARNING", severity:"Medium", pattern:"backfill failed for symbol", description:"REST 캔들 백필 실패. 일부 구간의 캔들 데이터가 누락될 수 있습니다.", cause:"바이낸스 REST API 타임아웃.", resolution:"다음 WS 재연결 시 자동 재시도됩니다." },
+    { level:"INFO", severity:"Medium", pattern:"starting multiplex for N symbols", description:"멀티플렉스 WebSocket 연결이 시작됩니다.", cause:"WS (재)연결 시 구독 심볼 목록으로 연결.", resolution:"조치 불필요." },
+    { level:"ERROR", severity:"Medium", pattern:"failed to parse candle", description:"캔들 데이터 파싱 실패.", cause:"바이낸스에서 예상치 못한 데이터 형식 수신. 매우 드묾.", resolution:"반복되면 코드 업데이트가 필요할 수 있습니다." },
+    { level:"ERROR", severity:"High", pattern:"failed to store candle", description:"캔들 DB 저장 실패.", cause:"DB 오류 (커넥션 풀 고갈, 디스크 부족 등).", resolution:"DB 상태 및 디스크 공간을 확인하세요." },
+  ]},
+  { module: "candle_aggregator.py", desc: "캔들 집계 1m→5m→1h→1d (7)", entries: [
+    { level:"INFO", severity:"Low", pattern:"SYMBOL tier: aggregated=N, deleted=N", description:"캔들 집계 작업이 수행되었습니다 (예: 1m->5m).", cause:"6시간 주기 백그라운드 작업.", resolution:"조치 불필요." },
+    { level:"ERROR", severity:"Medium", pattern:"tier failed", description:"캔들 집계/삭제 중 예외 발생.", cause:"DB 오류.", resolution:"DB 상태를 확인하세요. 다음 6시간 주기에서 재시도됩니다." },
+    { level:"INFO", severity:"Low", pattern:"background loop started", description:"캔들 집계 백그라운드 루프가 시작되었습니다.", cause:"앱 시작 시 정상 발생.", resolution:"조치 불필요." },
+    { level:"INFO", severity:"Low", pattern:"completed -- summary", description:"캔들 집계가 완료되었습니다.", cause:"6시간 주기 정상 완료.", resolution:"조치 불필요." },
+    { level:"INFO", severity:"Low", pattern:"background loop cancelled", description:"앱 종료로 캔들 집계 루프가 취소되었습니다.", cause:"앱 종료 시 CancelledError.", resolution:"조치 불필요." },
+    { level:"ERROR", severity:"Medium", pattern:"unexpected error", description:"캔들 집계에서 예상치 못한 예외 발생.", cause:"DB 오류 또는 코드 버그.", resolution:"에러 상세를 확인하고 DB 상태를 점검하세요." },
+    { level:"INFO", severity:"Low", pattern:"background loop cancelled during sleep", description:"sleep 중 앱 종료로 루프가 취소되었습니다.", cause:"앱 종료.", resolution:"조치 불필요." },
+  ]},
+  { module: "alert_service.py", desc: "텔레그램 알림 (5)", entries: [
+    { level:"DEBUG", severity:"Low", pattern:"Alert rate-limited", description:"시간당 알림 한도 초과로 알림이 생략되었습니다.", cause:"비-CRITICAL 알림이 시간당 한도를 초과.", resolution:"조치 불필요. CRITICAL 알림은 항상 전송됩니다." },
+    { level:"WARNING", severity:"Medium", pattern:"Alert send failed", description:"텔레그램 알림 발송 실패.", cause:"텔레그램 API 타임아웃 또는 봇 토큰 오류.", resolution:"단발성이면 무시해도 됩니다. 반복되면 봇 토큰과 chat_id를 확인하세요." },
+    { level:"ERROR", severity:"High", pattern:"Alert service circuit breaker tripped", description:"텔레그램 알림 서비스 자체에 CB가 발동되었습니다. 알림이 전송되지 않습니다.", cause:"텔레그램 API 연속 5회 실패.", resolution:"1. 텔레그램 봇 토큰이 유효한지 확인\n2. 텔레그램 API 상태 확인\n3. 관리자 페이지에서 알림 CB 리셋" },
+    { level:"WARNING", severity:"Medium", pattern:"Telegram API returned N", description:"텔레그램 API가 비-200 응답을 반환했습니다.", cause:"봇 토큰 오류, 레이트 리밋(429), 또는 서버 오류.", resolution:"429면 잠시 대기. 401/403이면 봇 토큰을 확인하세요." },
+    { level:"INFO", severity:"Low", pattern:"Alert service circuit breaker reset", description:"알림 서비스 CB가 수동으로 리셋되었습니다.", cause:"관리자 액션.", resolution:"조치 불필요. 알림이 재개됩니다." },
+  ]},
+  { module: "price_collector.py", desc: "REST 가격 수집 (1)", entries: [
+    { level:"WARNING", severity:"High", pattern:"Price fetch failed for SYMBOL", description:"REST API로 가격 조회 실패. WebSocket이 안될 때 백업으로 사용되므로 이것도 실패하면 가격 데이터 없음.", cause:"바이낸스 API 레이트 리밋 또는 타임아웃.", resolution:"WebSocket 상태를 먼저 확인하세요. REST는 백업이므로 WS가 정상이면 영향 없습니다." },
+  ]},
+  { module: "reconciliation.py", desc: "포지션/체결 재조정 (7)", entries: [
+    { level:"WARNING", severity:"Critical", pattern:"Reconciliation drift", description:"DB와 거래소 간 데이터 불일치가 감지되었습니다.", cause:"네트워크 장애 중 체결/취소가 발생하여 DB에 반영되지 않음.", resolution:"1. 불일치 내용 확인 (position diffs, fill gaps)\n2. 관리자 페이지에서 Reconciliation repair 실행\n3. 심각한 경우 수동으로 DB 데이터 확인" },
+    { level:"ERROR", severity:"High", pattern:"Reconciliation error", description:"재조정 수행 중 예외 발생.", cause:"DB 오류 또는 API 장애.", resolution:"DB/API 상태를 확인하세요." },
+    { level:"WARNING", severity:"Medium", pattern:"Failed to fetch exchange account info", description:"거래소 잔고 조회 실패로 재조정이 불완전합니다.", cause:"바이낸스 API 타임아웃.", resolution:"다음 재조정 주기에서 자동 재시도됩니다." },
+    { level:"WARNING", severity:"Medium", pattern:"Fill gap check failed", description:"최근 체결 조회 실패.", cause:"바이낸스 API 타임아웃.", resolution:"다음 재조정 주기에서 자동 재시도됩니다." },
+    { level:"ERROR", severity:"High", pattern:"Failed to fetch trades for repair", description:"체결 갭 수리를 위한 거래소 체결 내역 조회 실패.", cause:"바이낸스 API 오류.", resolution:"잠시 후 재시도하세요. 바이낸스 API 상태를 확인하세요." },
+    { level:"INFO", severity:"Medium", pattern:"Repaired N fills", description:"체결 갭 수리가 완료되었습니다.", cause:"관리자가 수리를 요청함.", resolution:"조치 불필요. 수리된 건수를 확인하세요." },
+    { level:"WARNING", severity:"Medium", pattern:"Failed to send drift alert", description:"불일치 알림 발송 실패.", cause:"텔레그램 API 타임아웃.", resolution:"불일치 자체는 감지됨. 텔레그램 설정을 확인하세요." },
+  ]},
+  { module: "combo_reapply.py", desc: "콤보 리어플라이 (5)", entries: [
+    { level:"INFO", severity:"High", pattern:"cancelled pending buy order", description:"콤보 리어플라이로 대기 매수 주문이 취소되었습니다.", cause:"콤보 설정 변경 후 기존 주문을 취소하고 새 설정으로 재생성.", resolution:"조치 불필요. 다음 사이클에서 새 설정으로 주문이 재배치됩니다." },
+    { level:"WARNING", severity:"High", pattern:"cancel pending buy failed", description:"리어플라이 중 매수 주문 취소 실패.", cause:"주문이 이미 체결되었거나 바이낸스 API 오류.", resolution:"이미 체결된 경우 정상입니다. API 오류라면 수동으로 바이낸스에서 주문을 취소하세요." },
+    { level:"INFO", severity:"High", pattern:"cancelled TP sell order", description:"리어플라이로 TP 매도 주문이 취소되었습니다.", cause:"콤보 설정 변경 후 기존 TP 주문 취소.", resolution:"조치 불필요. 다음 사이클에서 새 TP 주문이 재배치됩니다." },
+    { level:"WARNING", severity:"High", pattern:"cancel TP sell failed", description:"리어플라이 중 TP 매도 주문 취소 실패.", cause:"주문이 이미 체결되었거나 API 오류.", resolution:"이미 체결된 경우 정상입니다. API 오류라면 수동 취소하세요." },
+    { level:"INFO", severity:"Medium", pattern:"combo result", description:"리어플라이 결과 요약.", cause:"리어플라이 완료.", resolution:"cancelled_buy/cancelled_sell 수와 errors 배열을 확인하세요." },
+  ]},
+  { module: "auth_service.py", desc: "인증 (1)", entries: [
+    { level:"WARNING", severity:"High", pattern:"Account locked (failed N times)", description:"로그인 5회 실패로 계정이 30분간 잠겼습니다.", cause:"잘못된 비밀번호 5회 입력.", resolution:"30분 후 자동 해제됩니다. 비밀번호를 잊은 경우 관리자에게 리셋 요청하세요." },
+  ]},
+  { module: "lot_stacking.py", desc: "랏 스태킹 매수 전략 (15)", entries: [
+    { level:"ERROR", severity:"High", pattern:"failed to fetch pending order", description:"대기 매수 주문의 상태를 조회할 수 없습니다.", cause:"바이낸스 API 타임아웃.", resolution:"다음 사이클에서 자동 재시도됩니다." },
+    { level:"INFO", severity:"Critical", pattern:"pending buy order FILLED", description:"대기 중이던 매수 주문이 체결되었습니다.", cause:"이전 사이클에서 배치한 리밋 주문이 가격 도달로 체결.", resolution:"조치 불필요. 체결 후 새 랏이 생성됩니다." },
+    { level:"INFO", severity:"Medium", pattern:"pending buy order STATUS", description:"대기 매수 주문이 취소/거부/만료 상태로 변경되었습니다.", cause:"타임아웃, 반등 취소, 또는 바이낸스 거부.", resolution:"조치 불필요. 조건 충족 시 새 주문이 배치됩니다." },
+    { level:"WARNING", severity:"Medium", pattern:"pending buy order timed out, cancelling", description:"매수 주문이 5분 내 체결되지 않아 취소합니다.", cause:"가격이 반등하여 주문 가격까지 도달하지 못함.", resolution:"조치 불필요. 다음 조건 충족 시 새 주문이 배치됩니다." },
+    { level:"ERROR", severity:"High", pattern:"cancel timed-out order failed", description:"타임아웃된 주문 취소 실패.", cause:"바이낸스 API 오류.", resolution:"주문이 이미 체결되었을 수 있습니다. 바이낸스에서 확인하세요." },
+    { level:"INFO", severity:"Medium", pattern:"rebound detected, cancelling", description:"가격 반등이 감지되어 대기 매수 주문을 취소합니다.", cause:"현재 가격이 주문 가격 위로 반등.", resolution:"조치 불필요. 정상적인 반등 방어 로직입니다." },
+    { level:"ERROR", severity:"High", pattern:"cancel rebound order failed", description:"반등 감지 후 주문 취소 실패.", cause:"바이낸스 API 오류.", resolution:"주문이 이미 체결되었을 수 있습니다. 바이낸스에서 확인하세요." },
+    { level:"INFO", severity:"High", pattern:"INIT buy filled", description:"초기 리저브(적립금) 매수가 체결되었습니다.", cause:"계정 최초 설정 시 리저브 BTC를 확보하기 위한 매수.", resolution:"조치 불필요. 초기화 완료 후 일반 랏 매수가 시작됩니다." },
+    { level:"INFO", severity:"Critical", pattern:"LOT buy filled", description:"랏 매수 주문이 체결되었습니다. 새 포지션이 생성됩니다.", cause:"가격이 매수 트리거 가격까지 하락하여 리밋 주문 체결.", resolution:"조치 불필요. qty_net과 avg 가격을 확인하세요." },
+    { level:"INFO", severity:"Medium", pattern:"recentering base_price", description:"기준가가 EMA를 따라 상향 재조정되었습니다.", cause:"가격 상승 추세에서 기준가를 올려 매수 트리거를 현실적으로 유지.", resolution:"조치 불필요. recenter_pct 설정으로 민감도 조절 가능." },
+    { level:"INFO", severity:"Medium", pattern:"initialized base_price", description:"콤보 최초 사이클에서 기준가가 초기화되었습니다.", cause:"콤보 첫 실행 시 현재 가격으로 기준가 설정.", resolution:"조치 불필요." },
+    { level:"WARNING", severity:"Medium", pattern:"buy_usdt below min_trade_usdt", description:"계산된 매수 금액이 최소 거래 금액보다 작아 매수를 건너뜁니다.", cause:"잔고가 적거나, 매수 비율(x_pct) 대비 잔고가 너무 적음.", resolution:"잔고를 추가하거나 min_trade_usdt 설정을 낮추세요." },
+    { level:"WARNING", severity:"Medium", pattern:"estimated notional below min_notional", description:"바이낸스 최소 주문 금액(min_notional) 미만.", cause:"매수 금액이 너무 적음.", resolution:"매수 금액 설정을 올리세요 (바이낸스 최소 약 $10)." },
+    { level:"ERROR", severity:"Critical", pattern:"place LOT buy failed", description:"매수 주문 실패.", cause:"잔고 부족, 최소 주문금액 미달, API 오류.", resolution:"1. USDT 잔고 확인\n2. 최소 주문금액(min_notional) 확인\n3. 바이낸스에서 해당 심볼 거래 가능 여부 확인" },
+    { level:"INFO", severity:"Critical", pattern:"placed LOT buy order", description:"새 매수 리밋 주문이 배치되었습니다.", cause:"현재 가격이 기준가 대비 step_pct만큼 하락하여 매수 조건 충족.", resolution:"조치 불필요. trigger 가격과 usdt 금액 확인." },
+  ]},
+  { module: "trend.py", desc: "트렌드 매수 전략 (13)", entries: [
+    { level:"ERROR", severity:"High", pattern:"failed to fetch pending order", description:"대기 트렌드 매수 주문 조회 실패.", cause:"바이낸스 API 타임아웃.", resolution:"다음 사이클에서 자동 재시도됩니다." },
+    { level:"INFO", severity:"Critical", pattern:"pending trend buy order FILLED", description:"대기 중이던 트렌드 매수 주문이 체결되었습니다.", cause:"가격 도달로 리밋 주문 체결.", resolution:"조치 불필요." },
+    { level:"INFO", severity:"Medium", pattern:"pending trend buy order STATUS", description:"트렌드 매수 주문이 취소/거부/만료 상태로 변경.", cause:"타임아웃 또는 바이낸스 거부.", resolution:"조치 불필요." },
+    { level:"WARNING", severity:"Medium", pattern:"pending trend buy order timed out, cancelling", description:"트렌드 매수 주문이 미체결 타임아웃으로 취소됩니다.", cause:"가격이 반등.", resolution:"조치 불필요." },
+    { level:"ERROR", severity:"High", pattern:"cancel timed-out order failed", description:"타임아웃된 트렌드 주문 취소 실패.", cause:"바이낸스 API 오류.", resolution:"바이낸스에서 수동 확인하세요." },
+    { level:"INFO", severity:"Critical", pattern:"TREND buy filled", description:"트렌드 매수 주문이 체결되었습니다.", cause:"참조 콤보의 기준가 대비 조건 충족으로 매수.", resolution:"조치 불필요." },
+    { level:"WARNING", severity:"Medium", pattern:"no reference_combo_id configured", description:"참조 콤보가 설정되지 않아 트렌드 매수를 건너뜁니다.", cause:"트렌드 전략이 참조할 메인 콤보가 미지정.", resolution:"콤보 설정에서 Reference Combo를 지정하세요." },
+    { level:"INFO", severity:"Low", pattern:"initialized trend_base_price", description:"트렌드 기준가가 초기화되었습니다.", cause:"콤보 첫 실행.", resolution:"조치 불필요." },
+    { level:"INFO", severity:"Low", pattern:"recentering trend_base", description:"트렌드 기준가가 상향 재조정되었습니다.", cause:"가격 상승 추세.", resolution:"조치 불필요." },
+    { level:"WARNING", severity:"Medium", pattern:"buy_usdt below min_trade_usdt", description:"트렌드 매수 금액이 최소 거래 금액 미만.", cause:"잔고 부족.", resolution:"잔고를 추가하세요." },
+    { level:"WARNING", severity:"Medium", pattern:"estimated notional below min_notional", description:"바이낸스 최소 주문 금액 미만.", cause:"매수 금액이 너무 적음.", resolution:"매수 금액 설정을 올리세요." },
+    { level:"ERROR", severity:"Critical", pattern:"place TREND buy failed", description:"트렌드 매수 주문 실패.", cause:"잔고 부족, API 오류, 최소 주문금액 미달.", resolution:"lot_stacking의 'place LOT buy failed'와 동일한 점검 절차를 따르세요." },
+    { level:"INFO", severity:"Critical", pattern:"placed TREND buy order", description:"트렌드 매수 리밋 주문이 배치되었습니다.", cause:"트렌드 전략 조건 충족.", resolution:"조치 불필요. trigger 가격과 금액 확인." },
+  ]},
+  { module: "fixed_tp.py", desc: "고정 TP 매도 전략 (6)", entries: [
+    { level:"WARNING", severity:"Medium", pattern:"lot notional below minimum, skipping TP", description:"매도 금액이 최소 거래 금액보다 작아 TP 주문을 건너뜁니다.", cause:"소액 랏으로 매도 금액이 바이낸스 최소(약 $10) 미만.", resolution:"해당 랏은 수동으로 매도하거나, 다른 랏과 합쳐서 매도할 수 있습니다." },
+    { level:"ERROR", severity:"High", pattern:"failed to get sell order", description:"TP 주문 상태 조회 실패.", cause:"바이낸스 API 오류.", resolution:"다음 사이클에서 자동 재시도됩니다." },
+    { level:"INFO", severity:"Critical", pattern:"lot TP filled", description:"TP(이익실현) 매도가 체결되었습니다. 수익이 실현되었습니다.", cause:"매수가 대비 tp_pct(기본 3.3%)만큼 상승하여 리밋 매도 주문 체결.", resolution:"조치 불필요. profit과 pending_earnings 금액을 확인하세요." },
+    { level:"INFO", severity:"Medium", pattern:"sell order STATUS, clearing", description:"TP 매도 주문이 취소/거부/만료되어 상태를 클리어합니다.", cause:"관리자가 수동 취소, 바이낸스에서 만료, 또는 콤보 리어플라이.", resolution:"조치 불필요. 다음 사이클에서 새 TP 주문이 재배치됩니다." },
+    { level:"ERROR", severity:"Critical", pattern:"place TP sell failed", description:"TP 매도 주문 배치 실패. 해당 랏의 이익 보호가 없습니다.", cause:"잔고 부족(이미 매도됨), 최소 주문금액 미달, API 오류.", resolution:"1. 해당 랏의 수량이 계정에 있는지 확인\n2. 수량 * 가격이 min_notional 이상인지 확인\n3. 다음 사이클에서 자동 재시도됩니다" },
+    { level:"INFO", severity:"Critical", pattern:"placed TP sell order", description:"TP 매도 리밋 주문이 배치되었습니다.", cause:"새 랏이 생성되면 자동으로 TP 매도 주문을 배치.", resolution:"조치 불필요. 가격과 수량 확인." },
+  ]},
+  { module: "main.py", desc: "애플리케이션 라이프사이클 (6)", entries: [
+    { level:"INFO", severity:"High", pattern:"Starting crypto-multi-trader...", description:"애플리케이션이 시작되었습니다.", cause:"앱 시작.", resolution:"조치 불필요." },
+    { level:"CRITICAL", severity:"Critical", pattern:"Trading engine crashed", description:"트레이딩 엔진 전체가 크래시되었습니다. 모든 계정의 매매가 중단됩니다.", cause:"예기치 않은 런타임 에러. 메모리 부족, 코드 버그 등.", resolution:"1. 스택 트레이스 확인 (exception 필드)\n2. 앱 자동 재시작 확인 (systemd/docker)\n3. 메모리/디스크 상태 점검\n4. 버그라면 코드 수정 후 재배포" },
+    { level:"INFO", severity:"Low", pattern:"Marked N orphan backtests as FAILED", description:"이전 크래시로 남은 고아 백테스트를 FAILED로 마킹했습니다.", cause:"앱이 비정상 종료되어 RUNNING 상태로 남아있던 백테스트.", resolution:"조치 불필요. 필요시 백테스트를 다시 실행하세요." },
+    { level:"WARNING", severity:"Low", pattern:"Failed to clean up orphan backtests", description:"고아 백테스트 정리 실패.", cause:"DB 오류.", resolution:"수동으로 DB에서 RUNNING 상태 백테스트를 FAILED로 변경하세요." },
+    { level:"INFO", severity:"Medium", pattern:"Shutting down trading engine...", description:"트레이딩 엔진 종료가 시작되었습니다.", cause:"앱 종료 시그널 수신.", resolution:"조치 불필요." },
+    { level:"INFO", severity:"Medium", pattern:"Trading engine stopped", description:"트레이딩 엔진이 정상 종료되었습니다.", cause:"정상 종료 완료.", resolution:"조치 불필요." },
+  ]},
+  { module: "session.py", desc: "슬로우 쿼리 감지 (1)", entries: [
+    { level:"WARNING", severity:"High", pattern:"SLOW_QUERY duration_ms=N query=...", description:"DB 쿼리가 200ms를 초과했습니다.", cause:"인덱스 누락, 테이블 비대화, 동시 쿼리 과다, vacuum 미실행.", resolution:"1. duration_ms와 query 내용 확인\n2. EXPLAIN ANALYZE로 실행 계획 확인\n3. 필요시 인덱스 추가\n4. dead tuples가 많으면 VACUUM 실행" },
+  ]},
+  { module: "health.py", desc: "헬스 체크 (1)", entries: [
+    { level:"ERROR", severity:"Critical", pattern:"Database health check failed", description:"DB SELECT 1 실패. 데이터베이스에 연결할 수 없습니다.", cause:"PostgreSQL 프로세스 다운, 네트워크 문제, 또는 커넥션 풀 고갈.", resolution:"1. PostgreSQL 프로세스 상태 확인\n2. 네트워크 연결 확인\n3. pg_isready 명령어로 접속 테스트" },
+  ]},
+  { module: "backtest.py", desc: "백테스트 (2)", entries: [
+    { level:"ERROR", severity:"Low", pattern:"Backtest failed", description:"백테스트 태스크에서 예외가 발생했습니다.", cause:"잘못된 설정, 데이터 부족, 또는 코드 버그.", resolution:"에러 메시지를 확인하고 백테스트 설정을 수정하세요." },
+    { level:"WARNING", severity:"Low", pattern:"Failed to auto-save backtest", description:"백테스트 결과 JSON 파일 저장 실패.", cause:"디스크 부족 또는 파일 권한 문제.", resolution:"data/backtests/ 디렉토리 권한과 디스크 공간을 확인하세요." },
+  ]},
+  { module: "combos.py", desc: "콤보 API (1)", entries: [
+    { level:"ERROR", severity:"High", pattern:"combo reapply failed", description:"콤보 업데이트 시 리어플라이(기존 주문 취소/재생성) 실패.", cause:"바이낸스 API 오류.", resolution:"1. 해당 콤보의 주문을 바이낸스에서 수동 확인\n2. 잠시 후 콤보를 다시 저장하여 재시도" },
+  ]},
+  { module: "admin.py", desc: "관리자 API (1)", entries: [
+    { level:"WARNING", severity:"Low", pattern:"Failed to query pg_stat_activity", description:"시스템 헬스 조회 시 pg_stat_activity 접근 실패.", cause:"PostgreSQL 사용자에게 pg_stat_activity 조회 권한이 없음.", resolution:"DB 사용자에게 pg_monitor 역할을 부여하세요:\nGRANT pg_monitor TO your_user;" },
+  ]},
+  { module: "admin_db.py", desc: "DB 헬스 API (2)", entries: [
+    { level:"WARNING", severity:"Low", pattern:"Failed to query pg_stat_activity", description:"pg_stat_activity 조회 실패.", cause:"권한 부족.", resolution:"GRANT pg_monitor TO your_user;" },
+    { level:"WARNING", severity:"Low", pattern:"Failed to query pg_stat_user_tables", description:"pg_stat_user_tables 조회 실패.", cause:"권한 부족.", resolution:"GRANT pg_monitor TO your_user;" },
+  ]},
+  { module: "binance_client.py", desc: "바이낸스 API 클라이언트 (1)", entries: [
+    { level:"WARNING", severity:"High", pattern:"Binance time sync failed", description:"바이낸스 서버 시간 동기화 실패. 서명 오류가 발생할 수 있습니다.", cause:"바이낸스 get_server_time() API 호출 실패.", resolution:"1. 서버 시간이 정확한지 확인 (timedatectl)\n2. NTP 동기화 설정 확인\n3. 바이낸스 API 접근 가능 여부 확인" },
+  ]},
+];
+
+// ============================================================
+// Log Translation (English -> Korean)
+// ============================================================
+function _patternToRegex(pattern) {
+  let re = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  re = re.replace(/N\/M/g, '[\\d.]+/[\\d.]+');
+  re = re.replace(/N\/3/g, '[\\d.]+/3');
+  re = re.replace(/Nx/g, '[\\d.]+x');
+  re = re.replace(/\bN\b/g, '[\\d.]+');
+  re = re.replace(/SYMBOL/g, '\\S+');
+  re = re.replace(/STATUS/g, '\\w+');
+  re = re.replace(/\\\.\\\.\\./g, '.*');
+  // Allow extra words between tokens for flexible matching
+  return new RegExp(re, 'i');
+}
+
+const _translationMap = [];
+for (const mod of LOG_GUIDE) {
+  for (const e of mod.entries) {
+    try {
+      _translationMap.push({ regex: _patternToRegex(e.pattern), korean: e.description });
+    } catch (_) { /* skip invalid patterns */ }
+  }
+}
+
+function _translateMsg(msg) {
+  for (const t of _translationMap) {
+    if (t.regex.test(msg)) return t.korean;
+  }
+  return null;
+}
+
+// ============================================================
+// Critical Alerts Summary
+// ============================================================
+async function loadAlerts() {
+  const section = document.getElementById('alerts-section');
+  const panel = document.getElementById('alerts-panel');
+  const countEl = document.getElementById('alerts-count');
+  if (!section || !panel) return;
+
+  try {
+    const resp = await apiFetch('/api/logs/all?limit=50&level=CRITICAL');
+    const criticals = resp.ok ? await resp.json() : [];
+    const resp2 = await apiFetch('/api/logs/all?limit=50&level=ERROR');
+    const errors = resp2.ok ? await resp2.json() : [];
+
+    // Merge, deduplicate by timestamp+msg, sort newest first, limit 10
+    const seen = new Set();
+    const all = [...criticals, ...errors].filter(log => {
+      const key = (log.ts || '') + (log.msg || '');
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).slice(0, 10);
+
+    if (!all.length) {
+      section.style.display = 'none';
+      return;
+    }
+
+    section.style.display = '';
+    countEl.textContent = all.length + '건';
+
+    panel.innerHTML = all.map(log => {
+      const lvl = log.level || 'ERROR';
+      const isCrit = lvl === 'CRITICAL';
+      const acct = log.account_id || 'system';
+      const acctLabel = acct === 'system' ? '시스템' : (acct.length > 12 ? acct.slice(0, 8) + '...' : acct);
+      const mod = _esc(log.module || '');
+      const rawMsg = log.msg || '';
+      const korean = _translateMsg(rawMsg);
+      const msg = korean || rawMsg;
+      const ts = log.ts || '';
+      const timeAgo = _relativeTime(ts);
+
+      return `<div class="alert-card">
+        <div class="alert-card-icon ${isCrit ? 'critical' : 'error'}">
+          ${isCrit
+            ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>'
+            : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>'}
+        </div>
+        <div class="alert-card-body">
+          <div class="alert-card-header">
+            <span class="alert-card-level ${lvl}">${lvl}</span>
+            <span class="alert-card-account" onclick="filterByAccount('${_esc(acct)}')">${_esc(acctLabel)}</span>
+            <span class="alert-card-module">${mod}</span>
+            <span class="alert-card-time">${timeAgo}</span>
+          </div>
+          <div class="alert-card-msg"${korean ? ' title="' + _esc(rawMsg) + '"' : ''}>${_esc(msg)}</div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    section.style.display = 'none';
+  }
+}
+
+function _relativeTime(tsStr) {
+  if (!tsStr) return '';
+  try {
+    const ts = new Date(tsStr);
+    const now = new Date();
+    const diffMs = now - ts;
+    const mins = Math.floor(diffMs / 60000);
+    if (mins < 1) return '방금';
+    if (mins < 60) return mins + '분 전';
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return hours + '시간 전';
+    const days = Math.floor(hours / 24);
+    return days + '일 전';
+  } catch (_) { return tsStr; }
+}
+
+// ============================================================
+// Log Viewer Functions
+// ============================================================
+async function loadLogs() {
+  const panel = document.getElementById('logs-panel');
+  const accountEl = document.getElementById('filter-account');
+  const levelEl = document.getElementById('filter-level');
+  const searchEl = document.getElementById('filter-search');
+
+  const account = accountEl ? accountEl.value : '';
+  const level = levelEl ? levelEl.value : '';
+  const search = searchEl ? searchEl.value.trim() : '';
+
+  try {
+    let url = '/api/logs/all?limit=500';
+    if (account) url += '&account_id=' + encodeURIComponent(account);
+    if (level) url += '&level=' + encodeURIComponent(level);
+    if (search) url += '&search=' + encodeURIComponent(search);
+
+    const resp = await apiFetch(url);
+    if (!resp.ok) { panel.innerHTML = '<div class="log-empty">로그를 불러오지 못했습니다</div>'; return; }
+    const logs = await resp.json();
+
+    const badge = document.getElementById('log-count-badge');
+    if (badge) badge.textContent = logs.length + ' entries';
+
+    if (!logs.length) {
+      panel.innerHTML = '<div class="log-empty">필터에 맞는 로그가 없습니다</div>';
+      return;
+    }
+
+    let html = '';
+    for (const log of logs) {
+      const ts = _esc(log.ts || '');
+      const lvl = log.level || 'INFO';
+      const acct = log.account_id || 'system';
+      const acctShort = acct.length > 12 ? acct.slice(0, 8) + '...' : acct;
+      const mod = _esc(log.module || '');
+      const rawMsg = log.msg || '';
+      const korean = _translateMsg(rawMsg);
+      const displayMsg = korean ? _esc(korean) : _esc(rawMsg);
+      const tooltip = korean ? ' title="' + _esc(rawMsg) + '"' : '';
+      html += '<div class="log-row">'
+        + '<span class="log-row-ts">' + ts + '</span>'
+        + '<span class="log-row-level log-row-level-' + lvl + '">' + lvl + '</span>'
+        + '<span class="log-row-account" title="' + _esc(acct) + '" onclick="filterByAccount(\'' + _esc(acct) + '\')">' + _esc(acctShort) + '</span>'
+        + '<span class="log-row-module" title="' + mod + '">' + mod + '</span>'
+        + '<span class="log-row-msg"' + tooltip + '>' + displayMsg + '</span>'
+        + '</div>';
+    }
+    panel.innerHTML = html;
+    panel.scrollTop = panel.scrollHeight;
+  } catch (e) {
+    console.error('로그를 불러오지 못했습니다', e);
+    panel.innerHTML = '<div class="log-empty">로그 로딩 중 오류 발생</div>';
+  }
+}
+
+function filterByAccount(accountId) {
+  const el = document.getElementById('filter-account');
+  let found = false;
+  for (const opt of el.options) {
+    if (opt.value === accountId) { found = true; break; }
+  }
+  if (!found) {
+    const opt = document.createElement('option');
+    opt.value = accountId;
+    opt.textContent = accountId.length > 12 ? accountId.slice(0, 8) + '...' : accountId;
+    el.appendChild(opt);
+  }
+  el.value = accountId;
+  loadLogs();
+}
+
+function clearFilters() {
+  document.getElementById('filter-account').value = '';
+  document.getElementById('filter-level').value = '';
+  document.getElementById('filter-search').value = '';
+  loadLogs();
+}
+
+function _esc(str) {
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+
+async function populateAccountFilter() {
+  try {
+    const resp = await apiFetch('/api/accounts');
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const accounts = data.accounts || [];
+    const el = document.getElementById('filter-account');
+    for (const a of accounts) {
+      const opt = document.createElement('option');
+      opt.value = a.id;
+      opt.textContent = a.name || a.id.slice(0, 8);
+      el.appendChild(opt);
+    }
+  } catch (e) { /* ignore */ }
+}
+
+function setupAutoRefresh() {
+  const cb = document.getElementById('log-auto-refresh');
+  function toggle() {
+    if (_autoRefreshTimer) { clearInterval(_autoRefreshTimer); _autoRefreshTimer = null; }
+    if (cb && cb.checked) {
+      _autoRefreshTimer = setInterval(() => { loadAlerts(); loadLogs(); }, 15000);
+    }
+  }
+  if (cb) cb.addEventListener('change', toggle);
+  toggle();
+}
+
+// ============================================================
+// Log Guide Functions
+// ============================================================
+function openLogGuide() {
+  document.getElementById('log-guide-modal').style.display = 'flex';
+  renderGuide();
+}
+
+function closeLogGuide() {
+  document.getElementById('log-guide-modal').style.display = 'none';
+}
+
+function renderGuide() {
+  const container = document.getElementById('guide-content');
+  const searchQ = (document.getElementById('guide-search').value || '').toLowerCase();
+  const sevFilter = document.getElementById('guide-level-filter').value;
+
+  let html = '';
+  for (const mod of LOG_GUIDE) {
+    let entries = mod.entries;
+    if (sevFilter) entries = entries.filter(e => e.severity === sevFilter);
+    if (searchQ) entries = entries.filter(e =>
+      e.pattern.toLowerCase().includes(searchQ) ||
+      e.description.toLowerCase().includes(searchQ) ||
+      e.cause.toLowerCase().includes(searchQ) ||
+      e.resolution.toLowerCase().includes(searchQ)
+    );
+    if (!entries.length) continue;
+
+    const modId = 'gmod-' + mod.module.replace(/\./g, '-');
+    html += '<div class="guide-module">';
+    html += '<div class="guide-module-header" onclick="toggleGuideModule(\'' + modId + '\')" id="' + modId + '-hdr">';
+    html += '<span class="chevron">&#9654;</span>';
+    html += '<span>' + _esc(mod.module) + '</span>';
+    html += '<span style="color:var(--text-muted);font-weight:400;font-size:0.8rem;margin-left:0.5rem;">' + _esc(mod.desc) + '</span>';
+    html += '<span style="margin-left:auto;font-size:0.75rem;color:var(--text-muted);">' + entries.length + '</span>';
+    html += '</div>';
+    html += '<div class="guide-module-body" id="' + modId + '-body">';
+
+    const _sevKo = { Critical:'심각', High:'높음', Medium:'보통', Low:'낮음' };
+    for (let i = 0; i < entries.length; i++) {
+      const e = entries[i];
+      const eid = modId + '-e' + i;
+      const sevLabel = _sevKo[e.severity] || e.severity;
+      html += '<div class="guide-entry">';
+      html += '<div class="guide-entry-header" onclick="toggleGuideEntry(\'' + eid + '\')" id="' + eid + '-hdr">';
+      html += '<span class="chevron">&#9654;</span>';
+      html += '<span class="guide-level-badge guide-level-' + e.level + '">' + e.level + '</span>';
+      html += '<span class="guide-severity guide-severity-' + e.severity + '">' + sevLabel + '</span>';
+      html += '<span class="guide-entry-pattern">' + _esc(e.description) + '</span>';
+      html += '</div>';
+      html += '<div class="guide-entry-detail" id="' + eid + '-detail">';
+      html += '<dl>';
+      html += '<dt>로그 패턴</dt><dd><code>' + _esc(e.pattern) + '</code></dd>';
+      html += '<dt>원인</dt><dd>' + _esc(e.cause) + '</dd>';
+      html += '<dt>해결 방법</dt><dd style="white-space:pre-line;">' + _esc(e.resolution) + '</dd>';
+      html += '</dl>';
+      html += '</div>';
+      html += '</div>';
+    }
+
+    html += '</div></div>';
+  }
+
+  if (!html) html = '<div class="log-empty">일치하는 로그 패턴이 없습니다</div>';
+  container.innerHTML = html;
+}
+
+function toggleGuideModule(id) {
+  const hdr = document.getElementById(id + '-hdr');
+  const body = document.getElementById(id + '-body');
+  hdr.classList.toggle('open');
+  body.classList.toggle('open');
+}
+
+function toggleGuideEntry(id) {
+  const hdr = document.getElementById(id + '-hdr');
+  const detail = document.getElementById(id + '-detail');
+  hdr.classList.toggle('open');
+  detail.classList.toggle('open');
+}
+
+function toggleAllGuide(expand) {
+  document.querySelectorAll('.guide-module-header').forEach(h => {
+    h.classList.toggle('open', expand);
+  });
+  document.querySelectorAll('.guide-module-body').forEach(b => {
+    b.classList.toggle('open', expand);
+  });
+  document.querySelectorAll('.guide-entry-header').forEach(h => {
+    h.classList.toggle('open', expand);
+  });
+  document.querySelectorAll('.guide-entry-detail').forEach(d => {
+    d.classList.toggle('open', expand);
+  });
+}
+
+function filterGuide() {
+  renderGuide();
+}
+
+// Close modal on overlay click
+document.addEventListener('click', function(e) {
+  if (e.target.id === 'log-guide-modal') closeLogGuide();
+});
+
+// ============================================================
+// Init
+// ============================================================
+document.addEventListener('DOMContentLoaded', () => {
+  populateAccountFilter();
+  loadAlerts();
+  loadLogs();
+  setupAutoRefresh();
+});
+</script>
+{% endblock %}

@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+import collections
 import contextvars
 import json
 import logging
@@ -6,6 +9,37 @@ from datetime import UTC, datetime
 current_account_id: contextvars.ContextVar[str] = contextvars.ContextVar("account_id", default="system")
 current_request_id: contextvars.ContextVar[str] = contextvars.ContextVar("request_id", default="-")
 current_cycle_id: contextvars.ContextVar[str] = contextvars.ContextVar("cycle_id", default="-")
+
+
+class LogBuffer:
+    """Thread-safe in-memory ring buffer for structured log entries."""
+
+    def __init__(self, maxsize: int = 2000) -> None:
+        self._buf: collections.deque[dict] = collections.deque(maxlen=maxsize)
+
+    def append(self, entry: dict) -> None:
+        self._buf.append(entry)
+
+    def get_logs(
+        self,
+        account_id: str | None = None,
+        level: str | None = None,
+        limit: int = 100,
+    ) -> list[dict]:
+        level_up = level.upper() if level else None
+        results = [
+            e
+            for e in self._buf
+            if (account_id is None or e.get("account_id") == account_id)
+            and (level_up is None or e.get("level") == level_up)
+        ]
+        return results[-limit:]
+
+
+log_buffer = LogBuffer()
+
+# Module-level reference for lifespan access (type: PersistLogHandler | None, set by setup_logging)
+persist_handler = None
 
 
 class StructuredFormatter(logging.Formatter):
@@ -27,6 +61,7 @@ class StructuredFormatter(logging.Formatter):
             log_data["duration_ms"] = duration_ms
         if record.exc_info:
             log_data["exception"] = self.formatException(record.exc_info)
+        log_buffer.append(log_data)
         return json.dumps(log_data, ensure_ascii=False)
 
 
@@ -61,6 +96,13 @@ def setup_logging(level: str = "INFO") -> None:
     audit_handler.setFormatter(logging.Formatter("%(message)s"))
     audit.addHandler(audit_handler)
     audit.setLevel(logging.INFO)
+
+    # DB persistence handler for ERROR+ logs
+    from app.utils.log_persist_handler import PersistLogHandler  # noqa: PLC0415
+
+    global persist_handler
+    persist_handler = PersistLogHandler()
+    root.addHandler(persist_handler)
 
 
 def audit_log(event: str, user_id: str, account_id: str | None = None, **kwargs) -> None:

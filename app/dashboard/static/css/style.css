@@ -597,7 +597,7 @@ html.theme-transition *::after {
   font-weight: 600;
 }
 .asset-value {
-  font-family: var(--font-mono);
+  font-family: var(--font-family);
   font-size: 1.2rem;
   font-weight: 600;
   color: var(--text);
@@ -605,7 +605,7 @@ html.theme-transition *::after {
   font-variant-numeric: tabular-nums;
 }
 .asset-sub {
-  font-family: var(--font-mono);
+  font-family: var(--font-family);
   font-size: 0.7rem;
   color: var(--text-faint);
   margin-top: 0.15rem;
@@ -635,7 +635,7 @@ html.theme-transition *::after {
   font-weight: 600;
 }
 .health-card-value {
-  font-family: var(--font-mono);
+  font-family: var(--font-family);
   font-size: 1.35rem;
   font-weight: 600;
   color: var(--text);
@@ -756,7 +756,7 @@ html.theme-transition *::after {
   margin-bottom: 0.15rem;
 }
 .kpi-value {
-  font-family: var(--font-mono);
+  font-family: var(--font-family);
   font-size: 1.75rem;
   font-weight: 700;
   color: var(--text);
@@ -976,13 +976,13 @@ html.theme-transition *::after {
 
 .pnl-positive {
   color: var(--success);
-  font-family: var(--font-mono);
+  font-family: var(--font-family);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 .pnl-negative {
   color: var(--danger);
-  font-family: var(--font-mono);
+  font-family: var(--font-family);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -1330,7 +1330,7 @@ select.form-input {
 }
 
 .combo-params {
-  font-family: var(--font-mono);
+  font-family: var(--font-family);
   font-size: 0.75rem;
 }
 
@@ -1514,7 +1514,7 @@ select.form-input {
   opacity: 1;
 }
 .earnings-total {
-  font-family: var(--font-mono);
+  font-family: var(--font-family);
   font-size: 1.05rem;
   font-weight: 600;
   margin-bottom: 0.75rem;
@@ -1622,7 +1622,7 @@ select.form-input {
   font-weight: 600;
 }
 .account-card-stat-value {
-  font-family: var(--font-mono);
+  font-family: var(--font-family);
   font-size: 0.9rem;
   font-weight: 600;
   color: var(--text);
@@ -1656,20 +1656,28 @@ select.form-input {
 /* ————————————————————————————————————————
    Enhanced Combo Cards
    ———————————————————————————————————————— */
+/* — Combo Card v2 — */
+#combos-panel {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 0.75rem;
+}
 .combo-card {
   background: var(--bg-floating);
   border: 1px solid var(--card-border);
   border-radius: var(--radius-md);
   overflow: hidden;
-  margin-bottom: 0.75rem;
-  transition: border-color 0.2s var(--ease);
+  transition: border-color 0.2s var(--ease), box-shadow 0.2s var(--ease);
 }
-.combo-card:hover { border-color: rgba(98, 75, 255, 0.25); }
+.combo-card:hover {
+  border-color: rgba(49, 130, 246, 0.3);
+  box-shadow: 0 2px 12px rgba(49, 130, 246, 0.06);
+}
 .combo-card-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.85rem 1.25rem;
+  padding: 0.75rem 1rem;
   border-bottom: 1px solid var(--card-border);
   gap: 0.5rem;
   flex-wrap: wrap;
@@ -1688,12 +1696,16 @@ select.form-input {
   gap: 0.35rem;
 }
 .combo-card-body {
-  padding: 1rem 1.25rem;
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
 }
+
+/* Strategy pills row */
 .combo-card-logic {
   display: flex;
   gap: 0.5rem;
-  margin-bottom: 0.65rem;
   flex-wrap: wrap;
 }
 .combo-logic-pill {
@@ -1719,23 +1731,202 @@ select.form-input {
   border-radius: 50%;
   background: currentColor;
 }
-.combo-card-params {
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  line-height: 1.8;
+
+/* Symbols row */
+.combo-symbols-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.15rem 0.65rem;
+  gap: 0.25rem;
+  align-items: center;
 }
-.combo-card-params strong {
-  color: var(--text-secondary);
+.combo-symbols-more {
+  font-size: 0.72rem;
+  color: var(--primary);
+  cursor: pointer;
+  padding: 0.15rem 0.45rem;
+  border-radius: var(--radius-pill);
+  background: var(--primary-light);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.combo-symbols-more:hover { background: var(--primary-soft); }
+.combo-symbols-hidden {
+  display: none;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+.combo-symbols-hidden.show { display: flex; }
+
+/* Params section — category cards */
+.combo-params-section {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.5rem;
+}
+.combo-param-card {
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+  padding: 0.55rem 0.7rem;
+  transition: background 0.15s;
+}
+.combo-param-card:hover {
+  background: var(--bg-secondary);
+}
+.combo-param-card-title {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.35rem;
+}
+.combo-param-card[data-accent="buy"] .combo-param-card-title { color: var(--success); }
+.combo-param-card[data-accent="sell"] .combo-param-card-title { color: var(--danger); }
+.combo-param-card-title svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+}
+.combo-param-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 0.15rem 0;
+  font-size: 0.75rem;
+}
+.combo-param-row + .combo-param-row {
+  border-top: 1px solid rgba(148, 163, 184, 0.08);
+}
+.combo-param-key {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+.combo-param-val {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Toggle params button */
+.combo-params-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  padding: 0.2rem 0;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.combo-params-toggle:hover { color: var(--primary); }
+.combo-params-toggle svg {
+  width: 14px;
+  height: 14px;
+  transition: transform 0.2s;
+}
+.combo-params-toggle.open svg { transform: rotate(180deg); }
+.combo-params-wrap { display: none; }
+.combo-params-wrap.open { display: block; }
+
+/* ————————————————————————————————————————
+   Protection Status (CB + Buy Pause)
+   ———————————————————————————————————————— */
+.protection-logs-row {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 1rem;
+  align-items: start;
+}
+.protection-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.protection-card {
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+  padding: 0.75rem 0.85rem;
+}
+.protection-card.prot-alert {
+  background: var(--bg-secondary);
+}
+.prot-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.prot-icon-wrap {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.prot-icon-wrap svg { width: 16px; height: 16px; }
+.prot-icon-success { background: var(--success-light); color: var(--success); }
+.prot-icon-warning { background: var(--warning-light); color: var(--warning); }
+.prot-icon-danger { background: var(--danger-light); color: var(--danger); }
+.prot-header-text { flex: 1; min-width: 0; }
+.prot-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+.prot-status {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-top: 0.1rem;
+}
+.protection-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.protection-dot.ok { background: var(--success); }
+.protection-dot.warn { background: var(--warning); animation: pulse-dot 1.5s infinite; }
+.protection-dot.danger { background: var(--danger); animation: pulse-dot 1s infinite; }
+.prot-action-btn {
+  font-size: 0.72rem !important;
+  padding: 0.25rem 0.6rem !important;
+  flex-shrink: 0;
+}
+.prot-info-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.3rem 0.5rem;
+  margin-top: 0.55rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.1);
+}
+.prot-info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.prot-info-label {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.prot-info-val {
+  font-size: 0.75rem;
+  color: var(--text);
   font-weight: 600;
 }
 
-/* ————————————————————————————————————————
-   Enhanced Status Panels
-   ———————————————————————————————————————— */
+/* Legacy compat */
 .status-card-row {
   display: flex;
   align-items: flex-start;
@@ -1782,6 +1973,7 @@ select.form-input {
   .asset-grid { grid-template-columns: 1fr 1fr; }
   .health-grid { grid-template-columns: 1fr 1fr; }
   .status-row { grid-template-columns: 1fr; }
+  .protection-logs-row { grid-template-columns: 1fr; }
   .tune-panels { grid-template-columns: 1fr; }
   .topbar { padding: 0 1rem; }
   .dashboard-section { padding: 1.25rem; }

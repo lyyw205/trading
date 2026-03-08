@@ -178,8 +178,7 @@ async function loadAccountDashboard(accountId) {
     loadPriceChart(accountId, 'price-chart'),
     loadAssetStatus(accountId),
     loadCombosAndLots(accountId),
-    loadCircuitBreaker(accountId),
-    loadBuyPauseStatus(accountId),
+    loadProtectionStatus(accountId),
   ]);
 }
 
@@ -588,7 +587,7 @@ function _renderCombosPanel(accountId) {
   if (!container) return;
 
   if (!_combos.length) {
-    container.innerHTML = '<p style="color:#94a3b8;">No combos configured. Click "+ New Combo" to create one.</p>';
+    container.innerHTML = '<p style="color:#94a3b8;">콤보가 없습니다. "+ New Combo"를 클릭하여 생성하세요.</p>';
     return;
   }
 
@@ -598,17 +597,54 @@ function _renderCombosPanel(accountId) {
     const enabledClass = combo.is_enabled ? 'badge-success' : 'badge-neutral';
     const enabledText = combo.is_enabled ? 'ON' : 'OFF';
 
-    let paramsHtml = '';
     const bpKeys = Object.keys(combo.buy_params || {}).filter(k => !k.startsWith('_'));
     const spKeys = Object.keys(combo.sell_params || {});
-    if (bpKeys.length) paramsHtml += bpKeys.map(k => '<span>' + escapeHtml(k) + ': <strong>' + escapeHtml(String(combo.buy_params[k])) + '</strong></span>').join('');
-    if (spKeys.length) paramsHtml += spKeys.map(k => '<span>' + escapeHtml(k) + ': <strong>' + escapeHtml(String(combo.sell_params[k])) + '</strong></span>').join('');
+    const totalParams = bpKeys.length + spKeys.length;
 
-    const symbolsHtml = (combo.symbols && combo.symbols.length)
-      ? '<div style="display:flex;flex-wrap:wrap;gap:0.25rem;margin-top:0.4rem;">' +
-        combo.symbols.map(s => `<span class="symbol-tag">${escapeHtml(s)}</span>`).join('') +
-        '</div>'
-      : '';
+    let symbolsHtml = '';
+    if (combo.symbols && combo.symbols.length) {
+      const MAX_SHOW = 5;
+      const syms = combo.symbols;
+      const visible = syms.slice(0, MAX_SHOW).map(s => `<span class="symbol-tag">${escapeHtml(s)}</span>`).join('');
+      const moreId = 'combo-syms-' + combo.id;
+      const hidden = syms.length > MAX_SHOW
+        ? `<span class="combo-symbols-more" onclick="document.getElementById('${moreId}').classList.add('show');this.style.display='none'">+${syms.length - MAX_SHOW}개 더</span>` +
+          `<span class="combo-symbols-hidden" id="${moreId}">${syms.slice(MAX_SHOW).map(s => `<span class="symbol-tag">${escapeHtml(s)}</span>`).join('')}</span>`
+        : '';
+      symbolsHtml = `<div class="combo-symbols-row">${visible}${hidden}</div>`;
+    }
+
+    let paramsSection = '';
+    if (totalParams) {
+      const buyIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M2 12l10-10 10 10"/></svg>';
+      const sellIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22V2M2 12l10 10 10-10"/></svg>';
+
+      let buyCard = '';
+      if (bpKeys.length) {
+        const buyRows = bpKeys.map(k =>
+          `<div class="combo-param-row"><span class="combo-param-key">${escapeHtml(k)}</span><span class="combo-param-val">${escapeHtml(String(combo.buy_params[k]))}</span></div>`
+        ).join('');
+        buyCard = `<div class="combo-param-card" data-accent="buy"><div class="combo-param-card-title">${buyIcon} 매수 파라미터</div>${buyRows}</div>`;
+      }
+
+      let sellCard = '';
+      if (spKeys.length) {
+        const sellRows = spKeys.map(k =>
+          `<div class="combo-param-row"><span class="combo-param-key">${escapeHtml(k)}</span><span class="combo-param-val">${escapeHtml(String(combo.sell_params[k]))}</span></div>`
+        ).join('');
+        sellCard = `<div class="combo-param-card" data-accent="sell"><div class="combo-param-card-title">${sellIcon} 매도 파라미터</div>${sellRows}</div>`;
+      }
+
+      const toggleId = 'combo-params-' + combo.id;
+      paramsSection = `
+        <button class="combo-params-toggle" onclick="this.classList.toggle('open');document.getElementById('${toggleId}').classList.toggle('open')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          파라미터 ${totalParams}개
+        </button>
+        <div class="combo-params-wrap" id="${toggleId}">
+          <div class="combo-params-section">${buyCard}${sellCard}</div>
+        </div>`;
+    }
 
     return `<div class="combo-card">
       <div class="combo-card-header">
@@ -624,11 +660,11 @@ function _renderCombosPanel(accountId) {
       </div>
       <div class="combo-card-body">
         <div class="combo-card-logic">
-          <span class="combo-logic-pill combo-logic-buy"><span class="combo-logic-dot"></span> Buy: ${escapeHtml(buyMeta.display_name || combo.buy_logic_name)}</span>
-          <span class="combo-logic-pill combo-logic-sell"><span class="combo-logic-dot"></span> Sell: ${escapeHtml(sellMeta.display_name || combo.sell_logic_name)}</span>
+          <span class="combo-logic-pill combo-logic-buy"><span class="combo-logic-dot"></span> 매수: ${escapeHtml(buyMeta.display_name || combo.buy_logic_name)}</span>
+          <span class="combo-logic-pill combo-logic-sell"><span class="combo-logic-dot"></span> 매도: ${escapeHtml(sellMeta.display_name || combo.sell_logic_name)}</span>
         </div>
         ${symbolsHtml}
-        ${paramsHtml ? '<div class="combo-card-params">' + paramsHtml + '</div>' : ''}
+        ${paramsSection}
       </div>
     </div>`;
   }).join('');
@@ -1004,133 +1040,151 @@ async function deleteCombo(accountId, comboId) {
 }
 
 /* ============================================================
-   Circuit Breaker
+   Protection Status (Circuit Breaker + Buy Pause combined)
    ============================================================ */
 
-async function loadCircuitBreaker(accountId) {
-  const el = document.getElementById('circuit-breaker-panel');
+async function loadProtectionStatus(accountId) {
+  const el = document.getElementById('protection-status-panel');
   if (!el) return;
+
   try {
-    const resp = await apiFetch('/api/accounts/' + accountId);
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const data = await resp.json();
-    const tripped = !!data.circuit_breaker_tripped;
-    el.innerHTML = `
-      <div class="status-card-row">
-        <div class="status-card-icon" style="background:${tripped ? 'var(--danger-light)' : 'var(--success-light)'};color:${tripped ? 'var(--danger)' : 'var(--success)'}">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-        </div>
-        <div class="status-card-content">
-          <div class="cb-status ${tripped ? 'cb-tripped' : 'cb-ok'}">
-            <span class="cb-indicator"></span>
-            <span class="cb-label">${tripped ? 'TRIPPED - Trading Halted' : 'Normal - Trading Active'}</span>
+    const [accResp, dashResp] = await Promise.all([
+      apiFetch('/api/accounts/' + accountId),
+      apiFetch('/api/dashboard/' + accountId),
+    ]);
+    if (!accResp.ok || !dashResp.ok) throw new Error('API error');
+    const accData = await accResp.json();
+    const dashData = await dashResp.json();
+
+    const tripped = !!accData.circuit_breaker_tripped;
+    const cbFailures = accData.circuit_breaker_failures || 0;
+    const cbDisabledAt = accData.circuit_breaker_disabled_at;
+    const lastSuccess = accData.last_success_at;
+    const bp = dashData.buy_pause || { state: 'ACTIVE', reason: null, since: null, consecutive_low_balance: 0 };
+    const bpActive = bp.state === 'ACTIVE';
+    const isPaused = bp.state === 'PAUSED';
+
+    // — Buy Pause card (top) —
+    let bpDot = 'ok', bpLabel = '정상', bpColor = 'success';
+    let bpInfoRows = '';
+    let bpAction = '';
+
+    if (!bpActive) {
+      bpDot = isPaused ? 'danger' : 'warn';
+      bpLabel = isPaused ? '매수 중단' : '매수 감속';
+      bpColor = isPaused ? 'danger' : 'warning';
+      const reason = bp.reason === 'LOW_BALANCE' ? '잔고 부족' : (bp.reason || '알 수 없음');
+      const since = bp.since ? new Date(bp.since).toLocaleString() : '-';
+      const count = bp.consecutive_low_balance || 0;
+      bpInfoRows = `
+        <div class="prot-info-grid">
+          <div class="prot-info-item"><span class="prot-info-label">사유</span><span class="prot-info-val">${reason}</span></div>
+          <div class="prot-info-item"><span class="prot-info-label">발생 시점</span><span class="prot-info-val">${since}</span></div>
+          <div class="prot-info-item"><span class="prot-info-label">연속 횟수</span><span class="prot-info-val">${count}회</span></div>
+          <div class="prot-info-item"><span class="prot-info-label">상태</span><span class="prot-info-val">${isPaused ? '매도 감지 시 자동 재개' : '5사이클당 1회 매수'}</span></div>
+        </div>`;
+      bpAction = `<button class="btn btn-primary btn-sm prot-action-btn" onclick="resumeBuying('${accountId}')">매수 재개</button>`;
+    }
+
+    const bpHtml = `
+      <div class="protection-card ${!bpActive ? 'prot-alert' : ''}">
+        <div class="prot-header">
+          <div class="prot-icon-wrap prot-icon-${bpColor}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="10" y1="15" x2="10" y2="9"/><line x1="14" y1="15" x2="14" y2="9"/></svg>
           </div>
-          ${tripped ? `<button class="btn btn-danger btn-sm" style="margin-top:0.65rem;" onclick="resetCircuitBreaker('${accountId}')">Reset Circuit Breaker</button>` : ''}
+          <div class="prot-header-text">
+            <div class="prot-label">매수 일시정지</div>
+            <div class="prot-status"><span class="protection-dot ${bpDot}"></span>${bpLabel}</div>
+          </div>
+          ${bpAction}
         </div>
-      </div>
-    `;
+        ${bpInfoRows}
+      </div>`;
+
+    // — Circuit Breaker card (bottom) —
+    let cbDot = 'ok', cbLabel = '정상', cbColor = 'success';
+    let cbInfoRows = '';
+    let cbAction = '';
+
+    if (tripped) {
+      cbDot = 'danger';
+      cbLabel = '발동됨 — 거래 중단';
+      cbColor = 'danger';
+      const disabledSince = cbDisabledAt ? new Date(cbDisabledAt).toLocaleString() : '-';
+      const lastOk = lastSuccess ? new Date(lastSuccess).toLocaleString() : '-';
+      cbInfoRows = `
+        <div class="prot-info-grid">
+          <div class="prot-info-item"><span class="prot-info-label">사유</span><span class="prot-info-val">연속 ${cbFailures}회 실패</span></div>
+          <div class="prot-info-item"><span class="prot-info-label">발동 시점</span><span class="prot-info-val">${disabledSince}</span></div>
+          <div class="prot-info-item"><span class="prot-info-label">마지막 정상 거래</span><span class="prot-info-val">${lastOk}</span></div>
+        </div>`;
+      cbAction = `<button class="btn btn-danger btn-sm prot-action-btn" onclick="resetCircuitBreaker('${accountId}')">CB 초기화</button>`;
+    } else if (cbFailures > 0) {
+      cbDot = 'warn';
+      cbLabel = '주의 (' + cbFailures + '/5 실패)';
+      cbColor = 'warning';
+      cbInfoRows = `
+        <div class="prot-info-grid">
+          <div class="prot-info-item"><span class="prot-info-label">상태</span><span class="prot-info-val">실패 누적 중 (${cbFailures}/5)</span></div>
+        </div>`;
+    }
+
+    const cbHtml = `
+      <div class="protection-card ${tripped ? 'prot-alert' : ''}">
+        <div class="prot-header">
+          <div class="prot-icon-wrap prot-icon-${cbColor}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          </div>
+          <div class="prot-header-text">
+            <div class="prot-label">서킷 브레이커</div>
+            <div class="prot-status"><span class="protection-dot ${cbDot}"></span>${cbLabel}</div>
+          </div>
+          ${cbAction}
+        </div>
+        ${cbInfoRows}
+      </div>`;
+
+    el.innerHTML = bpHtml + cbHtml;
   } catch (e) {
-    el.innerHTML = '<p class="error-text">Failed to load circuit breaker status</p>';
+    el.innerHTML = '<p class="error-text">보호 상태를 불러오지 못했습니다</p>';
   }
 }
 
 async function resetCircuitBreaker(accountId) {
-  if (!confirm('Reset circuit breaker? This will resume trading.')) return;
+  if (!confirm('서킷 브레이커를 초기화하시겠습니까? 거래가 재개됩니다.')) return;
   try {
     const resp = await apiFetch('/api/accounts/' + accountId + '/reset-circuit-breaker', {
       method: 'POST',
       headers: { 'X-CSRFToken': getCsrfToken() },
     });
     if (resp.ok) {
-      showToast('Circuit breaker reset', 'success');
-      loadCircuitBreaker(accountId);
+      showToast('서킷 브레이커가 초기화되었습니다', 'success');
+      loadProtectionStatus(accountId);
     } else {
       const err = await resp.json().catch(() => ({}));
-      showToast('Error: ' + (err.detail || 'Reset failed'), 'error');
+      showToast('오류: ' + (err.detail || '초기화 실패'), 'error');
     }
   } catch (e) {
-    showToast('Network error: ' + e.message, 'error');
-  }
-}
-
-/* ============================================================
-   Buy Pause Status
-   ============================================================ */
-
-async function loadBuyPauseStatus(accountId) {
-  const el = document.getElementById('buy-pause-panel');
-  if (!el) return;
-  try {
-    const resp = await apiFetch('/api/dashboard/' + accountId);
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const data = await resp.json();
-    const bp = data.buy_pause || { state: 'ACTIVE', reason: null, since: null, consecutive_low_balance: 0 };
-
-    if (bp.state === 'ACTIVE') {
-      el.innerHTML = `
-        <div class="status-card-row">
-          <div class="status-card-icon" style="background:var(--success-light);color:var(--success)">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-          </div>
-          <div class="status-card-content">
-            <div class="bp-status bp-ok">
-              <span class="bp-indicator"></span>
-              <span class="bp-label">Normal - Buying Active</span>
-            </div>
-          </div>
-        </div>
-      `;
-      return;
-    }
-
-    const isPaused = bp.state === 'PAUSED';
-    const stateLabel = isPaused ? 'PAUSED' : 'THROTTLED';
-    const stateClass = isPaused ? 'bp-paused' : 'bp-throttled';
-    const reasonText = bp.reason === 'LOW_BALANCE' ? 'Insufficient Balance' : (bp.reason || 'Unknown');
-    const sinceText = bp.since ? new Date(bp.since).toLocaleString() : '-';
-    const countText = bp.consecutive_low_balance || 0;
-
-    el.innerHTML = `
-      <div class="status-card-row">
-        <div class="status-card-icon" style="background:${isPaused ? 'var(--warning-light)' : 'var(--orange-light)'};color:${isPaused ? 'var(--warning)' : 'var(--orange)'}">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="10" y1="15" x2="10" y2="9"/><line x1="14" y1="15" x2="14" y2="9"/></svg>
-        </div>
-        <div class="status-card-content">
-          <div class="bp-status ${stateClass}">
-            <span class="bp-indicator"></span>
-            <span class="bp-label">${stateLabel} - ${reasonText}</span>
-          </div>
-          <div class="bp-details">
-            <div class="bp-detail-row"><span class="bp-detail-label">Since</span><span>${sinceText}</span></div>
-            <div class="bp-detail-row"><span class="bp-detail-label">Consecutive Low Balance</span><span>${countText}x</span></div>
-            ${isPaused ? '<div class="bp-detail-row"><span class="bp-detail-label">Sell Monitoring</span><span>Active (auto-resume on sell)</span></div>' : ''}
-            ${bp.state === 'THROTTLED' ? '<div class="bp-detail-row"><span class="bp-detail-label">Buy Frequency</span><span>1 per 5 cycles</span></div>' : ''}
-          </div>
-          <button class="btn btn-primary btn-sm" style="margin-top:0.65rem;" onclick="resumeBuying('${accountId}')">Resume Buying</button>
-        </div>
-      </div>
-    `;
-  } catch (e) {
-    el.innerHTML = '<p class="error-text">Failed to load buy pause status</p>';
+    showToast('네트워크 오류: ' + e.message, 'error');
   }
 }
 
 async function resumeBuying(accountId) {
-  if (!confirm('Resume buying? This will clear the pause state.')) return;
+  if (!confirm('매수를 재개하시겠습니까?')) return;
   try {
     const resp = await apiFetch('/api/accounts/' + accountId + '/buy-pause/resume', {
       method: 'POST',
       headers: { 'X-CSRFToken': getCsrfToken() },
     });
     if (resp.ok) {
-      showToast('Buying resumed', 'success');
-      loadBuyPauseStatus(accountId);
+      showToast('매수가 재개되었습니다', 'success');
+      loadProtectionStatus(accountId);
     } else {
       const err = await resp.json().catch(() => ({}));
-      showToast('Error: ' + (err.detail || 'Resume failed'), 'error');
+      showToast('오류: ' + (err.detail || '재개 실패'), 'error');
     }
   } catch (e) {
-    showToast('Network error: ' + e.message, 'error');
+    showToast('네트워크 오류: ' + e.message, 'error');
   }
 }
 

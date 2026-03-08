@@ -131,7 +131,11 @@
       <div id="bt-combo-list">
         <p style="color:var(--text-muted);text-align:center;padding:2rem 0;">No combos added yet. Click "+ Add Combo" to get started.</p>
       </div>
-      <button type="button" class="btn btn-primary btn-sm" onclick="addBtCombo()" style="margin-top:0.75rem;">+ Add Combo</button>
+      <div style="display:flex;gap:0.5rem;margin-top:0.75rem;flex-wrap:wrap;">
+        <button type="button" class="btn btn-primary btn-sm" onclick="addBtCombo()">+ Add Combo</button>
+        <button type="button" class="btn btn-outline btn-sm" onclick="openSavePresetModal()">Save Preset</button>
+        <button type="button" class="btn btn-outline btn-sm" onclick="openLoadPresetModal()">Load Preset</button>
+      </div>
       <div class="step-nav">
         <button type="button" class="btn btn-outline" onclick="goToStep(1)">Back</button>
         <button type="button" class="btn btn-primary" onclick="goToStep(3)">Next</button>
@@ -290,6 +294,45 @@
   </div>
 </div>
 <div class="modal-backdrop" id="delete-all-backdrop" style="display:none;" onclick="closeDeleteAllModal()"></div>
+
+<!-- Save Preset Modal -->
+<div class="modal" id="save-preset-modal" style="display:none;">
+  <div class="modal-dialog" style="max-width:400px;">
+    <div class="modal-header">
+      <h3 class="modal-title">Save Combo Preset</h3>
+      <button class="modal-close" onclick="closeSavePresetModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Preset Name</label>
+        <input type="text" id="preset-save-name" class="form-input" placeholder="e.g. ETH DCA Aggressive">
+      </div>
+      <p style="font-size:0.8rem;color:var(--text-muted);margin-top:0.5rem;">현재 설정된 <span id="preset-save-count">0</span>개 콤보가 저장됩니다.</p>
+    </div>
+    <div class="modal-footer" style="display:flex;gap:0.5rem;justify-content:flex-end;">
+      <button class="btn btn-outline" onclick="closeSavePresetModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitSavePreset()">Save</button>
+    </div>
+  </div>
+</div>
+<div class="modal-backdrop" id="save-preset-backdrop" style="display:none;" onclick="closeSavePresetModal()"></div>
+
+<!-- Load Preset Modal -->
+<div class="modal" id="load-preset-modal" style="display:none;">
+  <div class="modal-dialog" style="max-width:480px;">
+    <div class="modal-header">
+      <h3 class="modal-title">Load Combo Preset</h3>
+      <button class="modal-close" onclick="closeLoadPresetModal()">&times;</button>
+    </div>
+    <div class="modal-body" id="load-preset-body">
+      <div class="loading-spinner">Loading...</div>
+    </div>
+    <div class="modal-footer" style="display:flex;gap:0.5rem;justify-content:flex-end;">
+      <button class="btn btn-outline" onclick="closeLoadPresetModal()">Close</button>
+    </div>
+  </div>
+</div>
+<div class="modal-backdrop" id="load-preset-backdrop" style="display:none;" onclick="closeLoadPresetModal()"></div>
 {% endblock %}
 
 {% block scripts %}
@@ -882,6 +925,107 @@ async function submitDeleteAll() {
   if (fail === 0) showToast(`${ok}개 삭제 완료`, 'success');
   else showToast(`${ok}개 삭제, ${fail}개 실패`, 'error');
   loadBacktestHistory();
+}
+
+// ============================================================
+//  Combo Presets
+// ============================================================
+function openSavePresetModal() {
+  if (_btCombos.length === 0) { showToast('저장할 콤보가 없습니다', 'error'); return; }
+  document.getElementById('preset-save-name').value = '';
+  document.getElementById('preset-save-count').textContent = _btCombos.length;
+  document.getElementById('save-preset-modal').style.display = 'flex';
+  document.getElementById('save-preset-backdrop').style.display = 'block';
+  document.getElementById('preset-save-name').focus();
+}
+
+function closeSavePresetModal() {
+  document.getElementById('save-preset-modal').style.display = 'none';
+  document.getElementById('save-preset-backdrop').style.display = 'none';
+}
+
+async function submitSavePreset() {
+  const name = document.getElementById('preset-save-name').value.trim();
+  if (!name) { showToast('프리셋 이름을 입력하세요', 'error'); return; }
+  try {
+    const resp = await apiFetch('/api/backtest/presets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+      body: JSON.stringify({ name, combos: _btCombos }),
+    });
+    if (!resp.ok) { const err = await resp.json().catch(() => ({})); throw new Error(err.detail || 'Save failed'); }
+    showToast(`프리셋 "${name}" 저장 완료`, 'success');
+    closeSavePresetModal();
+  } catch (e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+function openLoadPresetModal() {
+  document.getElementById('load-preset-modal').style.display = 'flex';
+  document.getElementById('load-preset-backdrop').style.display = 'block';
+  _loadPresetList();
+}
+
+function closeLoadPresetModal() {
+  document.getElementById('load-preset-modal').style.display = 'none';
+  document.getElementById('load-preset-backdrop').style.display = 'none';
+}
+
+async function _loadPresetList() {
+  const body = document.getElementById('load-preset-body');
+  body.innerHTML = '<div class="loading-spinner">Loading...</div>';
+  try {
+    const resp = await apiFetch('/api/backtest/presets');
+    if (!resp.ok) throw new Error('Failed to load presets');
+    const presets = await resp.json();
+    if (!presets.length) {
+      body.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:1rem 0;">저장된 프리셋이 없습니다.</p>';
+      return;
+    }
+    body.innerHTML = '<div class="bt-combo-cards">' + presets.map(p => {
+      const comboSummary = p.combos.map(c => c.name || c.buy_logic_name).join(', ');
+      const savedDate = p.saved_at ? new Date(p.saved_at).toLocaleDateString() : '';
+      return `<div class="bt-combo-card">
+        <div class="bt-combo-card-info">
+          <div class="bt-combo-card-name">${escapeHtml(p.name)}</div>
+          <div class="bt-combo-card-detail">${escapeHtml(comboSummary)} &middot; ${p.combos.length}개 콤보 &middot; ${escapeHtml(savedDate)}</div>
+        </div>
+        <div class="bt-combo-card-actions">
+          <button class="btn btn-primary btn-sm" onclick="loadPreset('${escapeHtml(p.name)}')">Load</button>
+          <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger);" onclick="deletePreset('${escapeHtml(p.name)}')">Delete</button>
+        </div>
+      </div>`;
+    }).join('') + '</div>';
+  } catch (e) {
+    body.innerHTML = '<p class="error-text">Failed to load presets</p>';
+  }
+}
+
+async function loadPreset(name) {
+  if (_btCombos.length > 0 && !confirm('현재 콤보를 프리셋으로 교체합니다. 계속하시겠습니까?')) return;
+  try {
+    const resp = await apiFetch('/api/backtest/presets');
+    if (!resp.ok) throw new Error('Failed');
+    const presets = await resp.json();
+    const preset = presets.find(p => p.name === name);
+    if (!preset) { showToast('프리셋을 찾을 수 없습니다', 'error'); return; }
+    _btCombos = preset.combos;
+    renderBtComboList();
+    closeLoadPresetModal();
+    showToast(`프리셋 "${name}" 로드 완료`, 'success');
+  } catch (e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+async function deletePreset(name) {
+  if (!confirm(`프리셋 "${name}"을(를) 삭제하시겠습니까?`)) return;
+  try {
+    const resp = await apiFetch('/api/backtest/presets/' + encodeURIComponent(name), {
+      method: 'DELETE',
+      headers: { 'X-CSRFToken': getCsrfToken() },
+    });
+    if (!resp.ok) { const err = await resp.json().catch(() => ({})); throw new Error(err.detail || 'Delete failed'); }
+    showToast(`프리셋 "${name}" 삭제 완료`, 'success');
+    _loadPresetList();
+  } catch (e) { showToast('Error: ' + e.message, 'error'); }
 }
 
 // ============================================================

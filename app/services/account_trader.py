@@ -508,6 +508,11 @@ class AccountTrader:
                         logger.warning("Rate limited, backing off 120s: %s", e)
                         await asyncio.sleep(120)
                         continue
+                    elif err_type == ErrorType.BALANCE:
+                        # 잔고/자금 관련 에러 → CB 카운트 제외, 매수 일시정지로 라우팅
+                        logger.warning("Balance-related error (no CB count): %s", e)
+                        await asyncio.sleep(30)
+                        continue
                     else:
                         self._consecutive_failures += 1
                         logger.error("Transient error (%dx): %s", self._consecutive_failures, e)
