@@ -188,24 +188,11 @@ def upgrade() -> None:
     )
     op.create_index("idx_price_candles_5m_symbol_ts", "price_candles_5m", ["symbol", "ts_ms"], unique=True)
 
-    # is_admin() SECURITY DEFINER function (for Supabase RLS)
-    op.execute("""
-        CREATE OR REPLACE FUNCTION public.is_admin()
-        RETURNS BOOLEAN
-        LANGUAGE sql
-        SECURITY DEFINER
-        STABLE
-        AS $$
-            SELECT EXISTS (
-                SELECT 1 FROM public.user_profiles
-                WHERE id = auth.uid() AND role = 'admin'
-            );
-        $$;
-    """)
+    # is_admin() removed — was Supabase RLS specific, not needed for standalone PostgreSQL
 
 
 def downgrade() -> None:
-    op.execute("DROP FUNCTION IF EXISTS public.is_admin()")
+    # op.execute("DROP FUNCTION IF EXISTS public.is_admin()")  # removed — Supabase specific
     op.drop_table("price_candles_5m")
     op.drop_table("price_snapshots")
     op.drop_table("core_btc_history")
