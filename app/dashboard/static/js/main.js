@@ -182,53 +182,307 @@ async function loadAccountDashboard(accountId) {
   ]);
 }
 
-async function loadPriceChart(accountId, containerId) {
+// ── Price chart state (module-level for overlay re-render) ──
+let _dashChart = null;
+let _dashCandleSeries = null;
+let _dashCandleMap = null;
+let _dashTradeGroups = null;
+let _dashOverlayRAF = null;
+let _dashAccountId = null;
+let _dashContainerId = null;
+let _dashTradeEvents = null;
+let _dashCurrentInterval = '5m';
+
+// Interval → seconds mapping for candle bucketing
+const _intervalSec = { '1m': 60, '5m': 300, '1h': 3600, '1d': 86400 };
+
+async function loadPriceChart(accountId, containerId, interval) {
   const container = document.getElementById(containerId);
   if (!container || typeof LightweightCharts === 'undefined') return;
-  container.innerHTML = '';
+
+  _dashAccountId = accountId;
+  _dashContainerId = containerId;
+  _dashCurrentInterval = interval || '5m';
+
+  // Dispose previous chart
+  if (_dashChart) {
+    _dashChart.remove();
+    _dashChart = null;
+    _dashCandleSeries = null;
+  }
+
+  // Keep overlay div, clear everything else
+  const overlay = document.getElementById('trade-overlay');
+  Array.from(container.children).forEach(ch => {
+    if (ch.id !== 'trade-overlay') ch.remove();
+  });
+  if (overlay) overlay.innerHTML = '';
 
   const theme = getChartTheme();
-  const chart = LightweightCharts.createChart(container, {
+  _dashChart = LightweightCharts.createChart(container, {
     ...theme,
     crosshair: { mode: 1 },
     width: container.clientWidth,
     height: container.clientHeight || 400,
   });
 
-  const candleSeries = chart.addCandlestickSeries({
-    upColor: '#16a34a', downColor: '#dc2626',
-    borderUpColor: '#16a34a', borderDownColor: '#dc2626',
-    wickUpColor: '#16a34a', wickDownColor: '#dc2626',
+  _dashCandleSeries = _dashChart.addCandlestickSeries({
+    upColor: '#0ecb81', downColor: '#f6465d',
+    borderUpColor: '#0ecb81', borderDownColor: '#f6465d',
+    wickUpColor: '#0ecb81', wickDownColor: '#f6465d',
   });
 
+  // Fetch candles
   try {
-    const resp = await apiFetch('/api/dashboard/' + accountId + '/price_candles');
+    const resp = await apiFetch('/api/dashboard/' + accountId + '/price_candles?interval=' + _dashCurrentInterval);
     if (resp.ok) {
       const candles = await resp.json();
-      candleSeries.setData(candles);
-      chart.timeScale().fitContent();
+      // Convert ts_ms → time (unix seconds)
+      const mapped = candles.map(c => ({
+        time: Math.floor(c.ts_ms / 1000),
+        open: c.open, high: c.high, low: c.low, close: c.close,
+      }));
+      _dashCandleSeries.setData(mapped);
+      _dashChart.timeScale().fitContent();
+
+      // Build candle map for overlay
+      _dashCandleMap = {};
+      mapped.forEach(c => { _dashCandleMap[c.time] = c; });
     }
   } catch (e) { console.error('Failed to load candles', e); }
 
-  try {
-    const resp = await apiFetch('/api/dashboard/' + accountId + '/trade_events');
-    if (resp.ok) {
-      const events = await resp.json();
-      const markers = events.filter(e => e.time).map(e => ({
-        time: e.time,
-        position: e.side === 'buy' ? 'belowBar' : 'aboveBar',
-        color: e.side === 'buy' ? '#16a34a' : '#dc2626',
-        shape: e.side === 'buy' ? 'arrowUp' : 'arrowDown',
-        text: e.side === 'buy' ? ('B ' + (e.price || '')) : ('S ' + (e.price || '')),
-      }));
-      if (markers.length) candleSeries.setMarkers(markers);
-    }
-  } catch (e) { console.error('Failed to load trade events', e); }
+  // Fetch trade events (only once, cache for TF switches)
+  if (!_dashTradeEvents) {
+    try {
+      const resp = await apiFetch('/api/dashboard/' + accountId + '/trade_events');
+      if (resp.ok) _dashTradeEvents = await resp.json();
+    } catch (e) { console.error('Failed to load trade events', e); }
+  }
 
-  const resizeObs = new ResizeObserver(() => {
-    chart.applyOptions({ width: container.clientWidth });
+  // Build trade groups snapped to candle times
+  _dashTradeGroups = {};
+  if (_dashTradeEvents && _dashCandleMap) {
+    const sortedTimes = Object.keys(_dashCandleMap).map(Number).sort((a, b) => a - b);
+    const intSec = _intervalSec[_dashCurrentInterval] || 300;
+
+    function snapToCandle(t) {
+      if (_dashCandleMap[t]) return t;
+      let lo = 0, hi = sortedTimes.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (sortedTimes[mid] < t) lo = mid + 1;
+        else hi = mid;
+      }
+      const candidates = [];
+      if (lo < sortedTimes.length) candidates.push(sortedTimes[lo]);
+      if (lo > 0) candidates.push(sortedTimes[lo - 1]);
+      let best = candidates[0], bestDist = Math.abs(t - best);
+      for (const c of candidates) {
+        const d = Math.abs(t - c);
+        if (d < bestDist) { best = c; bestDist = d; }
+      }
+      return best;
+    }
+
+    _dashTradeEvents
+      .filter(e => e.time && e.price)
+      .forEach(e => {
+        let time = Math.floor(e.time / intSec) * intSec;
+        time = snapToCandle(time);
+        if (!_dashTradeGroups[time]) _dashTradeGroups[time] = [];
+        _dashTradeGroups[time].push({
+          time,
+          price: parseFloat(e.price),
+          side: (e.side || '') === 'buy' ? 'buy' : 'sell',
+          ts_ms: e.time * 1000,
+        });
+      });
+  }
+
+  // Schedule overlay render on visible range changes
+  const scheduleOverlay = () => {
+    if (_dashOverlayRAF) return;
+    _dashOverlayRAF = requestAnimationFrame(() => {
+      _dashOverlayRAF = null;
+      _renderDashTradeOverlay();
+    });
+  };
+  requestAnimationFrame(() => requestAnimationFrame(scheduleOverlay));
+  _dashChart.timeScale().subscribeVisibleTimeRangeChange(scheduleOverlay);
+  _dashChart.timeScale().subscribeVisibleLogicalRangeChange(scheduleOverlay);
+
+  // Resize handler
+  if (!window._dashResizeHandler) {
+    window._dashResizeHandler = () => {
+      if (_dashChart) {
+        const c = document.getElementById(_dashContainerId);
+        if (c) _dashChart.applyOptions({ width: c.clientWidth });
+        scheduleOverlay();
+      }
+    };
+    window.addEventListener('resize', window._dashResizeHandler);
+  }
+
+  // Timeframe selector handler
+  const tfSelector = document.getElementById('tf-selector');
+  if (tfSelector && !tfSelector._bound) {
+    tfSelector._bound = true;
+    tfSelector.addEventListener('click', (ev) => {
+      const btn = ev.target.closest('.tf-btn');
+      if (!btn) return;
+      tfSelector.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      _dashTradeEvents = null; // force re-fetch for fresh data
+      loadPriceChart(_dashAccountId, _dashContainerId, btn.dataset.tf);
+    });
+  }
+}
+
+// ── Trade overlay tooltip (shared singleton) ──
+let _dashTooltip = null;
+let _dashTtHideTimer = null;
+
+function _getDashTooltip() {
+  if (_dashTooltip) return _dashTooltip;
+  _dashTooltip = document.createElement('div');
+  _dashTooltip.className = 'chart-tooltip';
+  document.body.appendChild(_dashTooltip);
+  _dashTooltip.addEventListener('mouseenter', () => {
+    if (_dashTtHideTimer) { clearTimeout(_dashTtHideTimer); _dashTtHideTimer = null; }
   });
-  resizeObs.observe(container);
+  _dashTooltip.addEventListener('mouseleave', () => {
+    _dashTooltip.style.display = 'none';
+  });
+  return _dashTooltip;
+}
+
+function _attachDashTooltip(label, trades) {
+  label.addEventListener('mouseenter', () => {
+    if (_dashTtHideTimer) { clearTimeout(_dashTtHideTimer); _dashTtHideTimer = null; }
+    const tooltip = _getDashTooltip();
+    let html = '';
+    trades.forEach((t, i) => {
+      const d = new Date(t.ts_ms);
+      const dateStr = d.toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' });
+      const timeStr = d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
+      const sideLabel = t.side === 'buy' ? 'BUY' : 'SELL';
+      if (i > 0) html += '<div style="border-top:1px solid var(--border); margin:4px 0;"></div>';
+      html += `<div class="tt-head"><span class="tt-title ${t.side}">${sideLabel}</span><span class="tt-time ${t.side}">${dateStr} ${timeStr}</span></div>`;
+      html += '<div class="tt-body">';
+      html += `<div class="tt-row"><span class="tt-key">Price</span><span class="tt-val">${t.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>`;
+      html += '</div>';
+    });
+    tooltip.innerHTML = html;
+    tooltip.style.display = 'block';
+    const lRect = label.getBoundingClientRect();
+    const tW = tooltip.offsetWidth || 140;
+    const tH = tooltip.offsetHeight || 80;
+    let left = lRect.right + 6;
+    if (left + tW > window.innerWidth - 10) left = lRect.left - tW - 6;
+    let top = lRect.top - 8;
+    if (top + tH > window.innerHeight - 10) top = window.innerHeight - tH - 10;
+    if (top < 4) top = 4;
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${top}px`;
+  });
+  label.addEventListener('mouseleave', () => {
+    _dashTtHideTimer = setTimeout(() => {
+      const tooltip = _getDashTooltip();
+      tooltip.style.display = 'none';
+      _dashTtHideTimer = null;
+    }, 150);
+  });
+}
+
+function _renderDashTradeOverlay() {
+  const overlay = document.getElementById('trade-overlay');
+  if (!overlay || !_dashChart || !_dashCandleSeries || !_dashTradeGroups) return;
+  overlay.innerHTML = '';
+
+  const container = document.getElementById(_dashContainerId);
+  if (!container) return;
+  const rect = container.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return;
+
+  const range = _dashChart.timeScale().getVisibleRange();
+  if (!range) return;
+
+  const frag = document.createDocumentFragment();
+
+  for (const timeKey of Object.keys(_dashTradeGroups)) {
+    const time = Number(timeKey);
+    if (time < range.from || time > range.to) continue;
+
+    const x = _dashChart.timeScale().timeToCoordinate(time);
+    if (x === null || x < 0 || x > rect.width) continue;
+
+    const trades = _dashTradeGroups[timeKey];
+    const candle = _dashCandleMap[time];
+    const buys = trades.filter(t => t.side === 'buy');
+    const sells = trades.filter(t => t.side === 'sell');
+
+    // Buy group (below candle)
+    if (buys.length) {
+      const avgPrice = buys.reduce((s, t) => s + t.price, 0) / buys.length;
+      const dotY = _dashCandleSeries.priceToCoordinate(avgPrice);
+      if (dotY !== null && dotY >= 0 && dotY <= rect.height) {
+        const lowY = _dashCandleSeries.priceToCoordinate(candle ? candle.low : avgPrice);
+        const anchorY = lowY !== null ? lowY : dotY;
+
+        const dot = document.createElement('div');
+        dot.className = 'trade-dot buy';
+        dot.style.cssText = `left:${x - 3}px;top:${dotY - 3}px`;
+        frag.appendChild(dot);
+
+        const labelOffset = 14;
+        const labelY = anchorY + labelOffset;
+        const line = document.createElement('div');
+        line.className = 'trade-line';
+        line.style.cssText = `left:${x}px;top:${anchorY}px;height:${Math.max(0, labelY - anchorY)}px`;
+        frag.appendChild(line);
+
+        const label = document.createElement('div');
+        label.className = 'trade-label buy';
+        label.textContent = buys.length > 1 ? `B${buys.length}` : 'B';
+        label.style.cssText = `left:${x - 8}px;top:${labelY}px`;
+        frag.appendChild(label);
+
+        _attachDashTooltip(label, buys);
+      }
+    }
+
+    // Sell group (above candle)
+    if (sells.length) {
+      const avgPrice = sells.reduce((s, t) => s + t.price, 0) / sells.length;
+      const dotY = _dashCandleSeries.priceToCoordinate(avgPrice);
+      if (dotY !== null && dotY >= 0 && dotY <= rect.height) {
+        const highY = _dashCandleSeries.priceToCoordinate(candle ? candle.high : avgPrice);
+        const anchorY = highY !== null ? highY : dotY;
+
+        const dot = document.createElement('div');
+        dot.className = 'trade-dot sell';
+        dot.style.cssText = `left:${x - 3}px;top:${dotY - 3}px`;
+        frag.appendChild(dot);
+
+        const labelOffset = 14;
+        const labelY = anchorY - labelOffset - 12;
+        const line = document.createElement('div');
+        line.className = 'trade-line';
+        line.style.cssText = `left:${x}px;top:${labelY + 12}px;height:${Math.max(0, anchorY - (labelY + 12))}px`;
+        frag.appendChild(line);
+
+        const label = document.createElement('div');
+        label.className = 'trade-label sell';
+        label.textContent = sells.length > 1 ? `S${sells.length}` : 'S';
+        label.style.cssText = `left:${x - 8}px;top:${labelY}px`;
+        frag.appendChild(label);
+
+        _attachDashTooltip(label, sells);
+      }
+    }
+  }
+
+  overlay.appendChild(frag);
 }
 
 async function loadAssetStatus(accountId) {

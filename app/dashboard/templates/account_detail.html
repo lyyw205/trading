@@ -15,9 +15,19 @@
 <section class="dashboard-section">
   <div class="section-header">
     <h2 class="section-title">Price Chart</h2>
-    <span class="section-subtitle" id="chart-symbol"></span>
+    <div style="display:flex;align-items:center;gap:0.75rem;">
+      <span class="section-subtitle" id="chart-symbol"></span>
+      <div class="tf-selector" id="tf-selector">
+        <button class="tf-btn" data-tf="1m">1m</button>
+        <button class="tf-btn active" data-tf="5m">5m</button>
+        <button class="tf-btn" data-tf="1h">1H</button>
+        <button class="tf-btn" data-tf="1d">1D</button>
+      </div>
+    </div>
   </div>
-  <div id="price-chart" class="chart-container"></div>
+  <div id="price-chart" class="chart-container">
+    <div class="trade-overlay" id="trade-overlay"></div>
+  </div>
 </section>
 
 <!-- Section 2: Asset Status -->
@@ -281,6 +291,29 @@
 
 {% block extra_styles %}
 <style>
+.tf-selector { display:flex; gap:0.25rem; }
+.tf-btn { padding:0.25rem 0.5rem; font-size:0.72rem; font-weight:600; border:1px solid var(--border); border-radius:6px; background:transparent; color:var(--text-muted); cursor:pointer; transition:all 0.15s; }
+.tf-btn:hover { color:var(--text); border-color:var(--text-muted); }
+.tf-btn.active { background:var(--primary); color:#fff; border-color:var(--primary); }
+.chart-container { position:relative; }
+.trade-overlay { position:absolute; inset:0; pointer-events:none; z-index:3; }
+.trade-line { position:absolute; width:1px; background:var(--text-faint); opacity:0.5; }
+.trade-dot { position:absolute; width:6px; height:6px; border-radius:999px; border:1.5px solid var(--card-bg, #0b0e11); }
+.trade-dot.buy { background:#0ecb81; }
+.trade-dot.sell { background:#f6465d; }
+.trade-label { position:absolute; font-size:9px; font-weight:700; padding:1px 4px; border-radius:4px; color:var(--card-bg); white-space:nowrap; opacity:0.7; pointer-events:auto; cursor:default; transition:opacity 0.15s; }
+.trade-label:hover { opacity:1; }
+.trade-label.buy { background:#0ecb81; }
+.trade-label.sell { background:#f6465d; }
+.chart-tooltip { position:fixed; pointer-events:auto; padding:8px 10px; border-radius:10px; background:var(--bg-floating); border:1px solid var(--border); color:var(--text); font-size:12px; line-height:1.35; box-shadow:var(--shadow-lg); z-index:9999; white-space:pre-line; display:none; max-height:50vh; overflow-y:auto; }
+.chart-tooltip .tt-head { display:flex; gap:6px; align-items:baseline; margin-bottom:6px; }
+.chart-tooltip .tt-title { font-weight:500; color:var(--text-muted); }
+.chart-tooltip .tt-time { font-weight:700; }
+.chart-tooltip .tt-time.buy, .chart-tooltip .tt-title.buy { color:#0ecb81; }
+.chart-tooltip .tt-time.sell, .chart-tooltip .tt-title.sell { color:#f6465d; }
+.chart-tooltip .tt-body { display:grid; grid-template-columns:max-content 1fr; column-gap:5px; row-gap:2px; }
+.chart-tooltip .tt-key { color:var(--text-muted); }
+.chart-tooltip .tt-val { font-variant-numeric:tabular-nums; text-align:left; }
 .symbol-tags { display:flex; flex-wrap:wrap; gap:0.3rem; min-height:2rem; padding:0.3rem; border:1px solid var(--border); border-radius:6px; background:var(--bg-secondary); }
 .symbol-tag { display:inline-flex; align-items:center; gap:0.3rem; padding:0.15rem 0.5rem; border-radius:4px; background:var(--primary); color:#fff; font-size:0.8rem; font-weight:500; }
 .symbol-tag-remove { cursor:pointer; font-size:0.9rem; opacity:0.8; background:none; border:none; color:#fff; padding:0; line-height:1; }
