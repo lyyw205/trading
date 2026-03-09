@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Integer, Numeric, String, func
+from sqlalchemy import BigInteger, DateTime, Integer, Numeric, String, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -11,13 +11,15 @@ class Base(DeclarativeBase):
 class CreatedAtMixin:
     """Mixin for models that only track creation time."""
 
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class UpdatedAtMixin:
     """Mixin for models that only track last-update time."""
 
-    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class TimestampMixin(CreatedAtMixin, UpdatedAtMixin):
