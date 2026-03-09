@@ -447,4 +447,4 @@ app.include_router(pages_router)
 
 @app.get("/")
 async def root():
-    return {"status": "running", "service": "crypto-multi-trader"}
+    return RedirectResponse(url="/login", status_code=302)
