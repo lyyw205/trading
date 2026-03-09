@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build Docker image
-        run: docker build -t trading-bot:${{ github.sha }} .
+        run: docker build -f docker/Dockerfile -t trading-bot:${{ github.sha }} .
 
       - name: Push to registry
         run: |
@@ -34,10 +34,23 @@ jobs:
           key: ${{ secrets.DEPLOY_KEY }}
           script: |
             cd /opt/trading
-            docker compose pull
-            docker compose up -d --no-deps app
+
+            # 레지스트리 로그인 + 이미지 pull
+            echo "${{ secrets.REGISTRY_PASSWORD }}" | docker login ${{ secrets.REGISTRY_URL }} -u ${{ secrets.REGISTRY_USER }} --password-stdin
+            docker pull ${{ secrets.REGISTRY_URL }}/trading-bot:latest
+
+            # DB 마이그레이션
+            docker compose -f docker-compose.prod.yml run --rm app alembic upgrade head
+
+            # 앱 재시작
+            docker compose -f docker-compose.prod.yml up -d --no-deps app
+
+            # 헬스체크
             sleep 10
-            curl -f http://localhost:8000/health || (docker compose logs app --tail=50 && exit 1)
+            curl -f http://localhost:8000/health || (docker compose -f docker-compose.prod.yml logs app --tail=50 && exit 1)
+
+            # 이전 이미지 정리
+            docker image prune -f
 
       - name: Notify deployment status
         if: always()
