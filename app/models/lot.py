@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, CheckConstraint, ForeignKey, Index, Numeric, String, func
+from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, Index, Numeric, String, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -37,7 +37,7 @@ class Lot(Base):
     sell_order_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     sell_order_time_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     sell_price: Mapped[Decimal | None] = mapped_column(Numeric, nullable=True)
-    sell_time: Mapped[datetime | None] = mapped_column(nullable=True)
+    sell_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     sell_time_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     fee_usdt: Mapped[Decimal | None] = mapped_column(Numeric, nullable=True)
     net_profit_usdt: Mapped[Decimal | None] = mapped_column(Numeric, nullable=True)

@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, ForeignKey, Integer, Numeric, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
@@ -30,13 +30,13 @@ class TradingAccount(TimestampMixin, Base):
     encryption_key_version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     circuit_breaker_failures: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
-    circuit_breaker_disabled_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    circuit_breaker_disabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     auto_recovery_attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
-    last_auto_recovery_at: Mapped[datetime | None] = mapped_column(nullable=True)
-    last_success_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    last_auto_recovery_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     buy_pause_state: Mapped[str] = mapped_column(String(20), nullable=False, server_default=BuyPauseState.ACTIVE.value)
     buy_pause_reason: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    buy_pause_since: Mapped[datetime | None] = mapped_column(nullable=True)
+    buy_pause_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     consecutive_low_balance: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     pending_earnings_usdt: Mapped[Decimal] = mapped_column(Numeric, nullable=False, server_default="0")
     loop_interval_sec: Mapped[int] = mapped_column(Integer, nullable=False, server_default="60")
