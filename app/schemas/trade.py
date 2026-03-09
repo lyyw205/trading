@@ -21,6 +21,13 @@ class LotResponse(BaseModel):
     sell_time: datetime | None
     fee_usdt: float | None
     net_profit_usdt: float | None
+    # Computed fields for dashboard
+    strategy: str | None = None
+    qty: float | None = None
+    cost_usdt: float | None = None
+    current_price: float | None = None
+    pnl_pct: float | None = None
+    sell_order_status: str | None = None
 
     model_config = {"from_attributes": True}
 

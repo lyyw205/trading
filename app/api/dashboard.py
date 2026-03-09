@@ -189,7 +189,49 @@ async def get_lots(
         .limit(limit)
     )
     result = await session.execute(stmt)
-    return [LotResponse.model_validate(lot) for lot in result.scalars().all()]
+    lots_list = list(result.scalars().all())
+
+    # Enrich with computed fields
+    engine = request.app.state.trading_engine
+    price_cache: dict[str, float] = {}
+    # Batch fetch sell order statuses
+    sell_order_ids = [lot.sell_order_id for lot in lots_list if lot.sell_order_id]
+    sell_order_map: dict[int, str] = {}
+    if sell_order_ids:
+        order_stmt = select(Order.order_id, Order.status).where(
+            Order.account_id == account.id, Order.order_id.in_(sell_order_ids)
+        )
+        order_rows = await session.execute(order_stmt)
+        sell_order_map = {row.order_id: row.status for row in order_rows}
+
+    responses = []
+    for lot in lots_list:
+        sym = lot.symbol
+        if sym not in price_cache:
+            try:
+                price_cache[sym] = await engine.get_current_price(sym)
+            except Exception:
+                price_cache[sym] = 0.0
+        cur_price = price_cache[sym]
+        buy_price = float(lot.buy_price)
+        buy_qty = float(lot.buy_qty)
+        cost_usdt = round(buy_price * buy_qty, 2)
+        pnl_pct = round((cur_price - buy_price) / buy_price * 100, 2) if buy_price > 0 else None
+
+        sell_status = None
+        if lot.sell_order_id:
+            sell_status = sell_order_map.get(lot.sell_order_id, "UNKNOWN")
+
+        resp = LotResponse.model_validate(lot)
+        resp.strategy = lot.strategy_name
+        resp.qty = buy_qty
+        resp.cost_usdt = cost_usdt
+        resp.current_price = cur_price
+        resp.pnl_pct = pnl_pct
+        resp.sell_order_status = sell_status
+        responses.append(resp)
+
+    return responses
 
 
 @router.get("/{account_id}/trades", response_model=list[OrderResponse])
