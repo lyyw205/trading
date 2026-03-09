@@ -33,8 +33,8 @@ COPY scripts ./scripts
 COPY alembic.ini* ./
 COPY alembic* ./alembic/
 
-# Non-root user for security
-RUN useradd --create-home --shell /bin/bash appuser
+# Create data directory and non-root user for security
+RUN mkdir -p /app/data && useradd --create-home --shell /bin/bash appuser && chown -R appuser:appuser /app/data
 USER appuser
 
 EXPOSE 8000
