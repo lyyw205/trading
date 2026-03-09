@@ -178,7 +178,14 @@ async def get_lots(
         filters.append(Lot.combo_id == combo_id)
     elif strategy:
         filters.append(Lot.strategy_name == strategy)
-    stmt = select(Lot).options(defer(Lot.metadata_)).where(*filters).order_by(Lot.lot_id.desc()).offset(offset).limit(limit)
+    stmt = (
+        select(Lot)
+        .options(defer(Lot.metadata_))
+        .where(*filters)
+        .order_by(Lot.lot_id.desc())
+        .offset(offset)
+        .limit(limit)
+    )
     result = await session.execute(stmt)
     return [LotResponse.model_validate(lot) for lot in result.scalars().all()]
 
@@ -191,7 +198,13 @@ async def get_trades(
     account=Depends(get_owned_account),
     session: AsyncSession = Depends(get_trading_session),
 ):
-    stmt = select(Order).options(defer(Order.raw_json)).where(Order.account_id == account.id).order_by(Order.update_time_ms.desc()).limit(limit)
+    stmt = (
+        select(Order)
+        .options(defer(Order.raw_json))
+        .where(Order.account_id == account.id)
+        .order_by(Order.update_time_ms.desc())
+        .limit(limit)
+    )
     result = await session.execute(stmt)
     return [OrderResponse.model_validate(o) for o in result.scalars().all()]
 
@@ -278,7 +291,13 @@ async def get_trade_events(
     session: AsyncSession = Depends(get_trading_session),
 ):
     """Return recent fills as chart markers (time, side, price)."""
-    stmt = select(Fill).options(defer(Fill.raw_json)).where(Fill.account_id == account.id).order_by(Fill.trade_time_ms.desc()).limit(limit)
+    stmt = (
+        select(Fill)
+        .options(defer(Fill.raw_json))
+        .where(Fill.account_id == account.id)
+        .order_by(Fill.trade_time_ms.desc())
+        .limit(limit)
+    )
     result = await session.execute(stmt)
     fills = result.scalars().all()
 

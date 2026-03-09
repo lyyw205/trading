@@ -80,9 +80,7 @@ class PersistLogHandler(logging.Handler):
                 "account_id": account_id,
                 "module": record.module[:100] if record.module else None,
                 "message": _mask_sensitive(record.getMessage()),
-                "exception": _mask_sensitive(
-                    self.formatException(record.exc_info) if record.exc_info else None
-                ),
+                "exception": _mask_sensitive(self.formatException(record.exc_info) if record.exc_info else None),
                 "extra": {},
             }
 

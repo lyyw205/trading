@@ -117,13 +117,15 @@ async def get_backtest_status(
     run = await session.get(
         BacktestRun,
         run_id,
-        options=[load_only(
-            BacktestRun.id,
-            BacktestRun.status,
-            BacktestRun.error_message,
-            BacktestRun.started_at,
-            BacktestRun.completed_at,
-        )],
+        options=[
+            load_only(
+                BacktestRun.id,
+                BacktestRun.status,
+                BacktestRun.error_message,
+                BacktestRun.started_at,
+                BacktestRun.completed_at,
+            )
+        ],
     )
     if not run:
         raise HTTPException(status_code=404, detail="Backtest not found")
@@ -427,8 +429,7 @@ async def list_presets(
     """List all saved combo presets."""
     presets = await asyncio.to_thread(_load_presets)
     return [
-        BacktestPresetOut(name=name, combos=p["combos"], saved_at=p.get("saved_at", ""))
-        for name, p in presets.items()
+        BacktestPresetOut(name=name, combos=p["combos"], saved_at=p.get("saved_at", "")) for name, p in presets.items()
     ]
 
 

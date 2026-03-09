@@ -29,7 +29,9 @@ class PersistentLog(Base):
     logged_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     level: Mapped[str] = mapped_column(String(10), nullable=False)
     account_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("trading_accounts.id", ondelete="SET NULL"), nullable=True,
+        UUID(as_uuid=True),
+        ForeignKey("trading_accounts.id", ondelete="SET NULL"),
+        nullable=True,
     )
     module: Mapped[str | None] = mapped_column(String(100), nullable=True)
     message: Mapped[str] = mapped_column(Text, nullable=False)

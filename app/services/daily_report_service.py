@@ -43,7 +43,13 @@ class DailyReportService:
         """
         # report_date KST 00:00 = (report_date - 1 day) UTC 15:00
         period_end_utc = datetime(
-            report_date.year, report_date.month, report_date.day, 15, 0, 0, tzinfo=UTC,
+            report_date.year,
+            report_date.month,
+            report_date.day,
+            15,
+            0,
+            0,
+            tzinfo=UTC,
         ) - timedelta(days=1)
         period_start_utc = period_end_utc - timedelta(days=1)
 
@@ -55,9 +61,7 @@ class DailyReportService:
         try:
             async with TradingSessionLocal() as session:
                 # Check if report already exists
-                existing = await session.execute(
-                    select(DailyReport).where(DailyReport.report_date == report_date)
-                )
+                existing = await session.execute(select(DailyReport).where(DailyReport.report_date == report_date))
                 if existing.scalar_one_or_none():
                     logger.info("Report for %s already exists, skipping", report_date)
                     return None
@@ -110,9 +114,11 @@ class DailyReportService:
                         PersistentLog.account_id,
                         func.count().filter(PersistentLog.level == "ERROR").label("errors"),
                         func.count().filter(PersistentLog.level == "CRITICAL").label("criticals"),
-                        func.count().filter(
+                        func.count()
+                        .filter(
                             PersistentLog.message.contains(CB_PATTERN),
-                        ).label("cb_cnt"),
+                        )
+                        .label("cb_cnt"),
                     )
                     .where(*period_filter)
                     .group_by(PersistentLog.account_id)
@@ -213,13 +219,9 @@ class DailyReportService:
         async with TradingSessionLocal() as session:
             while True:
                 sub = (
-                    select(PersistentLog.id)
-                    .where(PersistentLog.logged_at < log_cutoff)
-                    .limit(self.CLEANUP_BATCH_SIZE)
+                    select(PersistentLog.id).where(PersistentLog.logged_at < log_cutoff).limit(self.CLEANUP_BATCH_SIZE)
                 )
-                result = await session.execute(
-                    delete(PersistentLog).where(PersistentLog.id.in_(sub))
-                )
+                result = await session.execute(delete(PersistentLog).where(PersistentLog.id.in_(sub)))
                 await session.commit()
                 if result.rowcount == 0:
                     break
@@ -230,9 +232,7 @@ class DailyReportService:
 
         # Delete old reports (few records, no batching needed)
         async with TradingSessionLocal() as session:
-            result = await session.execute(
-                delete(DailyReport).where(DailyReport.report_date < report_cutoff.date())
-            )
+            result = await session.execute(delete(DailyReport).where(DailyReport.report_date < report_cutoff.date()))
             await session.commit()
             if result.rowcount:
                 logger.info("Cleaned up %d old daily reports", result.rowcount)
@@ -275,9 +275,7 @@ async def run_daily_report_loop(alert_service=None) -> None:
             if report is None:
                 # Check if it was because it already existed (not a failure)
                 async with TradingSessionLocal() as session:
-                    existing = await session.execute(
-                        select(DailyReport).where(DailyReport.report_date == today_kst)
-                    )
+                    existing = await session.execute(select(DailyReport).where(DailyReport.report_date == today_kst))
                     existing_report = existing.scalar_one_or_none()
                     if existing_report and alert_service:
                         # Report exists, try sending telegram if not sent

@@ -111,9 +111,7 @@ class AccountRepository:
         """Return all accounts with owner and trading_combos eagerly loaded."""
         stmt = select(TradingAccount).options(
             selectinload(TradingAccount.owner),
-            selectinload(TradingAccount.trading_combos)
-            .defer(TradingCombo.buy_params)
-            .defer(TradingCombo.sell_params),
+            selectinload(TradingAccount.trading_combos).defer(TradingCombo.buy_params).defer(TradingCombo.sell_params),
         )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())

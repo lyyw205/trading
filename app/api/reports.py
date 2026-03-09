@@ -54,9 +54,7 @@ async def get_daily_report(
     session: AsyncSession = Depends(get_trading_session),
 ) -> dict:
     """Get a specific daily report by date."""
-    result = await session.execute(
-        select(DailyReport).where(DailyReport.report_date == report_date)
-    )
+    result = await session.execute(select(DailyReport).where(DailyReport.report_date == report_date))
     report = result.scalar_one_or_none()
     if not report:
         raise HTTPException(status_code=404, detail=f"No report for {report_date}")

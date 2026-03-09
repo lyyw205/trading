@@ -28,33 +28,35 @@ logger = logging.getLogger(__name__)
 # Everything else is internal/infra noise hidden from users.
 
 _USER_VISIBLE_RE: re.Pattern[str] = re.compile(
-    "|".join((
-        # Buy/sell fills (most important)
-        r"LOT buy filled",
-        r"TREND buy filled",
-        r"INIT buy filled",
-        r"lot \d+ TP filled",
-        # Order placement
-        r"placed LOT buy order",
-        r"placed TREND buy order",
-        r"placed TP sell order",
-        # Buy pause state changes
-        r"Buy pause",
-        # Circuit breaker (trading halted)
-        r"Circuit breaker triggered",
-        r"Circuit breaker already tripped",
-        r"Auto-recovering CB",
-        # Balance/sizing warnings
-        r"buy_usdt .+ below min_trade_usdt",
-        r"Insufficient .+ balance",
-        r"notional .+ below minimum",
-        # Trading loop lifecycle
-        r"Trading loop started",
-        # Sell order status changes (user cares if cancelled/expired)
-        r"sell order \d+ for lot \d+ (CANCELED|EXPIRED)",
-        # Place order failures (user's money is affected)
-        r"place (LOT|TREND|TP) (buy|sell) failed",
-    ))
+    "|".join(
+        (
+            # Buy/sell fills (most important)
+            r"LOT buy filled",
+            r"TREND buy filled",
+            r"INIT buy filled",
+            r"lot \d+ TP filled",
+            # Order placement
+            r"placed LOT buy order",
+            r"placed TREND buy order",
+            r"placed TP sell order",
+            # Buy pause state changes
+            r"Buy pause",
+            # Circuit breaker (trading halted)
+            r"Circuit breaker triggered",
+            r"Circuit breaker already tripped",
+            r"Auto-recovering CB",
+            # Balance/sizing warnings
+            r"buy_usdt .+ below min_trade_usdt",
+            r"Insufficient .+ balance",
+            r"notional .+ below minimum",
+            # Trading loop lifecycle
+            r"Trading loop started",
+            # Sell order status changes (user cares if cancelled/expired)
+            r"sell order \d+ for lot \d+ (CANCELED|EXPIRED)",
+            # Place order failures (user's money is affected)
+            r"place (LOT|TREND|TP) (buy|sell) failed",
+        )
+    )
 )
 
 
@@ -96,6 +98,7 @@ async def get_all_logs(
 # Persistent log endpoints (DB-backed)
 # ---------------------------------------------------------------------------
 # NOTE: These must be declared BEFORE /{account_id} to avoid route shadowing.
+
 
 @router.get("/persistent")
 @limiter.limit("60/minute")
