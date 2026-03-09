@@ -173,11 +173,29 @@ async function loadAccountDashboard(accountId) {
     console.error('Failed to load account info', e);
   }
 
-  // 모든 섹션 병렬 로드
+  // Load combos first to build symbol dropdown, then chart + rest in parallel
+  await loadCombosAndLots(accountId);
+
+  // Build symbol dropdown from combos
+  const symbolSelect = document.getElementById('chart-symbol-select');
+  if (symbolSelect && _combos.length) {
+    const allSymbols = [...new Set(_combos.flatMap(c => c.symbols || []))];
+    symbolSelect.innerHTML = allSymbols.map(s =>
+      `<option value="${s}">${s.replace('USDT', '')}</option>`
+    ).join('');
+    _dashCurrentSymbol = allSymbols[0] || null;
+
+    symbolSelect.addEventListener('change', () => {
+      _dashCurrentSymbol = symbolSelect.value;
+      _dashTradeEvents = null;
+      loadPriceChart(_dashAccountId, 'price-chart', _dashCurrentInterval, _dashCurrentSymbol);
+    });
+  }
+
+  // Load remaining sections in parallel
   await Promise.allSettled([
-    loadPriceChart(accountId, 'price-chart'),
+    loadPriceChart(accountId, 'price-chart', '5m', _dashCurrentSymbol),
     loadAssetStatus(accountId),
-    loadCombosAndLots(accountId),
     loadProtectionStatus(accountId),
   ]);
 }
@@ -192,17 +210,19 @@ let _dashAccountId = null;
 let _dashContainerId = null;
 let _dashTradeEvents = null;
 let _dashCurrentInterval = '5m';
+let _dashCurrentSymbol = null;
 
 // Interval → seconds mapping for candle bucketing
 const _intervalSec = { '1m': 60, '5m': 300, '1h': 3600, '1d': 86400 };
 
-async function loadPriceChart(accountId, containerId, interval) {
+async function loadPriceChart(accountId, containerId, interval, symbol) {
   const container = document.getElementById(containerId);
   if (!container || typeof LightweightCharts === 'undefined') return;
 
   _dashAccountId = accountId;
   _dashContainerId = containerId;
   _dashCurrentInterval = interval || '5m';
+  if (symbol) _dashCurrentSymbol = symbol;
 
   // Dispose previous chart
   if (_dashChart) {
@@ -234,7 +254,9 @@ async function loadPriceChart(accountId, containerId, interval) {
 
   // Fetch candles
   try {
-    const resp = await apiFetch('/api/dashboard/' + accountId + '/price_candles?interval=' + _dashCurrentInterval);
+    let candleUrl = '/api/dashboard/' + accountId + '/price_candles?interval=' + _dashCurrentInterval;
+    if (_dashCurrentSymbol) candleUrl += '&symbol=' + encodeURIComponent(_dashCurrentSymbol);
+    const resp = await apiFetch(candleUrl);
     if (resp.ok) {
       const candles = await resp.json();
       // Convert ts_ms → time (unix seconds)
@@ -254,7 +276,9 @@ async function loadPriceChart(accountId, containerId, interval) {
   // Fetch trade events (only once, cache for TF switches)
   if (!_dashTradeEvents) {
     try {
-      const resp = await apiFetch('/api/dashboard/' + accountId + '/trade_events');
+      let eventsUrl = '/api/dashboard/' + accountId + '/trade_events';
+      if (_dashCurrentSymbol) eventsUrl += '?symbol=' + encodeURIComponent(_dashCurrentSymbol);
+      const resp = await apiFetch(eventsUrl);
       if (resp.ok) _dashTradeEvents = await resp.json();
     } catch (e) { console.error('Failed to load trade events', e); }
   }
@@ -333,7 +357,7 @@ async function loadPriceChart(accountId, containerId, interval) {
       tfSelector.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       _dashTradeEvents = null; // force re-fetch for fresh data
-      loadPriceChart(_dashAccountId, _dashContainerId, btn.dataset.tf);
+      loadPriceChart(_dashAccountId, _dashContainerId, btn.dataset.tf, _dashCurrentSymbol);
     });
   }
 }

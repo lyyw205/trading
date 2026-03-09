@@ -260,10 +260,12 @@ async def get_price_candles(
     from_ms: int = 0,
     to_ms: int = 0,
     interval: str = Query(default="5m"),
+    symbol: str | None = Query(default=None),
     account=Depends(get_owned_account),
     session: AsyncSession = Depends(get_trading_session),
 ):
-    candles = await get_candles(account.symbol, from_ms, to_ms, session, interval=interval)
+    target_symbol = symbol or account.symbol
+    candles = await get_candles(target_symbol, from_ms, to_ms, session, interval=interval)
     result = []
     for c in candles:
         d = {
@@ -362,14 +364,18 @@ async def get_asset_status(
 async def get_trade_events(
     request: Request,
     limit: int = Query(default=200, le=500),
+    symbol: str | None = Query(default=None),
     account=Depends(get_owned_account),
     session: AsyncSession = Depends(get_trading_session),
 ):
     """Return recent fills as chart markers (time, side, price)."""
+    filters = [Fill.account_id == account.id]
+    if symbol:
+        filters.append(Fill.symbol == symbol)
     stmt = (
         select(Fill)
         .options(defer(Fill.raw_json))
-        .where(Fill.account_id == account.id)
+        .where(*filters)
         .order_by(Fill.trade_time_ms.desc())
         .limit(limit)
     )
