@@ -35,9 +35,20 @@ class DashboardSummary(BaseModel):
     buy_pause: BuyPauseInfo
 
 
+class HeldSymbol(BaseModel):
+    symbol: str
+    qty: float
+    avg_entry: float
+    current_price: float
+    value_usdt: float
+    pnl_usdt: float
+    pnl_pct: float
+
+
 class AssetStatus(BaseModel):
     btc_balance: float
     usdt_balance: float
+    held_symbols: list[HeldSymbol] = []
     reserve_pool_qty: float
     reserve_pool_usdt: float
     reserve_pool_pct: float

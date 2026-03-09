@@ -15,12 +15,14 @@ from app.models.core_btc_history import CoreBtcHistory
 from app.models.fill import Fill
 from app.models.lot import Lot
 from app.models.order import Order
+from app.models.position import Position
 from app.schemas.dashboard import (
     ApproveEarningsRequest,
     ApproveEarningsResponse,
     AssetStatus,
     BuyPauseInfo,
     DashboardSummary,
+    HeldSymbol,
     PositionInfo,
 )
 from app.schemas.trade import LotResponse, OrderResponse
@@ -243,14 +245,46 @@ async def get_asset_status(
     session: AsyncSession = Depends(get_trading_session),
 ):
     """Return asset balances, reserve pool, pending earnings, and total invested."""
-    # Position-based balances (base asset qty as "btc_balance")
-    pos_repo = PositionRepository(session)
-    position = await pos_repo.get(account.id, account.symbol)
-    base_qty = float(position.qty) if position else 0.0
-
-    # Current price for USDT valuation
     engine = request.app.state.trading_engine
-    cur_price = await engine.get_current_price(account.symbol)
+
+    # Fetch all positions for this account
+    pos_stmt = select(Position).where(Position.account_id == account.id, Position.qty > 0)
+    pos_result = await session.execute(pos_stmt)
+    positions = pos_result.scalars().all()
+
+    # Build held_symbols list with current prices
+    held_symbols: list[HeldSymbol] = []
+    total_base_value_usdt = 0.0
+    for pos in positions:
+        qty = float(pos.qty)
+        avg_entry = float(pos.avg_entry)
+        cost_basis = float(pos.cost_basis_usdt)
+        try:
+            cur_price = await engine.get_current_price(pos.symbol)
+        except Exception:
+            cur_price = 0.0
+        value_usdt = round(qty * cur_price, 2) if cur_price > 0 else 0.0
+        pnl_usdt = round(value_usdt - cost_basis, 2)
+        pnl_pct = round(pnl_usdt / cost_basis * 100, 2) if cost_basis > 0 else 0.0
+        total_base_value_usdt += value_usdt
+        held_symbols.append(
+            HeldSymbol(
+                symbol=pos.symbol,
+                qty=qty,
+                avg_entry=round(avg_entry, 4),
+                current_price=round(cur_price, 4),
+                value_usdt=value_usdt,
+                pnl_usdt=pnl_usdt,
+                pnl_pct=pnl_pct,
+            )
+        )
+
+    # Legacy btc_balance: primary symbol position
+    primary_pos = next((p for p in positions if p.symbol == account.symbol), None)
+    base_qty = float(primary_pos.qty) if primary_pos else 0.0
+    primary_price = await engine.get_current_price(account.symbol) if not held_symbols else 0.0
+    if held_symbols:
+        primary_price = next((h.current_price for h in held_symbols if h.symbol == account.symbol), 0.0)
 
     # Reserve pool
     account_state = AccountStateManager(account.id, session)
@@ -267,13 +301,12 @@ async def get_asset_status(
     result = await session.execute(stmt)
     total_invested = float(result.scalar_one())
 
-    # USDT balance estimate: if we know position, usdt = cost_basis portion not in open lots
-    # Simple approach: show base asset value as btc_balance, cost_basis as usdt equivalent
     reserve_pct = min(round(reserve_cost / total_invested * 100, 1), 999.9) if total_invested > 1.0 else 0
 
     return AssetStatus(
         btc_balance=base_qty,
-        usdt_balance=round(base_qty * cur_price, 2) if cur_price > 0 else 0,
+        usdt_balance=round(base_qty * primary_price, 2) if primary_price > 0 else 0,
+        held_symbols=held_symbols,
         reserve_pool_qty=reserve_qty,
         reserve_pool_usdt=reserve_cost,
         reserve_pool_pct=reserve_pct,

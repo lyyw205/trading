@@ -238,29 +238,71 @@ async function loadAssetStatus(accountId) {
     const resp = await apiFetch('/api/dashboard/' + accountId + '/asset_status');
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
-    el.innerHTML = `
+    // Build held symbols cards
+    const symbols = data.held_symbols || [];
+    let symbolsHtml = '';
+    if (symbols.length > 0) {
+      const totalValue = symbols.reduce((s, h) => s + h.value_usdt, 0);
+      symbolsHtml = `
+      <div class="asset-card" style="grid-column: 1 / -1;">
+        <div class="asset-card-row" style="justify-content:space-between;align-items:center;">
+          <div style="display:flex;align-items:center;gap:0.75rem;">
+            <div class="asset-icon asset-icon-warning">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.5 8H14a2 2 0 0 1 0 4h-4.5m0-4v8m0-4H14a2 2 0 0 1 0 4H9.5m2-10v2m0 8v2"/></svg>
+            </div>
+            <div>
+              <div class="asset-label">Held Symbols</div>
+              <div class="asset-value">${fmt(totalValue, 2)} USDT</div>
+            </div>
+          </div>
+          <div class="asset-sub">${symbols.length} symbol${symbols.length > 1 ? 's' : ''}</div>
+        </div>
+        <div class="held-symbols-table" style="margin-top:0.75rem;">
+          <table style="width:100%;border-collapse:collapse;font-size:0.8rem;">
+            <thead>
+              <tr style="color:var(--text-muted);text-align:left;border-bottom:1px solid var(--card-border);">
+                <th style="padding:0.4rem 0.5rem;font-weight:600;">Symbol</th>
+                <th style="padding:0.4rem 0.5rem;font-weight:600;text-align:right;">Qty</th>
+                <th style="padding:0.4rem 0.5rem;font-weight:600;text-align:right;">Avg Entry</th>
+                <th style="padding:0.4rem 0.5rem;font-weight:600;text-align:right;">Price</th>
+                <th style="padding:0.4rem 0.5rem;font-weight:600;text-align:right;">Value</th>
+                <th style="padding:0.4rem 0.5rem;font-weight:600;text-align:right;">PnL</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${symbols.map(h => {
+                const pnlColor = h.pnl_usdt >= 0 ? 'var(--success)' : 'var(--danger, #ef4444)';
+                const pnlSign = h.pnl_usdt >= 0 ? '+' : '';
+                return `<tr style="border-bottom:1px solid var(--card-border);">
+                  <td style="padding:0.4rem 0.5rem;font-weight:600;">${h.symbol.replace('USDT','')}</td>
+                  <td style="padding:0.4rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums;">${fmt(h.qty, 6)}</td>
+                  <td style="padding:0.4rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums;">${fmt(h.avg_entry, 2)}</td>
+                  <td style="padding:0.4rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums;">${fmt(h.current_price, 2)}</td>
+                  <td style="padding:0.4rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums;">${fmt(h.value_usdt, 2)}</td>
+                  <td style="padding:0.4rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums;color:${pnlColor};">${pnlSign}${fmt(h.pnl_usdt, 2)} (${pnlSign}${h.pnl_pct}%)</td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+    } else {
+      symbolsHtml = `
       <div class="asset-card">
         <div class="asset-card-row">
           <div class="asset-icon asset-icon-warning">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.5 8H14a2 2 0 0 1 0 4h-4.5m0-4v8m0-4H14a2 2 0 0 1 0 4H9.5m2-10v2m0 8v2"/></svg>
           </div>
           <div>
-            <div class="asset-label">BTC Balance</div>
-            <div class="asset-value">${fmt(data.btc_balance, 6)}</div>
+            <div class="asset-label">Held Symbols</div>
+            <div class="asset-value">None</div>
           </div>
         </div>
-      </div>
-      <div class="asset-card">
-        <div class="asset-card-row">
-          <div class="asset-icon asset-icon-success">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-          </div>
-          <div>
-            <div class="asset-label">USDT Balance</div>
-            <div class="asset-value">${fmt(data.usdt_balance, 2)}</div>
-          </div>
-        </div>
-      </div>
+      </div>`;
+    }
+
+    el.innerHTML = `
+      ${symbolsHtml}
       <div class="asset-card">
         <div class="asset-card-row">
           <div class="asset-icon asset-icon-info">
