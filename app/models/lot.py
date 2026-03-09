@@ -31,7 +31,7 @@ class Lot(Base):
     buy_order_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     buy_price: Mapped[Decimal] = mapped_column(Numeric, nullable=False)
     buy_qty: Mapped[Decimal] = mapped_column(Numeric, nullable=False)
-    buy_time: Mapped[datetime] = mapped_column(server_default=func.now())
+    buy_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     buy_time_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     status: Mapped[str] = mapped_column(String, server_default="OPEN")
     sell_order_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)

@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, ForeignKey, Index, Numeric, String, func
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, Numeric, String, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -31,7 +31,7 @@ class Fill(Base):
     commission_asset: Mapped[str | None] = mapped_column(String, nullable=True)
     trade_time_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     raw_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    inserted_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    inserted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     account = relationship("TradingAccount", back_populates="fills")
 
