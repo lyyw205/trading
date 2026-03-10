@@ -46,8 +46,8 @@ class AccountTrader:
     단일 계정 매매 루프.
     - Strategy instances cached per account lifetime
     - StrategyStateStore + AccountStateManager for state
-    - Circuit breaker: 5 consecutive failures -> auto-disable
-    - Exponential backoff: 1s, 2s, 4s, 8s, max 60s
+    - Circuit breaker: PERMANENT 에러(API키 무효 등)만 계정 차단
+    - Transient/timeout 에러: 매수 일시정지 + 백오프, 매도 계속
     - Buy pause: 잔고 부족 시 매수만 일시정지, 매도 계속
     """
 
@@ -498,19 +498,36 @@ class AccountTrader:
             await position_repo.recompute_from_fills(self.account_id, sym)
 
     async def run_forever(self):
-        """Main trading loop with circuit breaker and exponential backoff"""
+        """Main trading loop with circuit breaker and exponential backoff.
+
+        Circuit breaker: PERMANENT 에러(API키 무효 등)만 계정 차단.
+        Transient/timeout 에러: 매수만 일시정지, trader 루프는 계속 실행.
+        """
         # Set account context early so _init_client and error logs include account_id
         token = current_account_id.set(str(self.account_id))
         try:
-            # Phase 3-A: _init_client() 실패 시 서킷 브레이커 발동
+            # Phase 3-A: _init_client() 실패 시 — PERMANENT만 CB, 나머지는 재시도
             try:
                 await self._init_client()
             except Exception as e:
-                logger.error("_init_client() failed: %s", e)
+                err_type = classify_error(e)
+                logger.error("_init_client() failed (%s): %s", err_type.name, e)
                 self._failure_history.append(f"init_client: {e}")
-                self._consecutive_failures = 5
-                await self._disable_with_circuit_breaker()
-                return
+                if err_type == ErrorType.PERMANENT:
+                    self._consecutive_failures = 5
+                    await self._disable_with_circuit_breaker()
+                    return
+                # Transient init failure — pause buying, retry after backoff
+                await self._pause_buying_on_error("init_client failed")
+                await asyncio.sleep(30)
+                # Retry init once more
+                try:
+                    await self._init_client()
+                except Exception as e2:
+                    logger.error("_init_client() retry failed: %s — CB trip", e2)
+                    self._consecutive_failures = 5
+                    await self._disable_with_circuit_breaker()
+                    return
 
             logger.info("Trading loop started")
 
@@ -523,9 +540,9 @@ class AccountTrader:
                     self._failure_history.append(f"[{self._consecutive_failures}] Timeout (180s)")
                     logger.error("step() timed out (180s), failures: %d", self._consecutive_failures)
 
-                    if self._consecutive_failures >= 5:
-                        await self._disable_with_circuit_breaker()
-                        return
+                    # 매수만 일시정지, trader 루프는 계속
+                    if self._consecutive_failures >= 3:
+                        await self._pause_buying_on_error("consecutive timeouts")
 
                     backoff = min(60, 2 ** (self._consecutive_failures - 1))
                     await asyncio.sleep(backoff)
@@ -535,28 +552,35 @@ class AccountTrader:
                     if err_type == ErrorType.PERMANENT:
                         logger.error("Permanent error, triggering CB: %s", e)
                         self._failure_history.append(f"[PERMANENT] {e}")
-                        self._consecutive_failures = 5  # immediate trip
+                        self._consecutive_failures = 5
+                        await self._disable_with_circuit_breaker()
+                        return
                     elif err_type == ErrorType.RATE_LIMIT:
                         logger.warning("Rate limited, backing off 120s: %s", e)
                         await asyncio.sleep(120)
                         continue
                     elif err_type == ErrorType.BALANCE:
-                        # 잔고/자금 관련 에러 → CB 카운트 제외, 매수 일시정지로 라우팅
                         logger.warning("Balance-related error (no CB count): %s", e)
                         await asyncio.sleep(30)
                         continue
                     else:
+                        # TRANSIENT: 매수 일시정지, trader는 계속 실행
                         self._consecutive_failures += 1
                         self._failure_history.append(f"[{self._consecutive_failures}] {err_type.name}: {e}")
                         logger.error("Transient error (%dx): %s", self._consecutive_failures, e)
 
-                    if self._consecutive_failures >= 5:
-                        await self._disable_with_circuit_breaker()
-                        return
+                        if self._consecutive_failures >= 3:
+                            await self._pause_buying_on_error(f"transient errors ({self._consecutive_failures}x)")
 
                     backoff = min(60, 2 ** (self._consecutive_failures - 1))
                     await asyncio.sleep(backoff)
                     continue
+
+                # Success — reset failure counter and resume buying if paused by errors
+                if self._consecutive_failures > 0:
+                    logger.info("Step succeeded, resetting failure counter (was %d)", self._consecutive_failures)
+                    self._consecutive_failures = 0
+                    self._failure_history.clear()
 
                 # Dynamic interval (buy-pause aware)
                 base_interval = loop_interval if loop_interval else 60
@@ -604,6 +628,28 @@ class AccountTrader:
             logger.warning("Failed to send CB alert: %s", alert_err)
 
         self._running = False
+
+    async def _pause_buying_on_error(self, reason: str):
+        """Transient 에러 시 매수만 일시정지 (매도/모니터링은 계속)."""
+        if self._buy_pause_state == BuyPauseState.PAUSED:
+            return  # already paused
+        try:
+            async with TradingSessionLocal() as session:
+                mgr = BuyPauseManager(self.account_id, session)
+                await mgr.force_pause(reason=reason)
+                await session.commit()
+            self._buy_pause_state = BuyPauseState.PAUSED
+            logger.warning("Buying paused due to errors: %s", reason)
+
+            alert = get_alert_service()
+            await alert.send_critical(
+                f"Buying paused (errors)\n"
+                f"Account: {self.account_id}\n"
+                f"Reason: {reason}\n"
+                f"Selling/monitoring continues"
+            )
+        except Exception as e:
+            logger.warning("Failed to pause buying on error: %s", e)
 
     def stop(self):
         self._running = False

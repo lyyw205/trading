@@ -114,6 +114,20 @@ class BuyPauseManager:
 
         return new_state, new_consecutive
 
+    async def force_pause(self, reason: str = "TRANSIENT_ERRORS") -> None:
+        """에러 발생 시 즉시 매수 일시정지."""
+        stmt = (
+            update(TradingAccount)
+            .where(TradingAccount.id == self._account_id)
+            .values(
+                buy_pause_state=BuyPauseState.PAUSED,
+                buy_pause_reason=reason,
+                buy_pause_since=datetime.now(UTC),
+            )
+        )
+        await self._session.execute(stmt)
+        logger.warning("Buy pause forced → PAUSED (reason=%s)", reason)
+
     async def resume(self) -> None:
         """수동 재개 — ACTIVE 전환, 카운터 리셋."""
         stmt = (
