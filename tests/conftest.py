@@ -153,9 +153,13 @@ async def app_client(db_session):
 
     app.dependency_overrides[get_trading_session] = override_get_session
 
-    # Initialize session_manager on app state (normally done in lifespan)
+    # Initialize app state services (normally done in lifespan)
     settings = GlobalConfig()
     app.state.session_manager = SessionManager(settings.session_secret_key_list)
+
+    from app.services.auth_service import AuthService
+
+    app.state.auth_service = AuthService(session_factory=TestSessionLocal)
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
