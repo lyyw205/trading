@@ -277,6 +277,21 @@ async def get_price_candles(
 
     candles = await get_candles(target_symbol, from_ms, to_ms, session, interval=interval)
 
+    # Fallback: if no candles in default range, fetch whatever exists (last 500)
+    if not candles:
+        from app.models.price_candle import PriceCandle1d, PriceCandle1h, PriceCandle1m, PriceCandle5m
+
+        _models = {"1m": PriceCandle1m, "5m": PriceCandle5m, "1h": PriceCandle1h, "1d": PriceCandle1d}
+        model = _models.get(interval, PriceCandle1m)
+        fallback_stmt = (
+            select(model)
+            .where(model.symbol == target_symbol)
+            .order_by(model.ts_ms.desc())
+            .limit(500)
+        )
+        fallback_result = await session.execute(fallback_stmt)
+        candles = list(reversed(fallback_result.scalars().all()))
+
     # Fallback: if higher-TF table is empty, aggregate from 1m on the fly
     if not candles and interval != "1m":
         raw = await get_candles(target_symbol, from_ms, to_ms, session, interval="1m")
