@@ -432,6 +432,14 @@ async function loadAlerts() {
   }
 }
 
+function _formatKST(tsStr) {
+  if (!tsStr) return '';
+  try {
+    const d = new Date(tsStr.replace(' ', 'T'));
+    return d.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  } catch (_) { return tsStr; }
+}
+
 function _relativeTime(tsStr) {
   if (!tsStr) return '';
   try {
@@ -481,7 +489,7 @@ async function loadLogs() {
 
     let html = '';
     for (const log of logs) {
-      const ts = _esc(log.ts || '');
+      const ts = _formatKST(log.ts || '');
       const lvl = log.level || 'INFO';
       const acct = log.account_id || 'system';
       const acctShort = acct.length > 12 ? acct.slice(0, 8) + '...' : acct;

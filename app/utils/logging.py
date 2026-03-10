@@ -47,7 +47,7 @@ class StructuredFormatter(logging.Formatter):
 
     def format(self, record):
         log_data = {
-            "ts": self.formatTime(record),
+            "ts": datetime.fromtimestamp(record.created, tz=UTC).strftime("%Y-%m-%d %H:%M:%S+00:00"),
             "level": record.levelname,
             "account_id": current_account_id.get(),
             "request_id": current_request_id.get(),
