@@ -1,6 +1,5 @@
 """Root conftest — DB fixtures, app factory, common test infrastructure."""
 
-import asyncio
 import os
 from unittest.mock import patch
 
@@ -16,12 +15,9 @@ TEST_DATABASE_URL = os.environ.get(
 )
 
 
-@pytest.fixture(scope="session")
-def event_loop():
-    """Create a session-scoped event loop for async fixtures."""
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
+# NOTE: No custom event_loop fixture here.
+# pytest-asyncio manages the session-scoped event loop via
+# asyncio_default_fixture_loop_scope = "session" in pyproject.toml.
 
 
 def _test_db_available() -> bool:
