@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from sqlalchemy import select
@@ -73,8 +74,8 @@ class FixedTpSell(BaseSellLogic):
         if not open_lots:
             return
 
-        tp_pct = ctx.params.get("tp_pct", 0.033)
-        min_trade_usdt = ctx.params.get("min_trade_usdt", 6.0)
+        tp_pct = Decimal(str(ctx.params.get("tp_pct", 0.033)))
+        min_trade_usdt = Decimal(str(ctx.params.get("min_trade_usdt", 6.0)))
         base_mode = ctx.params.get("base_price_update_mode", "always")
         filters = await exchange.get_symbol_filters(ctx.symbol)
 

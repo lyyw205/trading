@@ -69,6 +69,7 @@ class AccountTrader:
         self._encryption = encryption
         self._initial_symbols: set[str] = initial_symbols or set()
         self._consecutive_failures = 0
+        self._failure_history: list[str] = []  # CB 발동 시 실패 사유 포함용
         self._last_success_at: float | None = None
         # Buy pause state (in-memory, synced from DB each step)
         self._buy_pause_state: str = BuyPauseState.ACTIVE
@@ -336,6 +337,7 @@ class AccountTrader:
 
                 # Record success
                 self._consecutive_failures = 0
+                self._failure_history.clear()
                 self._last_success_at = time.time()
                 await account_repo.update_last_success(self.account_id)
                 # Reset auto recovery counter on success
@@ -479,6 +481,7 @@ class AccountTrader:
                 await self._init_client()
             except Exception as e:
                 logger.error("_init_client() failed: %s", e)
+                self._failure_history.append(f"init_client: {e}")
                 self._consecutive_failures = 5
                 await self._disable_with_circuit_breaker()
                 return
@@ -491,6 +494,7 @@ class AccountTrader:
                     loop_interval = await asyncio.wait_for(self.step(), timeout=180)
                 except TimeoutError:
                     self._consecutive_failures += 1
+                    self._failure_history.append(f"[{self._consecutive_failures}] Timeout (180s)")
                     logger.error("step() timed out (180s), failures: %d", self._consecutive_failures)
 
                     if self._consecutive_failures >= 5:
@@ -504,6 +508,7 @@ class AccountTrader:
                     err_type = classify_error(e)
                     if err_type == ErrorType.PERMANENT:
                         logger.error("Permanent error, triggering CB: %s", e)
+                        self._failure_history.append(f"[PERMANENT] {e}")
                         self._consecutive_failures = 5  # immediate trip
                     elif err_type == ErrorType.RATE_LIMIT:
                         logger.warning("Rate limited, backing off 120s: %s", e)
@@ -516,6 +521,7 @@ class AccountTrader:
                         continue
                     else:
                         self._consecutive_failures += 1
+                        self._failure_history.append(f"[{self._consecutive_failures}] {err_type.name}: {e}")
                         logger.error("Transient error (%dx): %s", self._consecutive_failures, e)
 
                     if self._consecutive_failures >= 5:
@@ -560,10 +566,12 @@ class AccountTrader:
         # Alert
         try:
             alert = get_alert_service()
+            failure_detail = "\n".join(self._failure_history[-5:]) if self._failure_history else "N/A"
             await alert.send_critical(
                 f"Circuit Breaker triggered\n"
                 f"Account: {self.account_id}\n"
                 f"Consecutive failures: {self._consecutive_failures}\n"
+                f"Failure history:\n{failure_detail}\n"
                 f"Auto recovery will attempt in 30 minutes"
             )
         except Exception as alert_err:
