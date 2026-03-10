@@ -4,7 +4,7 @@ services:
   app:
     image: ${REGISTRY_URL:-ghcr.io/iamooo}/trading-bot:${IMAGE_TAG:-latest}
     env_file:
-      - /opt/trading/.env
+      - .env
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
@@ -20,11 +20,11 @@ services:
   db:
     image: postgres:16-alpine
     env_file:
-      - /opt/trading/.env
+      - .env
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-crypto_trader}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:

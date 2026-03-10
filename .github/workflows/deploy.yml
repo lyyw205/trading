@@ -26,18 +26,29 @@ jobs:
           docker push ${{ secrets.REGISTRY_URL }}/trading-bot:${{ github.sha }}
           docker push ${{ secrets.REGISTRY_URL }}/trading-bot:latest
 
+      - name: Copy compose file to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          source: "docker/docker-compose.prod.yml"
+          target: "/opt/trading"
+          strip_components: 1
+
       - name: Deploy to server
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_KEY }}
+          envs: REGISTRY_PASSWORD,REGISTRY_URL,REGISTRY_USER
           script: |
             cd /opt/trading
 
             # 레지스트리 로그인 + 이미지 pull
-            echo "${{ secrets.REGISTRY_PASSWORD }}" | docker login ${{ secrets.REGISTRY_URL }} -u ${{ secrets.REGISTRY_USER }} --password-stdin
-            docker pull ${{ secrets.REGISTRY_URL }}/trading-bot:latest
+            echo "$REGISTRY_PASSWORD" | docker login $REGISTRY_URL -u $REGISTRY_USER --password-stdin
+            docker pull $REGISTRY_URL/trading-bot:latest
 
             # DB 마이그레이션
             docker compose -f docker-compose.prod.yml run --rm app alembic upgrade head
@@ -51,6 +62,10 @@ jobs:
 
             # 이전 이미지 정리
             docker image prune -f
+        env:
+          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+          REGISTRY_URL: ${{ secrets.REGISTRY_URL }}
+          REGISTRY_USER: ${{ secrets.REGISTRY_USER }}
 
       - name: Notify deployment status
         if: always()
