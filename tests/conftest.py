@@ -140,8 +140,10 @@ async def app_client(db_session):
     """FastAPI test client with DB session override and auth bypass."""
     from httpx import ASGITransport, AsyncClient
 
+    from app.config import GlobalConfig
     from app.db.session import get_trading_session
     from app.main import app
+    from app.services.session_manager import SessionManager
 
     TestSessionLocal = async_sessionmaker(bind=db_session.get_bind(), class_=AsyncSession, expire_on_commit=False)
 
@@ -150,6 +152,10 @@ async def app_client(db_session):
             yield session
 
     app.dependency_overrides[get_trading_session] = override_get_session
+
+    # Initialize session_manager on app state (normally done in lifespan)
+    settings = GlobalConfig()
+    app.state.session_manager = SessionManager(settings.session_secret_key_list)
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
