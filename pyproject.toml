@@ -69,6 +69,8 @@ filterwarnings = [
     "ignore::DeprecationWarning:websockets.*",
     "ignore::pydantic.warnings.PydanticDeprecatedSince20",
     "ignore::DeprecationWarning:alembic.*",
+    "ignore::ResourceWarning",
+    "ignore::pytest.PytestUnraisableExceptionWarning",
 ]
 
 [tool.coverage.run]
