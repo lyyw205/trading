@@ -16,11 +16,6 @@ TEST_DATABASE_URL = os.environ.get(
 )
 
 
-# NOTE: No custom event_loop fixture here.
-# pytest-asyncio manages the session-scoped event loop via
-# asyncio_default_fixture_loop_scope = "session" in pyproject.toml.
-
-
 def _test_db_available() -> bool:
     """Check if test database is reachable via TCP socket probe."""
     import socket
@@ -43,28 +38,27 @@ def _is_db_available() -> bool:
     return _db_available
 
 
-@pytest_asyncio.fixture(scope="session")
-async def test_db_engine():
-    """Create test database engine and run Alembic migrations once per session.
+def _make_engine():
+    """Create a disposable async engine with NullPool (no cross-loop issues)."""
+    return create_async_engine(TEST_DATABASE_URL, echo=False, poolclass=NullPool)
 
-    Uses NullPool so each connect() creates a fresh connection in the caller's
-    event loop, avoiding loop mismatch between session-scoped engine and
-    function-scoped tests.
-    """
+
+@pytest_asyncio.fixture(scope="session")
+async def _init_test_db():
+    """Create/drop tables once per session. NOT shared with test fixtures."""
     if not _is_db_available():
         pytest.skip("Test database not available (start with: docker compose --profile test up -d test-db)")
 
-    engine = create_async_engine(TEST_DATABASE_URL, echo=False, poolclass=NullPool)
-
-    # Create all tables directly (avoids asyncio.run() conflict with pytest-asyncio)
+    engine = _make_engine()
     from app.models.base import Base
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    await engine.dispose()
 
-    yield engine
+    yield
 
-    # Cleanup: drop all tables
+    engine = _make_engine()
     from app.models.base import Base
 
     async with engine.begin() as conn:
@@ -73,54 +67,51 @@ async def test_db_engine():
 
 
 @pytest_asyncio.fixture
-async def db_session(test_db_engine):
+async def db_session(_init_test_db):
     """
     Per-test async DB session with SAVEPOINT rollback.
 
-    CRITICAL: Patches TradingSessionLocal so service code uses this same
-    connection, ensuring all writes are rolled back after each test.
+    Creates its own engine in the test's event loop to avoid cross-loop issues.
+    Patches TradingSessionLocal so service code uses this same connection,
+    ensuring all writes are rolled back after each test.
     """
-    async with test_db_engine.connect() as conn:
+    engine = _make_engine()
+    async with engine.connect() as conn:
         trans = await conn.begin()
 
-        # Create a session factory bound to this specific connection
         TestSessionLocal = async_sessionmaker(bind=conn, class_=AsyncSession, expire_on_commit=False)
 
-        # Start a nested savepoint so service commit() doesn't end the outer transaction
         nested = await conn.begin_nested()
-
         session = TestSessionLocal()
 
-        # Auto-restart savepoint after each commit() from service code
         @event.listens_for(session.sync_session, "after_transaction_end")
         def restart_savepoint(session_sync, transaction):
             if transaction.nested and not transaction._parent.nested:
                 session_sync.begin_nested()
 
-        # Patch TradingSessionLocal across all modules that import it
         with patch("app.db.session.TradingSessionLocal", TestSessionLocal):
             yield session
 
-        # Cleanup
         await session.close()
         if nested.is_active:
             await nested.rollback()
         await trans.rollback()
+    await engine.dispose()
 
 
 @pytest_asyncio.fixture
-async def db_session_factory(test_db_engine):
+async def db_session_factory(_init_test_db):
     """
     Per-test async session factory with SAVEPOINT rollback.
     Use for services that create their own sessions (e.g., AuthService).
     """
-    async with test_db_engine.connect() as conn:
+    engine = _make_engine()
+    async with engine.connect() as conn:
         trans = await conn.begin()
         nested = await conn.begin_nested()
 
         TestSessionLocal = async_sessionmaker(bind=conn, class_=AsyncSession, expire_on_commit=False)
 
-        # Wrap the factory to attach savepoint-restart listener to each session
         original_call = TestSessionLocal.__call__
 
         def _patched_call(*args, **kwargs):
@@ -141,17 +132,17 @@ async def db_session_factory(test_db_engine):
         if nested.is_active:
             await nested.rollback()
         await trans.rollback()
+    await engine.dispose()
 
 
 @pytest_asyncio.fixture
-async def app_client(db_session, test_db_engine):
+async def app_client(db_session):
     """FastAPI test client with DB session override and auth bypass."""
     from httpx import ASGITransport, AsyncClient
 
     from app.db.session import get_trading_session
     from app.main import app
 
-    # Override DB dependency to use test session
     TestSessionLocal = async_sessionmaker(bind=db_session.get_bind(), class_=AsyncSession, expire_on_commit=False)
 
     async def override_get_session():
