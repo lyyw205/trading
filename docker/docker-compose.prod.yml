@@ -7,9 +7,6 @@ services:
       - .env
     ports:
       - "127.0.0.1:8000:8000"
-    depends_on:
-      db:
-        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
@@ -22,28 +19,3 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-
-  db:
-    image: postgres:16-alpine
-    env_file:
-      - .env
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-crypto_trader}
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-crypto_trader}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-volumes:
-  pgdata:

@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.account_repo import AccountRepository
 from app.db.session import get_trading_session
-from app.dependencies import get_current_user, get_owned_account, limiter
+from app.dependencies import get_current_user, get_owned_account, limiter, require_admin
 from app.schemas.account import AccountCreate, AccountListResponse, AccountResponse, AccountUpdate
 from app.services.account_service import AccountService
 from app.services.account_state_manager import AccountStateManager
@@ -25,8 +25,7 @@ async def list_accounts(
     encryption: EncryptionManager = request.app.state.encryption
     svc = AccountService(session, encryption)
     if user.get("role") == "admin":
-        repo = AccountRepository(session)
-        accounts = await repo.get_all_accounts_with_owner()
+        accounts = await svc.get_all_accounts_with_owner()
         responses = []
         for a in accounts:
             resp = AccountResponse.model_validate(a)
@@ -205,11 +204,9 @@ async def resume_buying(
 async def reset_circuit_breaker(
     account_id: UUID,
     request: Request,
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(require_admin),
     session: AsyncSession = Depends(get_trading_session),
 ):
-    if user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Admin only")
     # 계정 존재 확인
     repo = AccountRepository(session)
     account = await repo.get_by_id(account_id)

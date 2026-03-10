@@ -18,6 +18,7 @@ from app.db.position_repo import PositionRepository
 from app.db.session import TradingSessionLocal
 from app.exchange.binance_client import BinanceClient
 from app.models.account import BuyPauseState
+from app.models.fill import Fill
 from app.models.lot import Lot
 from app.models.order import Order
 from app.models.trading_combo import TradingCombo
@@ -126,7 +127,9 @@ class AccountTrader:
                 if attempt < 2:
                     logger.warning("DB connection error (attempt %d/3): %s", attempt + 1, e)
                     await asyncio.sleep(2**attempt)
-        raise last_exc
+        if last_exc is not None:
+            raise last_exc
+        raise RuntimeError(f"AccountTrader {self.account_id}: step failed after retries with no captured exception")
 
     async def _do_step(self) -> int:
         """Inner step logic. Returns loop_interval_sec for run_forever."""
@@ -213,9 +216,6 @@ class AccountTrader:
                 except Exception:
                     pass  # Sentry not configured
 
-                # Track open lot count from per-combo fetches (avoids redundant COUNT query)
-                open_lots_count_before = 0
-
                 # Buy pause manager (shares step session)
                 pause_mgr = BuyPauseManager(self.account_id, session)
                 self._buy_pause_mgr = pause_mgr
@@ -223,6 +223,24 @@ class AccountTrader:
                 # Single AccountStateManager for the entire cycle (preloaded shared scope)
                 account_state = AccountStateManager(self.account_id, session)
                 await account_state.preload()
+
+                # Buy-pause 가드: 사이클당 1회 판정 (combo x symbol 루프 밖)
+                should_buy, self._throttle_cycle = BuyPauseManager.should_attempt_buy(
+                    self._buy_pause_state,
+                    balance_ok,
+                    self._throttle_cycle,
+                )
+
+                # Snapshot open lot count BEFORE any buy/sell (account-wide, matches after query)
+                open_lots_before_stmt = (
+                    select(func.count())
+                    .select_from(Lot)
+                    .where(
+                        Lot.account_id == self.account_id,
+                        Lot.status == "OPEN",
+                    )
+                )
+                open_lots_count_before = (await session.execute(open_lots_before_stmt)).scalar_one()
 
                 for combo in combos:
                     # Get symbols from combo (fallback to account symbol)
@@ -256,8 +274,6 @@ class AccountTrader:
                             symbol,
                             combo.id,
                         )
-                        open_lots_count_before += len(open_lots)
-
                         # Buy params (inject reference_combo_id if set)
                         buy_params = buy_logic.validate_params(combo.buy_params or {})
                         if combo.reference_combo_id:
@@ -293,12 +309,7 @@ class AccountTrader:
                         )
                         await sell_logic.tick(sell_ctx, combo_state, self._client, account_state, repos, open_lots)
 
-                        # 2. 매수 (buy-pause 가드 적용)
-                        should_buy, self._throttle_cycle = BuyPauseManager.should_attempt_buy(
-                            self._buy_pause_state,
-                            balance_ok,
-                            self._throttle_cycle,
-                        )
+                        # 2. 매수 (buy-pause 가드 적용 — 사이클 단위 판정)
                         if should_buy:
                             await buy_logic.tick(buy_ctx, combo_state, self._client, account_state, repos, combo.id)
 
@@ -417,9 +428,24 @@ class AccountTrader:
                 if isinstance(res, Exception):
                     logger.warning("Order %s sync failed: %s", oid, res)
 
-        # Step 3: Sync recent fills per symbol (parallel API fetch, sequential DB upsert)
+        # Step 3: Sync recent fills per symbol (incremental fetch via last trade_id)
+        try:
+            max_id_stmt = (
+                select(Fill.symbol, func.max(Fill.trade_id))
+                .where(Fill.account_id == self.account_id, Fill.symbol.in_(symbols))
+                .group_by(Fill.symbol)
+            )
+            max_id_result = await session.execute(max_id_stmt)
+            last_trade_ids: dict[str, int] = {row[0]: row[1] for row in max_id_result.all()}
+        except Exception:
+            logger.warning("MAX(trade_id) lookup failed, falling back to full fetch")
+            last_trade_ids = {}
+
         async def _fetch_trades(sym: str):
             await self._rate_limiter.acquire(weight=5)
+            last_id = last_trade_ids.get(sym)
+            if last_id is not None:
+                return sym, await self._client.get_my_trades_from_id(sym, from_id=last_id + 1)
             return sym, await self._client.get_my_trades(sym)
 
         trade_results = await asyncio.gather(

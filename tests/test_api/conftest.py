@@ -21,7 +21,7 @@ async def authenticated_client(app_client):
     from app.services.session_manager import SessionManager
 
     settings = GlobalConfig()
-    session_mgr = SessionManager(settings.session_secret_key)
+    session_mgr = SessionManager(settings.session_secret_key_list)
 
     import uuid
 
@@ -48,7 +48,7 @@ async def admin_client(app_client):
     from app.services.session_manager import SessionManager
 
     settings = GlobalConfig()
-    session_mgr = SessionManager(settings.session_secret_key)
+    session_mgr = SessionManager(settings.session_secret_key_list)
     cookie_value = session_mgr.create_session_cookie(
         user_id=str(uuid.uuid4()),
         email="admin@example.com",

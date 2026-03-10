@@ -2,12 +2,17 @@ from uuid import UUID
 
 from fastapi import Depends, HTTPException, Request
 from slowapi import Limiter
-from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_trading_session
 
-limiter = Limiter(key_func=get_remote_address)
+
+def _get_client_ip(request: Request) -> str:
+    """Return client IP from request.client.host (set correctly by uvicorn --proxy-headers)."""
+    return request.client.host if request.client else "127.0.0.1"
+
+
+limiter = Limiter(key_func=_get_client_ip)
 
 
 def get_trading_engine(request: Request):

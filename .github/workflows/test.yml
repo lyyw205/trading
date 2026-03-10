@@ -43,7 +43,12 @@ jobs:
           cache: "pip"
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: pip install -e ".[dev,backtest]"
+
+      - name: Audit dependencies
+        run: |
+          pip install pip-audit
+          pip-audit --strict --desc || true
 
       - name: Run linter
         run: ruff check app/ tests/

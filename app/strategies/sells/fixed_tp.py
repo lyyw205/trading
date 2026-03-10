@@ -4,9 +4,6 @@ import logging
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-from sqlalchemy import select
-
-from app.models.fill import Fill
 from app.strategies.base import BaseSellLogic, RepositoryBundle, StrategyContext
 from app.strategies.registry import SellLogicRegistry
 from app.strategies.utils import extract_fee_usdt
@@ -168,11 +165,9 @@ class FixedTpSell(BaseSellLogic):
             # DB 경로에서는 fills 키가 없어 extract_fee_usdt가 0을 반환하므로,
             # Fill 테이블에서 직접 수수료를 조회한다.
             if fee_usdt == 0 and db_order:
-                fill_stmt = select(Fill.commission, Fill.commission_asset).where(
-                    Fill.account_id == ctx.account_id,
-                    Fill.order_id == lot.sell_order_id,
+                fill_rows = await repos.order.get_fills_for_order(
+                    ctx.account_id, lot.sell_order_id,
                 )
-                fill_rows = (await repos.order._session.execute(fill_stmt)).all()
                 fee_usdt = sum(
                     float(r.commission or 0)
                     for r in fill_rows

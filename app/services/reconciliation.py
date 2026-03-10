@@ -145,7 +145,9 @@ class ReconciliationService:
             if pos.qty <= 0:
                 continue
             # Extract base asset from symbol (e.g., ETHUSDT -> ETH)
-            base_asset = pos.symbol.replace("USDT", "").replace("BUSD", "")
+            from app.utils.symbol_parser import parse_symbol
+
+            base_asset, _ = parse_symbol(pos.symbol)
             ex_qty = exchange_balances.get(base_asset, 0.0)
             diff = pos.qty - ex_qty
             pct = abs(diff) / max(float(pos.qty), 1e-8)

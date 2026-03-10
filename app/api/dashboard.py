@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from typing import Literal
 from uuid import UUID
 
@@ -170,7 +171,7 @@ async def get_lots(
     request: Request,
     strategy: str | None = None,
     combo_id: UUID | None = None,
-    status: str = "OPEN",
+    status: Literal["OPEN", "CLOSED", "CANCELLED"] = "OPEN",
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     account=Depends(get_owned_account),
@@ -266,6 +267,14 @@ async def get_price_candles(
     session: AsyncSession = Depends(get_trading_session),
 ):
     target_symbol = symbol or account.symbol
+
+    # Default time range when not specified: recent candles based on interval
+    if to_ms <= 0:
+        to_ms = int(time.time() * 1000)
+    if from_ms <= 0:
+        default_spans = {"1m": 6 * 3600_000, "5m": 24 * 3600_000, "1h": 7 * 86400_000, "1d": 90 * 86400_000}
+        from_ms = to_ms - default_spans.get(interval, 24 * 3600_000)
+
     candles = await get_candles(target_symbol, from_ms, to_ms, session, interval=interval)
 
     # Fallback: if higher-TF table is empty, aggregate from 1m on the fly
@@ -278,12 +287,14 @@ async def get_price_candles(
             for c in raw:
                 key = (c.ts_ms // bucket_ms) * bucket_ms
                 if key not in buckets:
-                    buckets[key] = {"ts_ms": key, "open": float(c.open), "high": float(c.high), "low": float(c.low), "close": float(c.close)}
+                    buckets[key] = {"ts_ms": key, "open": float(c.open), "high": float(c.high), "low": float(c.low), "close": float(c.close), "volume": float(c.volume) if hasattr(c, "volume") else 0.0}
                 else:
                     b = buckets[key]
                     b["high"] = max(b["high"], float(c.high))
                     b["low"] = min(b["low"], float(c.low))
                     b["close"] = float(c.close)
+                    if hasattr(c, "volume"):
+                        b["volume"] = b.get("volume", 0.0) + float(c.volume)
             return sorted(buckets.values(), key=lambda x: x["ts_ms"])
 
     result = []
@@ -410,7 +421,7 @@ async def get_trade_events(
             {
                 "time": f.trade_time_ms // 1000,  # lightweight-charts expects unix seconds
                 "side": (f.side or "").lower(),
-                "price": float(f.price) if f.price else "",
+                "price": float(f.price) if f.price is not None else 0.0,
             }
         )
     # Sort ascending for chart markers

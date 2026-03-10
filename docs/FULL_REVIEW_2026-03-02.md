@@ -88,15 +88,15 @@ trading/
 
 **문제:** `.env`에 Supabase DB 비밀번호, Fernet 암호화 키, 세션 서명 키가 평문으로 저장되어 있습니다.
 ```
-DATABASE_URL=postgresql+asyncpg://postgres.bjivqzhvavoqwtllvwzi:superkingyw120@...
-ENCRYPTION_KEYS=4U4SaQTAN8_TeNNJsK8l6NmO2MN8SZneOE3buDfBiO0=
-SESSION_SECRET_KEY=c5NUsyZ-5biepbHoYgK4muXI1WIpz37SLxyl0Sxj51M
-INITIAL_ADMIN_PASSWORD=admin1234
+DATABASE_URL=postgresql+asyncpg://user:REDACTED@host:5432/db
+ENCRYPTION_KEYS=REDACTED
+SESSION_SECRET_KEY=REDACTED
+INITIAL_ADMIN_PASSWORD=REDACTED
 ```
 
 **조치:**
 1. 모든 키/비밀번호 즉시 로테이션
-2. `INITIAL_ADMIN_PASSWORD=admin1234` 제거 + 강력한 비밀번호로 관리자 재생성
+2. `INITIAL_ADMIN_PASSWORD` 제거 + 강력한 비밀번호로 관리자 재생성
 3. 시크릿 매니저(AWS Secrets Manager, HashiCorp Vault 등) 도입 검토
 
 ---

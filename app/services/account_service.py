@@ -68,5 +68,8 @@ class AccountService:
             account.api_secret_encrypted = self._encryption.encrypt(api_secret)
             await self._session.flush()
 
+    async def get_all_accounts_with_owner(self) -> list[TradingAccount]:
+        return await self._repo.get_all_accounts_with_owner()
+
     async def reset_circuit_breaker(self, account_id: UUID) -> None:
         await self._repo.reset_circuit_breaker(account_id)

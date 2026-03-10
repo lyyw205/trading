@@ -46,6 +46,15 @@ class OrderRepository:
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
+    async def get_fills_for_order(self, account_id: UUID, order_id: int) -> list[Fill]:
+        """특정 주문의 체결 내역 조회."""
+        stmt = select(Fill).where(
+            Fill.account_id == account_id,
+            Fill.order_id == order_id,
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
     async def insert_fill(self, account_id: UUID, order_id: int, trade_data: dict) -> None:
         """Insert from Binance trade response; ignore duplicates."""
         side = "BUY" if trade_data.get("isBuyer") else "SELL"

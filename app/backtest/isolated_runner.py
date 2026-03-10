@@ -13,20 +13,20 @@ from sqlalchemy import update
 
 import app.strategies.buys  # noqa: F401 — trigger @register decorators
 import app.strategies.sells  # noqa: F401
-from app.db.session import TradingSessionLocal  # results/status 저장용
-from app.exchange.backtest_client import BacktestClient
-from app.models.backtest_run import BacktestRun
-from app.strategies.registry import BuyLogicRegistry, SellLogicRegistry
-from backtest.mem_stores import (
+from app.backtest.mem_stores import (
     InMemoryAccountStateManager,
     InMemoryLotRepository,
     InMemoryOrderRepository,
     InMemoryStateStore,
 )
+from app.db.session import TradingSessionLocal  # results/status 저장용
+from app.exchange.backtest_client import BacktestClient
+from app.models.backtest_run import BacktestRun
+from app.strategies.registry import BuyLogicRegistry, SellLogicRegistry
 
 logger = logging.getLogger(__name__)
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 
 # Concurrency limiter: 1 at a time (module-level patch for trend.py requires serialization)
 _semaphore = asyncio.Semaphore(1)

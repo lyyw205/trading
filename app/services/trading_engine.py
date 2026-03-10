@@ -29,6 +29,24 @@ _CB_COOLDOWN_SEC = 1800  # 30 min after trip before auto-recovery
 _CB_MAX_AUTO_RETRIES = 3  # max auto-recovery attempts
 
 
+def should_attempt_recovery(
+    disabled_at: datetime | None,
+    auto_recovery_attempts: int,
+    now: datetime | None = None,
+    cooldown_sec: int = _CB_COOLDOWN_SEC,
+    max_retries: int = _CB_MAX_AUTO_RETRIES,
+) -> bool:
+    """Pure predicate: should a CB-tripped account be auto-recovered?"""
+    if disabled_at is None:
+        return False
+    if now is None:
+        now = datetime.now(UTC)
+    elapsed = (now - disabled_at).total_seconds()
+    if elapsed < cooldown_sec:
+        return False
+    return auto_recovery_attempts < max_retries
+
+
 class TradingEngine:
     """
     멀티 계정 트레이딩 엔진.
@@ -40,6 +58,7 @@ class TradingEngine:
     def __init__(self, rate_limiter: GlobalRateLimiter, encryption: EncryptionManager):
         self._traders: dict[UUID, AccountTrader] = {}
         self._tasks: dict[UUID, asyncio.Task] = {}
+        self._cb_recovery_task: asyncio.Task | None = None
         self._price_collector = PriceCollector()
         self._rate_limiter = rate_limiter
         self._encryption = encryption
@@ -69,7 +88,7 @@ class TradingEngine:
         await asyncio.gather(*[_start_with_jitter(acc, i) for i, acc in enumerate(accounts)])
 
         # Start background recovery loop
-        asyncio.create_task(self._circuit_breaker_recovery_loop())
+        self._cb_recovery_task = asyncio.create_task(self._circuit_breaker_recovery_loop())
 
     async def start_account(self, account_id: UUID):
         if account_id in self._tasks:
@@ -165,6 +184,11 @@ class TradingEngine:
 
     async def stop_all(self):
         logger.info("Stopping all traders...")
+        # Cancel CB recovery loop first
+        if self._cb_recovery_task and not self._cb_recovery_task.done():
+            self._cb_recovery_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._cb_recovery_task
         account_ids = list(self._tasks.keys())
         for aid in account_ids:
             await self.stop_account(aid)
@@ -180,13 +204,11 @@ class TradingEngine:
                     repo = AccountRepository(session)
                     tripped = await repo.get_circuit_breaker_tripped()
                     for account in tripped:
-                        if not account.circuit_breaker_disabled_at:
+                        if not should_attempt_recovery(
+                            account.circuit_breaker_disabled_at,
+                            account.auto_recovery_attempts or 0,
+                        ):
                             continue
-                        elapsed = (datetime.now(UTC) - account.circuit_breaker_disabled_at).total_seconds()
-                        if elapsed < _CB_COOLDOWN_SEC:
-                            continue
-                        if (account.auto_recovery_attempts or 0) >= _CB_MAX_AUTO_RETRIES:
-                            continue  # manual intervention needed
                         logger.info(
                             "Auto-recovering CB-tripped account %s (attempt %d)",
                             account.id,
@@ -227,6 +249,13 @@ class TradingEngine:
     async def get_current_price(self, symbol: str) -> float:
         """Public accessor for current price from PriceCollector cache."""
         return await self._price_collector.get_price(symbol)
+
+    def get_trader_client(self, account_id: UUID) -> tuple | None:
+        """Return (trader, client) for the given account, or None if not running."""
+        trader = self._traders.get(account_id)
+        if trader and trader._client:
+            return trader, trader._client
+        return None
 
     def get_ws_status(self) -> dict:
         """Public accessor for WebSocket kline manager status."""

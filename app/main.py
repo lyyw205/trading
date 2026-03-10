@@ -4,7 +4,6 @@ import asyncio
 import contextlib
 import logging
 import os
-import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 
@@ -17,8 +16,10 @@ from starlette.responses import JSONResponse, RedirectResponse
 from starlette_csrf import CSRFMiddleware
 
 from app.api.accounts import router as accounts_router
-from app.api.admin import router as admin_router
+from app.api.admin_accounts import router as admin_accounts_router
 from app.api.admin_db import router as admin_db_router
+from app.api.admin_trading import router as admin_trading_router
+from app.api.admin_users import router as admin_users_router
 from app.api.auth import router as auth_router
 from app.api.backtest import router as backtest_router
 from app.api.combos import router as combos_router
@@ -28,12 +29,16 @@ from app.api.health import router as health_router
 from app.api.logs import router as logs_router
 from app.api.metrics import router as metrics_router
 from app.api.reports import router as reports_router
+from app.api.user import router as user_router
 from app.config import get_settings
 from app.dashboard.routes import router as pages_router
 from app.db.session import TradingSessionLocal
 from app.dependencies import limiter
+from app.middleware.auth import LazyAuthMiddleware
 from app.middleware.csrf_middleware import CSRF_EXEMPT_PATHS
+from app.middleware.no_cache_html import NoCacheHTMLMiddleware
 from app.middleware.request_id import RequestIdMiddleware
+from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.services.auth_service import AuthService
 from app.services.candle_aggregator import run_aggregation_loop
 from app.services.rate_limiter import GlobalRateLimiter
@@ -105,7 +110,7 @@ async def lifespan(app: FastAPI):
     app.state.auth_service = auth_service
 
     # Initialize session manager
-    session_manager = SessionManager(settings.session_secret_key)
+    session_manager = SessionManager(settings.session_secret_key_list)
     app.state.session_manager = session_manager
 
     # Initialize alert service (Telegram)
@@ -228,133 +233,6 @@ app.add_middleware(
 )
 
 
-# AuthMiddleware added via on_startup because it needs app.state objects
-# We use a custom startup event approach with add_middleware
-# Note: AuthMiddleware is added after app creation but needs session_manager/auth_service
-# These are set in lifespan, so we use a lazy wrapper
-class LazyAuthMiddleware:
-    """Cookie session -> user injection middleware (로컬 인증 기반).
-
-    DB 검증: 쿠키 payload만 신뢰하지 않고 DB에서 최신 role/is_active를 확인.
-    TTL 60초 캐시로 매 요청마다 DB 조회하지 않음.
-    """
-
-    # Exact-match public paths (no prefix matching)
-    _PUBLIC_EXACT = {"/", "/health", "/login", "/api/auth/login", "/favicon.ico"}
-    # Prefix-match public paths (trailing slash prevents overmatch)
-    _PUBLIC_PREFIX = ("/static/", "/api/auth/")
-    _USER_CACHE_TTL = 60  # seconds
-    _USER_CACHE_MAX_SIZE = 200  # max entries to prevent unbounded growth
-    _user_cache: dict[str, tuple[float, dict | None]] = {}
-
-    def __init__(self, app):
-        self.app = app
-
-    @classmethod
-    def evict_user_cache(cls, uid: str) -> None:
-        """Remove a specific user from the auth cache (e.g. on deactivation)."""
-        cls._user_cache.pop(uid, None)
-
-    async def _validate_user_from_db(self, app_state, uid: str) -> dict | None:
-        """DB에서 사용자 조회 (TTL 캐시). 비활성/삭제 → None."""
-        now = time.time()
-        cached = self._user_cache.get(uid)
-        if cached and (now - cached[0]) < self._USER_CACHE_TTL:
-            return cached[1]
-
-        auth_service = getattr(app_state.state, "auth_service", None)
-        if not auth_service:
-            return None
-
-        db_user = await auth_service.get_user_by_id(uid)
-        # Evict oldest entries when cache exceeds max size
-        if len(self._user_cache) >= self._USER_CACHE_MAX_SIZE:
-            oldest_key = min(self._user_cache, key=lambda k: self._user_cache[k][0])
-            del self._user_cache[oldest_key]
-        self._user_cache[uid] = (now, db_user)
-        return db_user
-
-    async def __call__(self, scope, receive, send):
-        if scope["type"] not in ("http", "websocket"):
-            await self.app(scope, receive, send)
-            return
-
-        from starlette.requests import Request
-
-        request = Request(scope, receive)
-        path = request.url.path
-
-        # Public paths - skip auth
-        if path in self._PUBLIC_EXACT or any(path.startswith(p) for p in self._PUBLIC_PREFIX):
-            await self.app(scope, receive, send)
-            return
-
-        # Get services from app state (set during lifespan)
-        # fail-closed: 서비스 미초기화 시 503 반환
-        app_state = scope.get("app")
-        if not app_state:
-            response = JSONResponse({"detail": "Service initializing"}, status_code=503)
-            await response(scope, receive, send)
-            return
-
-        session_manager = getattr(app_state.state, "session_manager", None)
-        if not session_manager:
-            response = JSONResponse({"detail": "Service initializing"}, status_code=503)
-            await response(scope, receive, send)
-            return
-
-        # Extract session cookie
-        cookie_value = request.cookies.get(session_manager.cookie_name)
-        if not cookie_value:
-            response = self._unauthorized(path)
-            await response(scope, receive, send)
-            return
-
-        session_data = session_manager.read_session_cookie(cookie_value)
-        if not session_data:
-            # Legacy {"at","rt"} format or invalid → force logout
-            response = self._force_logout(path, session_manager)
-            await response(scope, receive, send)
-            return
-
-        # DB validation: 최신 role/is_active 확인
-        uid = session_data["uid"]
-        db_user = await self._validate_user_from_db(app_state, uid)
-        if not db_user:
-            # 비활성/삭제된 사용자 → 강제 로그아웃
-            response = self._force_logout(path, session_manager)
-            await response(scope, receive, send)
-            return
-
-        # DB에서 가져온 최신 정보 사용 (쿠키의 role이 아닌 DB의 role)
-        user = {
-            "id": db_user["id"],
-            "email": db_user["email"],
-            "role": db_user["role"],
-        }
-
-        # Inject user into scope state
-        scope.setdefault("state", {})
-        scope["state"]["user"] = user
-
-        await self.app(scope, receive, send)
-
-    def _unauthorized(self, path: str):
-        from starlette.responses import JSONResponse, RedirectResponse
-
-        if path.startswith("/api/"):
-            return JSONResponse({"detail": "Unauthorized"}, status_code=401)
-        return RedirectResponse(url="/login", status_code=302)
-
-    def _force_logout(self, path: str, session_manager):
-        """Legacy session format detected → clear cookie and redirect."""
-        from starlette.responses import RedirectResponse
-
-        response = RedirectResponse(url="/login", status_code=302)
-        response.delete_cookie(key=session_manager.cookie_name)
-        return response
-
-
 app.add_middleware(LazyAuthMiddleware)
 app.add_middleware(RequestIdMiddleware)
 
@@ -363,83 +241,12 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in settings.cors_origins.split(",") if o.strip()],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-CSRF-Token", "X-CSRFToken"],
 )
 
 
-# Security headers middleware
-class SecurityHeadersMiddleware:
-    """Add security headers to all responses."""
-
-    _HEADERS = [
-        (b"x-frame-options", b"DENY"),
-        (b"x-content-type-options", b"nosniff"),
-        (b"referrer-policy", b"strict-origin-when-cross-origin"),
-        (b"permissions-policy", b"camera=(), microphone=(), geolocation=()"),
-        (
-            b"content-security-policy",
-            b"default-src 'self'; "
-            b"script-src 'self' 'unsafe-inline' https://unpkg.com; "
-            b"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; "
-            b"font-src 'self' https://fonts.gstatic.com; "
-            b"img-src 'self' data:; "
-            b"connect-src 'self'; "
-            b"frame-ancestors 'none'",
-        ),
-    ]
-
-    def __init__(self, app):
-        self.app = app
-
-    async def __call__(self, scope, receive, send):
-        if scope["type"] != "http":
-            await self.app(scope, receive, send)
-            return
-
-        async def send_wrapper(message):
-            if message["type"] == "http.response.start":
-                headers = list(message.get("headers", []))
-                headers.extend(self._HEADERS)
-                message["headers"] = headers
-            await send(message)
-
-        await self.app(scope, receive, send_wrapper)
-
-
 app.add_middleware(SecurityHeadersMiddleware)
-
-
-# No-cache middleware for HTML pages (prevents stale template serving)
-class NoCacheHTMLMiddleware:
-    def __init__(self, app):
-        self.app = app
-
-    async def __call__(self, scope, receive, send):
-        if scope["type"] != "http":
-            await self.app(scope, receive, send)
-            return
-
-        async def send_wrapper(message):
-            if message["type"] == "http.response.start":
-                raw_headers = message.get("headers", [])
-                ct = b""
-                for k, v in raw_headers:
-                    if k == b"content-type":
-                        ct = v
-                        break
-                if b"text/html" in ct:
-                    extra = [
-                        (b"cache-control", b"no-cache, no-store, must-revalidate"),
-                        (b"pragma", b"no-cache"),
-                        (b"expires", b"0"),
-                    ]
-                    message["headers"] = list(raw_headers) + extra
-            await send(message)
-
-        await self.app(scope, receive, send_wrapper)
-
-
 app.add_middleware(NoCacheHTMLMiddleware)
 
 # Include API routers
@@ -448,7 +255,9 @@ app.include_router(auth_router)
 app.include_router(accounts_router)
 app.include_router(combos_router)
 app.include_router(dashboard_router)
-app.include_router(admin_router)
+app.include_router(admin_accounts_router)
+app.include_router(admin_trading_router)
+app.include_router(admin_users_router)
 app.include_router(backtest_router)
 if settings.debug or settings.environment != "production":
     app.include_router(debug_router)
@@ -456,6 +265,7 @@ app.include_router(metrics_router)
 app.include_router(admin_db_router)
 app.include_router(logs_router)
 app.include_router(reports_router)
+app.include_router(user_router)
 
 # Include SSR page routes (must be after API routers)
 app.include_router(pages_router)

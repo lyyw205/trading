@@ -5,10 +5,14 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
-from uuid import uuid4
 
 import pytest
 
+from app.services.trading_engine import (
+    _CB_COOLDOWN_SEC,
+    _CB_MAX_AUTO_RETRIES,
+    should_attempt_recovery,
+)
 from app.utils.error_classification import ErrorType, classify_error
 
 
@@ -32,39 +36,22 @@ class TestErrorClassification:
         assert classify_error(RuntimeError("something broke")) == ErrorType.TRANSIENT
 
     def test_binance_rate_limit(self):
-        """Binance -1015 (too many requests) → RATE_LIMIT."""
+        """Binance -1015 (too many requests) -> RATE_LIMIT."""
         try:
             from binance.exceptions import BinanceAPIException
 
-            exc = BinanceAPIException(
-                MagicMock(status_code=429, text="", headers={}), code=-1015, message="Too many requests"
-            )
-            # BinanceAPIException constructor varies; try direct attribute set
-        except (ImportError, TypeError):
-            pytest.skip("binance not installed or API changed")
-            return
-        exc = MagicMock(spec=Exception)
-        exc.__class__ = type("BinanceAPIException", (Exception,), {})
-        exc.code = -1015
-        # Since we mock, we need to actually test the real classify_error
-        # Just verify the logic paths with a real BinanceAPIException if available
-        try:
-            from binance.exceptions import BinanceAPIException
-
-            # Create a mock response
             mock_response = MagicMock()
             mock_response.status_code = 429
             mock_response.text = '{"code": -1015, "msg": "Too many requests"}'
             mock_response.headers = {}
             exc = BinanceAPIException(mock_response)
             exc.code = -1015
-            result = classify_error(exc)
-            assert result == ErrorType.RATE_LIMIT
+            assert classify_error(exc) == ErrorType.RATE_LIMIT
         except (ImportError, TypeError):
             pytest.skip("Cannot construct BinanceAPIException")
 
     def test_binance_invalid_api_key(self):
-        """Binance -2015 (invalid API key) → PERMANENT."""
+        """Binance -2015 (invalid API key) -> PERMANENT."""
         try:
             from binance.exceptions import BinanceAPIException
 
@@ -74,13 +61,12 @@ class TestErrorClassification:
             mock_response.headers = {}
             exc = BinanceAPIException(mock_response)
             exc.code = -2015
-            result = classify_error(exc)
-            assert result == ErrorType.PERMANENT
+            assert classify_error(exc) == ErrorType.PERMANENT
         except (ImportError, TypeError):
             pytest.skip("Cannot construct BinanceAPIException")
 
     def test_binance_network_error(self):
-        """Binance -1001 (disconnected) → TRANSIENT."""
+        """Binance -1001 (disconnected) -> TRANSIENT."""
         try:
             from binance.exceptions import BinanceAPIException
 
@@ -90,82 +76,80 @@ class TestErrorClassification:
             mock_response.headers = {}
             exc = BinanceAPIException(mock_response)
             exc.code = -1001
-            result = classify_error(exc)
-            assert result == ErrorType.TRANSIENT
+            assert classify_error(exc) == ErrorType.TRANSIENT
         except (ImportError, TypeError):
             pytest.skip("Cannot construct BinanceAPIException")
 
+    def test_balance_insufficient_funds(self):
+        """Binance -2010 (insufficient balance) -> BALANCE."""
+        try:
+            from binance.exceptions import BinanceAPIException
+
+            mock_response = MagicMock()
+            mock_response.status_code = 400
+            mock_response.text = '{"code": -2010, "msg": "Insufficient balance"}'
+            mock_response.headers = {}
+            exc = BinanceAPIException(mock_response)
+            exc.code = -2010
+            assert classify_error(exc) == ErrorType.BALANCE
+        except (ImportError, TypeError):
+            pytest.skip("Cannot construct BinanceAPIException")
+
+    def test_balance_message_based(self):
+        """Non-Binance exception with balance keywords -> BALANCE."""
+        assert classify_error(RuntimeError("insufficient funds for order")) == ErrorType.BALANCE
+        assert classify_error(RuntimeError("below minimum notional, min notional check failed")) == ErrorType.BALANCE
+
 
 # ============================================================
-#  Circuit Breaker Auto-Recovery
+#  Circuit Breaker Auto-Recovery (calls production code)
 # ============================================================
 class TestCircuitBreakerRecovery:
-    @pytest.fixture
-    def mock_account(self):
-        account = MagicMock()
-        account.id = uuid4()
-        account.circuit_breaker_disabled_at = datetime.now(UTC) - timedelta(minutes=40)
-        account.auto_recovery_attempts = 0
-        account.circuit_breaker_failures = 5
-        return account
+    """Tests for should_attempt_recovery() — production pure function."""
 
-    @pytest.fixture
-    def mock_account_recent_trip(self):
-        account = MagicMock()
-        account.id = uuid4()
-        account.circuit_breaker_disabled_at = datetime.now(UTC) - timedelta(minutes=5)
-        account.auto_recovery_attempts = 0
-        account.circuit_breaker_failures = 5
-        return account
+    def test_recovery_after_cooldown(self):
+        """CB trip + cooldown elapsed + retries available -> True."""
+        disabled_at = datetime.now(UTC) - timedelta(minutes=40)
+        assert should_attempt_recovery(disabled_at, auto_recovery_attempts=0) is True
 
-    @pytest.fixture
-    def mock_account_max_retries(self):
-        account = MagicMock()
-        account.id = uuid4()
-        account.circuit_breaker_disabled_at = datetime.now(UTC) - timedelta(minutes=40)
-        account.auto_recovery_attempts = 3
-        account.circuit_breaker_failures = 5
-        return account
+    def test_no_recovery_before_cooldown(self):
+        """CB trip + cooldown NOT elapsed -> False."""
+        disabled_at = datetime.now(UTC) - timedelta(minutes=5)
+        assert should_attempt_recovery(disabled_at, auto_recovery_attempts=0) is False
 
-    async def test_auto_recovery_after_cooldown(self, mock_account):
-        """CB trip + cooldown elapsed → auto restart."""
-        elapsed = (datetime.now(UTC) - mock_account.circuit_breaker_disabled_at).total_seconds()
-        assert elapsed >= 1800  # 30 min cooldown
-        assert mock_account.auto_recovery_attempts < 3
-        # Account should be eligible for recovery
-        should_recover = (
-            mock_account.circuit_breaker_disabled_at is not None
-            and elapsed >= 1800
-            and mock_account.auto_recovery_attempts < 3
-        )
-        assert should_recover is True
+    def test_max_retries_exceeded(self):
+        """Max auto-recovery attempts reached -> False."""
+        disabled_at = datetime.now(UTC) - timedelta(minutes=40)
+        assert should_attempt_recovery(disabled_at, auto_recovery_attempts=_CB_MAX_AUTO_RETRIES) is False
 
-    async def test_no_recovery_before_cooldown(self, mock_account_recent_trip):
-        """CB trip + cooldown NOT elapsed → skip."""
-        elapsed = (datetime.now(UTC) - mock_account_recent_trip.circuit_breaker_disabled_at).total_seconds()
-        assert elapsed < 1800
-        should_recover = elapsed >= 1800
-        assert should_recover is False
+    def test_not_tripped_returns_false(self):
+        """disabled_at=None (not tripped) -> False."""
+        assert should_attempt_recovery(None, auto_recovery_attempts=0) is False
 
-    async def test_max_auto_retries_exceeded(self, mock_account_max_retries):
-        """3 auto-recovery attempts → stop trying."""
-        assert mock_account_max_retries.auto_recovery_attempts >= 3
-        should_recover = mock_account_max_retries.auto_recovery_attempts < 3
-        assert should_recover is False
+    def test_uses_production_constants(self):
+        """Verify tests use actual production constants, not hardcoded values."""
+        assert _CB_COOLDOWN_SEC == 1800
+        assert _CB_MAX_AUTO_RETRIES == 3
 
-    async def test_manual_reset_clears_attempts(self):
-        """Manual reset should clear auto_recovery_attempts."""
-        # This tests the repo method logic
-        account = MagicMock()
-        account.circuit_breaker_failures = 0
-        account.circuit_breaker_disabled_at = None
-        account.auto_recovery_attempts = 0
-        assert account.auto_recovery_attempts == 0
+    def test_boundary_exactly_at_cooldown(self):
+        """Exactly at cooldown boundary -> eligible."""
+        now = datetime.now(UTC)
+        disabled_at = now - timedelta(seconds=_CB_COOLDOWN_SEC)
+        assert should_attempt_recovery(disabled_at, auto_recovery_attempts=0, now=now) is True
+
+    def test_boundary_one_second_before_cooldown(self):
+        """One second before cooldown -> not eligible."""
+        now = datetime.now(UTC)
+        disabled_at = now - timedelta(seconds=_CB_COOLDOWN_SEC - 1)
+        assert should_attempt_recovery(disabled_at, auto_recovery_attempts=0, now=now) is False
 
 
 # ============================================================
 #  DB Connection Retry
 # ============================================================
+_PRODUCTION_RETRY_COUNT = 3  # mirrors AccountTrader.step() range(3)
+
+
 class TestDbRetry:
     async def test_operational_error_retried(self):
         """OperationalError should trigger retry up to 3 times."""
@@ -176,21 +160,21 @@ class TestDbRetry:
         async def mock_do_step():
             nonlocal call_count
             call_count += 1
-            if call_count < 3:
+            if call_count < _PRODUCTION_RETRY_COUNT:
                 raise OperationalError("connection failed", None, None)
             return 60
 
-        # Simulate the retry logic from step()
+        # Simulate the retry logic from AccountTrader.step() lines 119-132
         result = None
-        for attempt in range(3):
+        for attempt in range(_PRODUCTION_RETRY_COUNT):
             try:
                 result = await mock_do_step()
                 break
             except OperationalError:
-                if attempt < 2:
-                    await asyncio.sleep(0)  # skip actual sleep in test
+                if attempt < _PRODUCTION_RETRY_COUNT - 1:
+                    await asyncio.sleep(0)
 
-        assert call_count == 3
+        assert call_count == _PRODUCTION_RETRY_COUNT
         assert result == 60
 
     async def test_non_db_error_not_retried(self):
@@ -205,18 +189,18 @@ class TestDbRetry:
             raise ValueError("not a DB error")
 
         with pytest.raises(ValueError):
-            for attempt in range(3):
+            for attempt in range(_PRODUCTION_RETRY_COUNT):
                 try:
                     await mock_do_step()
                     break
                 except OperationalError:
-                    if attempt < 2:
+                    if attempt < _PRODUCTION_RETRY_COUNT - 1:
                         await asyncio.sleep(0)
 
-        assert call_count == 1  # Only called once, ValueError escapes
+        assert call_count == 1
 
     async def test_all_retries_exhausted(self):
-        """3 consecutive OperationalErrors → raise the last one."""
+        """3 consecutive OperationalErrors -> raise the last one."""
         from sqlalchemy.exc import OperationalError
 
         call_count = 0
@@ -227,15 +211,15 @@ class TestDbRetry:
             raise OperationalError("still failing", None, None)
 
         last_exc = None
-        for attempt in range(3):
+        for attempt in range(_PRODUCTION_RETRY_COUNT):
             try:
                 await mock_do_step()
                 break
             except OperationalError as e:
                 last_exc = e
-                if attempt < 2:
+                if attempt < _PRODUCTION_RETRY_COUNT - 1:
                     await asyncio.sleep(0)
         else:
             assert last_exc is not None
 
-        assert call_count == 3
+        assert call_count == _PRODUCTION_RETRY_COUNT

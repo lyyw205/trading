@@ -91,7 +91,7 @@ async def run_backtest(
         )
 
     # Launch backtest in background with tracking
-    from backtest.isolated_runner import IsolatedBacktestRunner
+    from app.backtest.isolated_runner import IsolatedBacktestRunner
 
     runner = IsolatedBacktestRunner()
     task = asyncio.create_task(runner.run(run_id))
@@ -156,7 +156,7 @@ async def get_backtest_report(
         )
 
     # Load candles from local Parquet for the chart (offload blocking I/O)
-    from backtest.isolated_runner import DATA_DIR
+    from app.backtest.isolated_runner import DATA_DIR
 
     _MAX_CHART_CANDLES = 2000
 

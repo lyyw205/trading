@@ -9,7 +9,7 @@ import asyncio
 from uuid import uuid4
 
 import app.strategies.state_store as _ss_mod
-from backtest.mem_stores import (
+from app.backtest.mem_stores import (
     InMemoryAccountStateManager,
     InMemoryLotRepository,
     InMemoryOrderRepository,

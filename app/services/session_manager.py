@@ -15,8 +15,10 @@ class SessionManager:
     - max_age = 7일
     """
 
-    def __init__(self, secret_key: str):
-        self._serializer = URLSafeTimedSerializer(secret_key)
+    def __init__(self, secret_keys: str | list[str]):
+        if isinstance(secret_keys, str):
+            secret_keys = [secret_keys]
+        self._serializer = URLSafeTimedSerializer(secret_keys)
         self.cookie_name = "session"
         self.max_age = 24 * 3600  # 24 hours
 

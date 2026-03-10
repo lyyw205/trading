@@ -112,6 +112,41 @@ async def db_session(test_db_engine):
 
 
 @pytest_asyncio.fixture
+async def db_session_factory(test_db_engine):
+    """
+    Per-test async session factory with SAVEPOINT rollback.
+    Use for services that create their own sessions (e.g., AuthService).
+    """
+    async with test_db_engine.connect() as conn:
+        trans = await conn.begin()
+        nested = await conn.begin_nested()
+
+        TestSessionLocal = async_sessionmaker(bind=conn, class_=AsyncSession, expire_on_commit=False)
+
+        # Wrap the factory to attach savepoint-restart listener to each session
+        original_call = TestSessionLocal.__call__
+
+        def _patched_call(*args, **kwargs):
+            session = original_call(*args, **kwargs)
+
+            @event.listens_for(session.sync_session, "after_transaction_end")
+            def restart_savepoint(session_sync, transaction):
+                if transaction.nested and not transaction._parent.nested:
+                    session_sync.begin_nested()
+
+            return session
+
+        TestSessionLocal.__call__ = _patched_call
+
+        with patch("app.db.session.TradingSessionLocal", TestSessionLocal):
+            yield TestSessionLocal
+
+        if nested.is_active:
+            await nested.rollback()
+        await trans.rollback()
+
+
+@pytest_asyncio.fixture
 async def app_client(db_session, test_db_engine):
     """FastAPI test client with DB session override and auth bypass."""
     from httpx import ASGITransport, AsyncClient

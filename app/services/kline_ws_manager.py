@@ -29,6 +29,8 @@ class KlineWsManager:
     def __init__(self):
         self._subscriptions: dict[str, int] = {}  # symbol -> refcount
         self._latest_prices: dict[str, float] = {}
+        self._backfilled: set[str] = set()  # symbols already backfilled
+        self._background_tasks: set[asyncio.Task] = set()  # prevent GC of fire-and-forget tasks
         self._async_client = None  # binance.AsyncClient
         self._bsm = None  # BinanceSocketManager
         self._ws_task: asyncio.Task | None = None
@@ -79,6 +81,7 @@ class KlineWsManager:
             count = self._subscriptions.get(symbol_lower, 0)
             if count <= 1:
                 self._subscriptions.pop(symbol_lower, None)
+                self._backfilled.discard(symbol_lower)
                 logger.info("KlineWsManager: unsubscribed from %s", symbol)
                 await self._rebuild_multiplex()
             elif count > 1:
@@ -146,11 +149,13 @@ class KlineWsManager:
                 return
 
     async def _run_backfill(self) -> None:
-        """Fetch last 60 1m candles for all subscribed symbols via REST."""
+        """Fetch last 60 1m candles for new (not yet backfilled) symbols via REST."""
         if not self._async_client:
             return
 
-        symbols = list(self._subscriptions.keys())
+        symbols = [s for s in self._subscriptions if s not in self._backfilled]
+        if not symbols:
+            return
         for symbol in symbols:
             try:
                 klines = await self._async_client.get_klines(symbol=symbol.upper(), interval="1m", limit=60)
@@ -182,6 +187,7 @@ class KlineWsManager:
                         len(candles),
                         symbol.upper(),
                     )
+                self._backfilled.add(symbol)
             except Exception as e:
                 logger.warning("KlineWsManager: backfill failed for %s: %s", symbol, e)
 
@@ -253,7 +259,7 @@ class KlineWsManager:
                     trade_count = int(k["n"])
 
                     # Fire-and-forget: don't block WS loop on DB commit
-                    asyncio.create_task(
+                    task = asyncio.create_task(
                         self._save_candle(
                             symbol_upper,
                             ts_ms,
@@ -266,6 +272,8 @@ class KlineWsManager:
                             trade_count,
                         )
                     )
+                    self._background_tasks.add(task)
+                    task.add_done_callback(self._background_tasks.discard)
                 except Exception as e:
                     logger.error("KlineWsManager: failed to parse candle for %s: %s", symbol_upper, e)
 

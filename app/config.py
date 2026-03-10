@@ -52,6 +52,21 @@ class GlobalConfig(BaseSettings):
                 raise ValueError("CSRF_SECRET must be set in production")
             if not self.encryption_keys:
                 raise ValueError("ENCRYPTION_KEYS must be set in production")
+            # Strength validation
+            for key in self.session_secret_key.split(","):
+                if len(key.strip()) < 32:
+                    raise ValueError("SESSION_SECRET_KEY: each key must be >= 32 characters")
+            if len(self.csrf_secret) < 32:
+                raise ValueError("CSRF_SECRET must be >= 32 characters")
+            from cryptography.fernet import Fernet
+            for key in self.encryption_keys.split(","):
+                key = key.strip()
+                if not key:
+                    continue
+                try:
+                    Fernet(key.encode() if isinstance(key, str) else key)
+                except Exception:
+                    raise ValueError(f"ENCRYPTION_KEYS: invalid Fernet key '{key[:8]}...'")
         else:
             if not self.session_secret_key:
                 self.session_secret_key = secrets.token_urlsafe(32)
@@ -68,6 +83,13 @@ class GlobalConfig(BaseSettings):
     @property
     def encryption_key_list(self) -> list[str]:
         return [k.strip() for k in self.encryption_keys.split(",") if k.strip()]
+
+    @property
+    def session_secret_key_list(self) -> list[str]:
+        # itsdangerous signs with the LAST key; env convention is first=newest
+        # Reverse so env "new,old" → list [..., "old", "new"] → signs with "new"
+        keys = [k.strip() for k in self.session_secret_key.split(",") if k.strip()]
+        return list(reversed(keys))
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

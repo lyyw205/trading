@@ -105,6 +105,44 @@ class TestShouldAttemptBuy:
         assert ok is True
         assert cycle == 5
 
+    # --- Regression CRIT-1: per-cycle vs per-symbol ---
+
+    def test_throttled_single_call_per_cycle_not_multi(self):
+        """
+        Regression CRIT-1: should_attempt_buy must be called once per trading cycle,
+        not once per combo*symbol. Simulating 5 cycles with single call each:
+        cycle counter should reach 5 after 5 calls.
+        """
+        cycle = 0
+        buy_count = 0
+        for _ in range(5):  # 5 trading cycles
+            ok, cycle = BuyPauseManager.should_attempt_buy(
+                BuyPauseState.THROTTLED, balance_ok=True, throttle_cycle=cycle
+            )
+            if ok:
+                buy_count += 1
+        assert cycle == 5
+        assert buy_count == 1  # exactly 1 buy in 5 cycles
+
+    def test_throttled_multi_call_per_cycle_inflates_counter(self):
+        """
+        Documents the bug behavior: calling N times per cycle
+        inflates the counter, causing premature buy triggers.
+        After fix, this scenario should NOT occur in production.
+        """
+        cycle = 0
+        buy_count = 0
+        symbols_per_cycle = 6  # 2 combos * 3 symbols
+        for _ in range(1):  # just 1 trading cycle
+            for _ in range(symbols_per_cycle):  # BUG: called per symbol
+                ok, cycle = BuyPauseManager.should_attempt_buy(
+                    BuyPauseState.THROTTLED, balance_ok=True, throttle_cycle=cycle
+                )
+                if ok:
+                    buy_count += 1
+        assert cycle == 6  # counter inflated to 6 in single cycle
+        assert buy_count == 1  # hit at cycle=5
+
     # --- Constants sanity ---
 
     def test_constants_values(self):

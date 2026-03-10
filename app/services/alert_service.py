@@ -67,7 +67,9 @@ class AlertService:
             AlertSeverity.INFO: "ℹ️",
         }.get(severity, "")
 
-        formatted = f"{prefix} [{severity.value}] {message}"
+        import html
+
+        formatted = f"{prefix} [{severity.value}] {html.escape(message)}"
 
         try:
             return await self._send_telegram(formatted)

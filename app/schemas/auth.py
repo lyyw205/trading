@@ -54,6 +54,13 @@ class CreateUserRequest(BaseModel):
         return v
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+    _check_new_password = field_validator("new_password")(_validate_password)
+
+
 class ResetPasswordRequest(BaseModel):
     new_password: str
 
