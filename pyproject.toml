@@ -66,6 +66,7 @@ addopts = [
 ]
 filterwarnings = [
     "error",
+    "ignore::DeprecationWarning:pytest_asyncio.*",
     "ignore::DeprecationWarning:binance.*",
     "ignore::DeprecationWarning:websockets.*",
     "ignore::pydantic.warnings.PydanticDeprecatedSince20",
