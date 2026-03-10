@@ -97,8 +97,8 @@ class AuthService:
         """새 사용자 생성. 비밀번호 최소 8자."""
         if len(password) < 8:
             raise ValueError("비밀번호는 최소 8자 이상이어야 합니다.")
-        if len(password) > 128:
-            raise ValueError("비밀번호는 128자를 초과할 수 없습니다.")
+        if len(password.encode("utf-8")) > 72:
+            raise ValueError("비밀번호는 72바이트를 초과할 수 없습니다.")
 
         hashed = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(rounds=12))
 
@@ -130,8 +130,8 @@ class AuthService:
         """비밀번호 초기화. 잠금 해제 포함."""
         if len(new_password) < 8:
             raise ValueError("비밀번호는 최소 8자 이상이어야 합니다.")
-        if len(new_password) > 128:
-            raise ValueError("비밀번호는 128자를 초과할 수 없습니다.")
+        if len(new_password.encode("utf-8")) > 72:
+            raise ValueError("비밀번호는 72바이트를 초과할 수 없습니다.")
 
         hashed = bcrypt.hashpw(new_password.encode("utf-8"), bcrypt.gensalt(rounds=12))
 

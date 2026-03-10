@@ -181,7 +181,7 @@ async function loadAccountDashboard(accountId) {
   if (symbolSelect && _combos.length) {
     const allSymbols = [...new Set(_combos.flatMap(c => c.symbols || []))];
     symbolSelect.innerHTML = allSymbols.map(s =>
-      `<option value="${s}">${s.replace('USDT', '')}</option>`
+      `<option value="${escapeHtml(s)}">${escapeHtml(s).replace('USDT', '')}</option>`
     ).join('');
     _dashCurrentSymbol = allSymbols[0] || null;
 
@@ -552,7 +552,7 @@ async function loadAssetStatus(accountId) {
                 const pnlColor = h.pnl_usdt >= 0 ? 'var(--success)' : 'var(--danger, #ef4444)';
                 const pnlSign = h.pnl_usdt >= 0 ? '+' : '';
                 return `<tr style="border-bottom:1px solid var(--card-border);">
-                  <td style="padding:0.4rem 0.5rem;font-weight:600;">${h.symbol.replace('USDT','')}</td>
+                  <td style="padding:0.4rem 0.5rem;font-weight:600;">${escapeHtml(h.symbol).replace('USDT','')}</td>
                   <td style="padding:0.4rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums;">${fmt(h.qty, 6)}</td>
                   <td style="padding:0.4rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums;">${fmt(h.avg_entry, 2)}</td>
                   <td style="padding:0.4rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums;">${fmt(h.current_price, 2)}</td>

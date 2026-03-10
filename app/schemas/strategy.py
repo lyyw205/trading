@@ -37,7 +37,13 @@ class ComboCreate(BaseModel):
     def validate_symbols(cls, v: list[str]) -> list[str]:
         if not v:
             raise ValueError("symbols must contain at least one entry")
-        return [s.upper() for s in v]
+        import re
+        pattern = re.compile(r"^[A-Z0-9]{2,20}$")
+        result = [s.upper() for s in v]
+        for s in result:
+            if not pattern.match(s):
+                raise ValueError(f"invalid symbol: {s!r} (only A-Z, 0-9 allowed)")
+        return result
 
 
 class ComboUpdate(BaseModel):
@@ -54,7 +60,13 @@ class ComboUpdate(BaseModel):
         if v is not None:
             if not v:
                 raise ValueError("symbols must contain at least one entry")
-            return [s.upper() for s in v]
+            import re
+            pattern = re.compile(r"^[A-Z0-9]{2,20}$")
+            result = [s.upper() for s in v]
+            for s in result:
+                if not pattern.match(s):
+                    raise ValueError(f"invalid symbol: {s!r} (only A-Z, 0-9 allowed)")
+            return result
         return v
 
 

@@ -133,12 +133,18 @@ class AlertService:
         logger.info("Alert service circuit breaker reset")
 
 
-# Module-level singleton (lazy initialization)
+# Module-level reference (set during app lifespan startup)
 _alert_service: AlertService | None = None
 
 
+def set_alert_service(instance: AlertService) -> None:
+    """Register the app-wide AlertService instance (called from lifespan)."""
+    global _alert_service
+    _alert_service = instance
+
+
 def get_alert_service() -> AlertService:
-    """Get or create the global AlertService instance."""
+    """Get the app-wide AlertService instance."""
     global _alert_service
     if _alert_service is None:
         _alert_service = AlertService()

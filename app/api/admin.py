@@ -178,6 +178,11 @@ async def admin_set_active(user_id: str, req: SetActiveRequest, request: Request
     if not success:
         raise HTTPException(status_code=404, detail="User not found")
 
+    # 비활성화 시 인증 캐시 즉시 무효화 (60초 TTL 우회)
+    if not req.is_active:
+        from app.main import LazyAuthMiddleware
+        LazyAuthMiddleware.evict_user_cache(user_id)
+
     audit_log("admin_user_active_changed", user_id=admin["id"], target_user=user_id, is_active=req.is_active)
     return {"status": "updated", "is_active": req.is_active}
 

@@ -160,6 +160,7 @@ class AccountTrader:
 
                 # --- Balance pre-check (account-level, single API call) ---
                 balance_ok = True
+                free_balance = 0.0
                 try:
                     free_balance = await self._client.get_free_balance(account.quote_asset)
                     balance_ok = free_balance >= MIN_TRADE_USDT

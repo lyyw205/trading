@@ -9,8 +9,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+COPY requirements.lock .
+RUN pip install --no-cache-dir --prefix=/install -r requirements.lock
 
 
 # ── Stage 2: runtime ─────────────────────────────────────────────────────────
@@ -30,13 +30,16 @@ COPY --from=builder /install /usr/local
 COPY app ./app
 COPY backtest ./backtest
 COPY scripts ./scripts
-COPY alembic.ini* ./
-COPY alembic* ./alembic/
+COPY alembic.ini ./
+COPY alembic ./alembic
 
 # Create data directory and non-root user for security
 RUN mkdir -p /app/data && useradd --create-home --shell /bin/bash appuser && chown -R appuser:appuser /app/data
 USER appuser
 
 EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

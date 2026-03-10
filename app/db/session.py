@@ -14,6 +14,7 @@ engine_trading = create_async_engine(
     settings.database_url or "postgresql+asyncpg://localhost/crypto_trader",
     pool_size=15,
     max_overflow=10,
+    pool_pre_ping=True,
     echo=settings.sql_echo,
 )
 

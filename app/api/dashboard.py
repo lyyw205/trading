@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -259,7 +260,7 @@ async def get_price_candles(
     request: Request,
     from_ms: int = 0,
     to_ms: int = 0,
-    interval: str = Query(default="5m"),
+    interval: Literal["1m", "5m", "1h", "1d"] = Query(default="5m"),
     symbol: str | None = Query(default=None),
     account=Depends(get_owned_account),
     session: AsyncSession = Depends(get_trading_session),

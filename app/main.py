@@ -109,10 +109,11 @@ async def lifespan(app: FastAPI):
     app.state.session_manager = session_manager
 
     # Initialize alert service (Telegram)
-    from app.services.alert_service import AlertService
+    from app.services.alert_service import AlertService, set_alert_service
 
     alert_service = AlertService(settings)
     app.state.alert_service = alert_service
+    set_alert_service(alert_service)
 
     # Initialize trading engine
     rate_limiter = GlobalRateLimiter(max_rate=settings.api_rate_limit)
@@ -244,10 +245,15 @@ class LazyAuthMiddleware:
     _PUBLIC_PREFIX = ("/static/", "/api/auth/")
     _USER_CACHE_TTL = 60  # seconds
     _USER_CACHE_MAX_SIZE = 200  # max entries to prevent unbounded growth
+    _user_cache: dict[str, tuple[float, dict | None]] = {}
 
     def __init__(self, app):
         self.app = app
-        self._user_cache: dict[str, tuple[float, dict | None]] = {}
+
+    @classmethod
+    def evict_user_cache(cls, uid: str) -> None:
+        """Remove a specific user from the auth cache (e.g. on deactivation)."""
+        cls._user_cache.pop(uid, None)
 
     async def _validate_user_from_db(self, app_state, uid: str) -> dict | None:
         """DB에서 사용자 조회 (TTL 캐시). 비활성/삭제 → None."""
@@ -371,6 +377,16 @@ class SecurityHeadersMiddleware:
         (b"x-content-type-options", b"nosniff"),
         (b"referrer-policy", b"strict-origin-when-cross-origin"),
         (b"permissions-policy", b"camera=(), microphone=(), geolocation=()"),
+        (
+            b"content-security-policy",
+            b"default-src 'self'; "
+            b"script-src 'self' 'unsafe-inline' https://unpkg.com; "
+            b"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; "
+            b"font-src 'self' https://fonts.gstatic.com; "
+            b"img-src 'self' data:; "
+            b"connect-src 'self'; "
+            b"frame-ancestors 'none'",
+        ),
     ]
 
     def __init__(self, app):

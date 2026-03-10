@@ -36,3 +36,8 @@ httpx>=0.27.0
 
 # Monitoring
 prometheus-client>=0.20.0
+sentry-sdk[fastapi]>=2.0.0
+
+# Data processing
+pyarrow>=15.0.0
+numpy>=2.0.0

@@ -32,13 +32,13 @@ router = APIRouter(prefix="/api", tags=["combos"])
 
 @router.get("/buy-logics", response_model=list[BuyLogicInfo])
 @limiter.limit("120/minute")
-async def list_buy_logics(request: Request):
+async def list_buy_logics(request: Request, _user: dict = Depends(get_current_user)):
     return BuyLogicRegistry.list_all()
 
 
 @router.get("/sell-logics", response_model=list[SellLogicInfo])
 @limiter.limit("120/minute")
-async def list_sell_logics(request: Request):
+async def list_sell_logics(request: Request, _user: dict = Depends(get_current_user)):
     return SellLogicRegistry.list_all()
 
 

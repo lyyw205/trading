@@ -60,7 +60,8 @@ class GlobalConfig(BaseSettings):
                 self.csrf_secret = secrets.token_urlsafe(32)
                 _config_logger.warning("CSRF_SECRET auto-generated (non-production)")
             if not self.encryption_keys:
-                self.encryption_keys = secrets.token_urlsafe(32)
+                from cryptography.fernet import Fernet
+                self.encryption_keys = Fernet.generate_key().decode()
                 _config_logger.warning("ENCRYPTION_KEYS auto-generated (non-production)")
         return self
 

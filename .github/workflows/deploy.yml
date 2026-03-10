@@ -48,17 +48,40 @@ jobs:
 
             # 레지스트리 로그인 + 이미지 pull
             echo "$REGISTRY_PASSWORD" | docker login $REGISTRY_URL -u $REGISTRY_USER --password-stdin
+
+            # 현재 이미지 태그 저장 (롤백용)
+            PREV_IMAGE=$(docker inspect --format='{{.Config.Image}}' trading-app-1 2>/dev/null || echo "")
+
             docker pull $REGISTRY_URL/trading-bot:latest
 
             # DB 마이그레이션
             docker compose -f docker-compose.prod.yml run --rm app alembic upgrade head
 
-            # 앱 재시작
-            docker compose -f docker-compose.prod.yml up -d --no-deps app
+            # 컨테이너 시작 (DB 포함 보장)
+            docker compose -f docker-compose.prod.yml up -d
 
-            # 헬스체크
-            sleep 10
-            curl -f http://localhost:8000/health || (docker compose -f docker-compose.prod.yml logs app --tail=50 && exit 1)
+            # 헬스체크 (3회 재시도)
+            HEALTHY=false
+            for i in 1 2 3; do
+              sleep 10
+              if curl -sf http://localhost:8000/health > /dev/null; then
+                HEALTHY=true
+                break
+              fi
+              echo "Health check attempt $i failed, retrying..."
+            done
+
+            if [ "$HEALTHY" = "false" ]; then
+              echo "=== HEALTH CHECK FAILED — ROLLING BACK ==="
+              docker compose -f docker-compose.prod.yml logs app --tail=50
+
+              if [ -n "$PREV_IMAGE" ]; then
+                IMAGE_TAG=$PREV_IMAGE docker compose -f docker-compose.prod.yml up -d
+                sleep 10
+                curl -sf http://localhost:8000/health && echo "Rollback successful" || echo "Rollback also failed"
+              fi
+              exit 1
+            fi
 
             # 이전 이미지 정리
             docker image prune -f

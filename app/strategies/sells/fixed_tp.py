@@ -132,6 +132,7 @@ class FixedTpSell(BaseSellLogic):
         # Always query exchange for authoritative status (DB may be stale for
         # BacktestClient where _check_order_fills updates order status in-place
         # after upsert_order has already saved the initial NEW status).
+        db_order = None
         try:
             sell_order_data = await exchange.get_order(lot.sell_order_id, ctx.symbol)
             await repos.order.upsert_order(ctx.account_id, sell_order_data)
