@@ -267,6 +267,25 @@ async def get_price_candles(
 ):
     target_symbol = symbol or account.symbol
     candles = await get_candles(target_symbol, from_ms, to_ms, session, interval=interval)
+
+    # Fallback: if higher-TF table is empty, aggregate from 1m on the fly
+    if not candles and interval != "1m":
+        raw = await get_candles(target_symbol, from_ms, to_ms, session, interval="1m")
+        if raw:
+            bucket_sec = {"5m": 300, "1h": 3600, "1d": 86400}[interval]
+            bucket_ms = bucket_sec * 1000
+            buckets: dict[int, dict] = {}
+            for c in raw:
+                key = (c.ts_ms // bucket_ms) * bucket_ms
+                if key not in buckets:
+                    buckets[key] = {"ts_ms": key, "open": float(c.open), "high": float(c.high), "low": float(c.low), "close": float(c.close)}
+                else:
+                    b = buckets[key]
+                    b["high"] = max(b["high"], float(c.high))
+                    b["low"] = min(b["low"], float(c.low))
+                    b["close"] = float(c.close)
+            return sorted(buckets.values(), key=lambda x: x["ts_ms"])
+
     result = []
     for c in candles:
         d = {
