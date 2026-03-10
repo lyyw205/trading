@@ -643,10 +643,7 @@ class AccountTrader:
 
             alert = get_alert_service()
             await alert.send_critical(
-                f"Buying paused (errors)\n"
-                f"Account: {self.account_id}\n"
-                f"Reason: {reason}\n"
-                f"Selling/monitoring continues"
+                f"Buying paused (errors)\nAccount: {self.account_id}\nReason: {reason}\nSelling/monitoring continues"
             )
         except Exception as e:
             logger.warning("Failed to pause buying on error: %s", e)

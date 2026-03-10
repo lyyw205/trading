@@ -76,9 +76,9 @@ class FixedTpSell(BaseSellLogic):
         filters = await exchange.get_symbol_filters(ctx.symbol)
 
         for lot in open_lots:
-            target_price = lot.buy_price * (1 + tp_pct)
+            target_price = float(lot.buy_price) * (1 + tp_pct)
             target_price = await exchange.adjust_price(target_price, ctx.symbol)
-            sell_qty = await exchange.adjust_qty(lot.buy_qty, ctx.symbol)
+            sell_qty = await exchange.adjust_qty(float(lot.buy_qty), ctx.symbol)
             notional = sell_qty * target_price
 
             if notional < filters.min_notional or notional < min_trade_usdt:
@@ -173,7 +173,7 @@ class FixedTpSell(BaseSellLogic):
                     for r in fill_rows
                     if str(r.commission_asset or "").upper() == ctx.quote_asset.upper()
                 )
-            cost_usdt = lot.buy_qty * lot.buy_price
+            cost_usdt = float(lot.buy_qty) * float(lot.buy_price)
             net_profit = sell_revenue - cost_usdt - fee_usdt
 
             # 양수 수익만 적립금에 추가 (음수 방어)
