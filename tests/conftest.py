@@ -141,14 +141,17 @@ async def app_client(db_session):
     from httpx import ASGITransport, AsyncClient
 
     from app.config import GlobalConfig
-    from app.db.session import get_trading_session
+    from app.db.session import TradingSessionLocal, get_trading_session
     from app.main import app
     from app.services.session_manager import SessionManager
 
-    TestSessionLocal = async_sessionmaker(bind=db_session.get_bind(), class_=AsyncSession, expire_on_commit=False)
+    # db_session fixture already patches TradingSessionLocal with a
+    # connection-bound async_sessionmaker (SAVEPOINT isolation).
+    # Reuse that patched factory everywhere so AuthService and dependency
+    # overrides all share the same test connection.
 
     async def override_get_session():
-        async with TestSessionLocal() as session:
+        async with TradingSessionLocal() as session:
             yield session
 
     app.dependency_overrides[get_trading_session] = override_get_session
@@ -159,7 +162,7 @@ async def app_client(db_session):
 
     from app.services.auth_service import AuthService
 
-    app.state.auth_service = AuthService(session_factory=TestSessionLocal)
+    app.state.auth_service = AuthService(session_factory=TradingSessionLocal)
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
