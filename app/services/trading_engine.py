@@ -90,23 +90,19 @@ class TradingEngine:
         # Start background recovery loop
         self._cb_recovery_task = asyncio.create_task(self._circuit_breaker_recovery_loop())
 
-    async def start_account(self, account_id: UUID):
-        if account_id in self._tasks:
-            return
-        # Single session: circuit breaker check + combo symbols fetch
+    async def _subscribe_account_symbols(self, account_id: UUID) -> set[str]:
+        """Subscribe to kline WS for all active combo symbols of an account.
+
+        Always subscribes regardless of circuit breaker status, so that
+        1m candle collection continues even when trading is paused.
+        """
         symbol = None
         combo_symbols: set[str] = set()
         async with TradingSessionLocal() as session:
             repo = AccountRepository(session)
             account = await repo.get_by_id(account_id)
-            if account and (account.circuit_breaker_failures or 0) >= 5:
-                logger.warning(
-                    f"Account {account_id} has active circuit breaker ({account.circuit_breaker_failures} failures), skipping start"
-                )
-                return
             if account:
                 symbol = account.symbol
-            # Fetch combo symbols in the same session
             stmt = select(TradingCombo.symbols).where(
                 TradingCombo.account_id == account_id,
                 TradingCombo.is_enabled.is_(True),
@@ -117,9 +113,34 @@ class TradingEngine:
                     combo_symbols.update(s.lower() for s in row)
         if not combo_symbols and symbol:
             combo_symbols = {symbol.lower()}
-        for s in combo_symbols:
+
+        # Subscribe (refcount-based, safe to call multiple times)
+        old_symbols = self._account_symbols.get(account_id, set())
+        for s in combo_symbols - old_symbols:
             await self._kline_ws.subscribe(s)
+        for s in old_symbols - combo_symbols:
+            await self._kline_ws.unsubscribe(s)
         self._account_symbols[account_id] = combo_symbols
+        return combo_symbols
+
+    async def start_account(self, account_id: UUID):
+        if account_id in self._tasks:
+            return
+
+        # Always subscribe to WS for candle collection
+        combo_symbols = await self._subscribe_account_symbols(account_id)
+
+        # Check circuit breaker — skip trader start but keep WS subscriptions
+        async with TradingSessionLocal() as session:
+            repo = AccountRepository(session)
+            account = await repo.get_by_id(account_id)
+            if account and (account.circuit_breaker_failures or 0) >= 5:
+                logger.warning(
+                    f"Account {account_id} has active circuit breaker ({account.circuit_breaker_failures} failures), "
+                    "skipping trader start (WS subscriptions kept for candle collection)"
+                )
+                return
+
         trader = AccountTrader(
             account_id=account_id,
             price_collector=self._price_collector,
@@ -134,13 +155,14 @@ class TradingEngine:
         )
         logger.info(f"Started trader for account {account_id}")
 
-    async def stop_account(self, account_id: UUID):
+    async def stop_account(self, account_id: UUID, *, keep_subscriptions: bool = False):
         if account_id not in self._tasks:
             return
-        # Unsubscribe all symbols from kline WS stream
-        symbols = self._account_symbols.pop(account_id, set())
-        for s in symbols:
-            await self._kline_ws.unsubscribe(s)
+        # Unsubscribe symbols only if not keeping subscriptions (e.g. CB trip keeps WS for candle collection)
+        if not keep_subscriptions:
+            symbols = self._account_symbols.pop(account_id, set())
+            for s in symbols:
+                await self._kline_ws.unsubscribe(s)
         trader = self._traders.get(account_id)
         if trader:
             trader.stop()
@@ -150,7 +172,7 @@ class TradingEngine:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
         self._traders.pop(account_id, None)
-        logger.info(f"Stopped trader for account {account_id}")
+        logger.info(f"Stopped trader for account {account_id} (keep_ws={keep_subscriptions})")
 
     async def _get_combo_symbols(self, account_id: UUID) -> set[str]:
         """Collect all unique symbols from active combos for an account."""
@@ -192,6 +214,11 @@ class TradingEngine:
         account_ids = list(self._tasks.keys())
         for aid in account_ids:
             await self.stop_account(aid)
+        # Unsubscribe any remaining symbols (CB-tripped accounts still have subscriptions)
+        for _aid, symbols in list(self._account_symbols.items()):
+            for s in symbols:
+                await self._kline_ws.unsubscribe(s)
+        self._account_symbols.clear()
         # Stop WebSocket kline manager
         await self._kline_ws.stop()
 
