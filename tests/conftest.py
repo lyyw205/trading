@@ -1,6 +1,5 @@
 """Root conftest — DB fixtures, app factory, common test infrastructure."""
 
-import asyncio
 import os
 from unittest.mock import patch
 
@@ -8,14 +7,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-
-
-@pytest.fixture(scope="session")
-def event_loop():
-    """Session-scoped event loop so all async tests share the same loop as DB fixtures."""
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
+from sqlalchemy.pool import NullPool
 
 # Test database URL (Docker test-db on port 5433)
 TEST_DATABASE_URL = os.environ.get(
@@ -53,11 +45,16 @@ def _is_db_available() -> bool:
 
 @pytest_asyncio.fixture(scope="session")
 async def test_db_engine():
-    """Create test database engine and run Alembic migrations once per session."""
+    """Create test database engine and run Alembic migrations once per session.
+
+    Uses NullPool so each connect() creates a fresh connection in the caller's
+    event loop, avoiding loop mismatch between session-scoped engine and
+    function-scoped tests.
+    """
     if not _is_db_available():
         pytest.skip("Test database not available (start with: docker compose --profile test up -d test-db)")
 
-    engine = create_async_engine(TEST_DATABASE_URL, echo=False)
+    engine = create_async_engine(TEST_DATABASE_URL, echo=False, poolclass=NullPool)
 
     # Create all tables directly (avoids asyncio.run() conflict with pytest-asyncio)
     from app.models.base import Base
