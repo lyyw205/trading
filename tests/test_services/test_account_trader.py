@@ -135,12 +135,12 @@ async def test_sync_error_isolation(trader, caplog):
     trader._client.get_my_trades_from_id = AsyncMock(return_value=[])
     trader._rate_limiter.acquire = AsyncMock()
 
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.WARNING, logger="app.services.account_trader"):
         # Must not raise even though one symbol errors out
         await trader._sync_orders_and_fills(account, symbols, order_repo, position_repo, session)
 
     # Warning logged for the failing symbol
-    assert any("ETHUSDT" in record.message for record in caplog.records)
+    assert any("ETHUSDT" in r.getMessage() for r in caplog.records)
 
     # The successful symbol's order was still batch-upserted
     assert order_repo.upsert_orders_batch.call_count >= 1
@@ -231,13 +231,13 @@ async def test_sync_max_id_query_failure_falls_back(trader, caplog):
     trader._client.get_my_trades_from_id = AsyncMock(return_value=[])
     trader._rate_limiter.acquire = AsyncMock()
 
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.WARNING, logger="app.services.account_trader"):
         await trader._sync_orders_and_fills(account, symbols, order_repo, position_repo, session)
 
     # Fallback to full fetch
     assert trader._client.get_my_trades.call_count == 1
     assert trader._client.get_my_trades_from_id.call_count == 0
-    assert any("falling back to full fetch" in r.message for r in caplog.records)
+    assert any("falling back to full fetch" in r.getMessage() for r in caplog.records)
 
 
 # ---------------------------------------------------------------------------

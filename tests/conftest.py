@@ -54,16 +54,11 @@ async def test_db_engine():
 
     engine = create_async_engine(TEST_DATABASE_URL, echo=False)
 
-    # Run Alembic migrations for schema setup
-    from alembic.config import Config
+    # Create all tables directly (avoids asyncio.run() conflict with pytest-asyncio)
+    from app.models.base import Base
 
-    from alembic import command
-
-    # Alembic needs sync URL
-    sync_url = TEST_DATABASE_URL.replace("+asyncpg", "")
-    alembic_cfg = Config("alembic.ini")
-    alembic_cfg.set_main_option("sqlalchemy.url", sync_url)
-    command.upgrade(alembic_cfg, "head")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
     yield engine
 

@@ -154,8 +154,12 @@ class TestProductionSecretStrength:
         )
         assert cfg.environment == "production"
 
-    def test_development_ignores_strength(self):
+    def test_development_ignores_strength(self, monkeypatch):
         """Dev environment auto-generates secrets without error."""
+        # Clear CI env vars so auto-generation kicks in
+        monkeypatch.delenv("SESSION_SECRET_KEY", raising=False)
+        monkeypatch.delenv("CSRF_SECRET", raising=False)
+        monkeypatch.delenv("ENCRYPTION_KEYS", raising=False)
         from app.config import GlobalConfig
 
         cfg = GlobalConfig(environment="development")
