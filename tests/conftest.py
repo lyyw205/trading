@@ -43,7 +43,7 @@ def _make_engine():
     return create_async_engine(TEST_DATABASE_URL, echo=False, poolclass=NullPool)
 
 
-@pytest_asyncio.fixture(scope="session")
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def _init_test_db():
     """Create/drop tables once per session. NOT shared with test fixtures."""
     if not _is_db_available():
