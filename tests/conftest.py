@@ -8,6 +8,9 @@ import pytest_asyncio
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+# All async tests share the session-scoped event loop (matches session-scoped DB engine).
+pytestmark = pytest.mark.asyncio(loop_scope="session")
+
 # Test database URL (Docker test-db on port 5433)
 TEST_DATABASE_URL = os.environ.get(
     "TEST_DATABASE_URL",
