@@ -16,6 +16,7 @@ from uuid import UUID
 # _NoOpSession — state._session.add() 호환
 # ---------------------------------------------------------------------------
 
+
 class _NoOpSession:
     """state.session.add(obj) 호환용 no-op sink.
 
@@ -33,6 +34,7 @@ class _NoOpSession:
 # ---------------------------------------------------------------------------
 # InMemoryStateStore — StrategyStateStore 대체
 # ---------------------------------------------------------------------------
+
 
 class InMemoryStateStore:
     """StrategyStateStore와 동일 인터페이스, dict 기반.
@@ -108,16 +110,13 @@ class InMemoryStateStore:
     async def get_all(self) -> dict[str, str]:
         prefix = self._prefix
         plen = len(prefix)
-        return {
-            k[plen:]: v
-            for k, v in self._backing.items()
-            if k.startswith(prefix)
-        }
+        return {k[plen:]: v for k, v in self._backing.items() if k.startswith(prefix)}
 
 
 # ---------------------------------------------------------------------------
 # MemLot — Lot 모델 대체
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class MemLot:
@@ -147,6 +146,7 @@ class MemLot:
 # ---------------------------------------------------------------------------
 # InMemoryLotRepository — LotRepository 대체
 # ---------------------------------------------------------------------------
+
 
 class InMemoryLotRepository:
     def __init__(self) -> None:
@@ -210,7 +210,8 @@ class InMemoryLotRepository:
     ) -> list[MemLot]:
         return sorted(
             [
-                lot for lot in self._lots.values()
+                lot
+                for lot in self._lots.values()
                 if lot.account_id == account_id
                 and lot.symbol == symbol
                 and lot.strategy_name == strategy_name
@@ -276,6 +277,7 @@ class InMemoryLotRepository:
 # MemOrder — Order 모델 대체
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class MemOrder:
     """Order SQLAlchemy 모델과 동일 속성."""
@@ -303,6 +305,7 @@ class MemOrder:
 # InMemoryOrderRepository — OrderRepository 대체
 # ---------------------------------------------------------------------------
 
+
 class InMemoryOrderRepository:
     def __init__(self) -> None:
         self._orders: dict[tuple[int, UUID], MemOrder] = {}
@@ -316,32 +319,14 @@ class InMemoryOrderRepository:
             side=order_data.get("side"),
             type=order_data.get("type"),
             status=order_data.get("status"),
-            price=(
-                float(order_data["price"])
-                if order_data.get("price") is not None
-                else None
-            ),
-            orig_qty=(
-                float(order_data["origQty"])
-                if order_data.get("origQty") is not None
-                else None
-            ),
-            executed_qty=(
-                float(order_data["executedQty"])
-                if order_data.get("executedQty") is not None
-                else None
-            ),
+            price=(float(order_data["price"]) if order_data.get("price") is not None else None),
+            orig_qty=(float(order_data["origQty"]) if order_data.get("origQty") is not None else None),
+            executed_qty=(float(order_data["executedQty"]) if order_data.get("executedQty") is not None else None),
             cum_quote_qty=(
-                float(order_data["cummulativeQuoteQty"])
-                if order_data.get("cummulativeQuoteQty") is not None
-                else None
+                float(order_data["cummulativeQuoteQty"]) if order_data.get("cummulativeQuoteQty") is not None else None
             ),
             client_order_id=order_data.get("clientOrderId"),
-            update_time_ms=(
-                int(order_data["updateTime"])
-                if order_data.get("updateTime") is not None
-                else None
-            ),
+            update_time_ms=(int(order_data["updateTime"]) if order_data.get("updateTime") is not None else None),
             raw_json=order_data,
         )
 
@@ -356,15 +341,14 @@ class InMemoryOrderRepository:
     async def insert_fills_batch(self, account_id: UUID, fills: list[tuple[int, dict]]) -> None:
         """No-op for in-memory backtest (fills tracked via lot close)."""
 
-    async def get_order(
-        self, account_id: UUID, order_id: int
-    ) -> MemOrder | None:
+    async def get_order(self, account_id: UUID, order_id: int) -> MemOrder | None:
         return self._orders.get((order_id, account_id))
 
 
 # ---------------------------------------------------------------------------
 # InMemoryAccountStateManager — AccountStateManager 대체
 # ---------------------------------------------------------------------------
+
 
 class InMemoryAccountStateManager:
     """AccountStateManager와 동일 인터페이스.
@@ -418,17 +402,13 @@ class InMemoryAccountStateManager:
     async def reset_pending_earnings(self) -> None:
         self._pending_earnings = 0.0
 
-    async def approve_earnings_to_reserve(
-        self, pct: float, current_price: float
-    ) -> dict:
+    async def approve_earnings_to_reserve(self, pct: float, current_price: float) -> dict:
         total = self._pending_earnings
         if total <= 0:
             raise ValueError("적립금이 없습니다.")
         to_reserve_usdt = total * (pct / 100.0)
         to_liquid_usdt = total - to_reserve_usdt
-        to_reserve_btc = (
-            to_reserve_usdt / current_price if current_price > 0 else 0.0
-        )
+        to_reserve_btc = to_reserve_usdt / current_price if current_price > 0 else 0.0
         if to_reserve_usdt > 0:
             await self.add_reserve_qty(to_reserve_btc)
             await self.add_reserve_cost_usdt(to_reserve_usdt)

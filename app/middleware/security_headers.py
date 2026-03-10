@@ -31,9 +31,7 @@ class SecurityHeadersMiddleware:
         self._all_headers = list(self._HEADERS)
         settings = get_settings()
         if not settings.debug:
-            self._all_headers.append(
-                (b"strict-transport-security", b"max-age=63072000; includeSubDomains")
-            )
+            self._all_headers.append((b"strict-transport-security", b"max-age=63072000; includeSubDomains"))
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":

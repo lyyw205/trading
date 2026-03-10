@@ -95,7 +95,12 @@ class IsolatedBacktestRunner:
 
             logger.info(
                 "Backtest %s: %d candles for %s [%d – %d], %d combos",
-                run_id, n_candles, symbol, start_ts_ms, end_ts_ms, len(combo_configs),
+                run_id,
+                n_candles,
+                symbol,
+                start_ts_ms,
+                end_ts_ms,
+                len(combo_configs),
             )
 
             # ----------------------------------------------------------------
@@ -111,15 +116,17 @@ class IsolatedBacktestRunner:
                 except KeyError as e:
                     logger.warning("Backtest: unknown logic '%s', skipping combo '%s'", e, name)
                     continue
-                combos.append({
-                    "name": name,
-                    "buy_logic": buy_logic,
-                    "sell_logic": sell_logic,
-                    "buy_params": cfg.get("buy_params", {}),
-                    "sell_params": cfg.get("sell_params", {}),
-                    "reference_combo_name": cfg.get("reference_combo_name"),
-                    "combo_id": uuid4(),
-                })
+                combos.append(
+                    {
+                        "name": name,
+                        "buy_logic": buy_logic,
+                        "sell_logic": sell_logic,
+                        "buy_params": cfg.get("buy_params", {}),
+                        "sell_params": cfg.get("sell_params", {}),
+                        "reference_combo_name": cfg.get("reference_combo_name"),
+                        "combo_id": uuid4(),
+                    }
+                )
                 name_to_idx[name] = len(combos) - 1
 
             if not combos:
@@ -135,7 +142,9 @@ class IsolatedBacktestRunner:
                     if ref_name and ref_name not in name_to_idx:
                         logger.error(
                             "Combo '%s': reference_combo_name '%s' not found in combos: %s. Trend buy will be disabled.",
-                            combo.get("name", "?"), ref_name, list(name_to_idx.keys()),
+                            combo.get("name", "?"),
+                            ref_name,
+                            list(name_to_idx.keys()),
                         )
                     combo["reference_combo_id"] = None
 
@@ -172,37 +181,53 @@ class IsolatedBacktestRunner:
                     sell_logic = combo["sell_logic"]
 
                     repos = RepositoryBundle(
-                        lot=lot_repo, order=order_repo,
-                        position=None, price=None,
+                        lot=lot_repo,
+                        order=order_repo,
+                        position=None,
+                        price=None,
                     )
                     state = InMemoryStateStore(
-                        account_id, str(combo_id), shared_backing,
+                        account_id,
+                        str(combo_id),
+                        shared_backing,
                     )
 
                     buy_params = {**buy_logic.default_params, **combo["buy_params"]}
                     if combo["reference_combo_id"]:
-                        buy_params["_reference_combo_id"] = str(
-                            combo["reference_combo_id"]
-                        )
+                        buy_params["_reference_combo_id"] = str(combo["reference_combo_id"])
                     sell_params = {**sell_logic.default_params, **combo["sell_params"]}
 
                     buy_ctx = StrategyContext(
-                        account_id=account_id, symbol=symbol,
-                        base_asset=base_asset, quote_asset="USDT",
-                        current_price=0.0, params=buy_params,
+                        account_id=account_id,
+                        symbol=symbol,
+                        base_asset=base_asset,
+                        quote_asset="USDT",
+                        current_price=0.0,
+                        params=buy_params,
                         client_order_prefix=prefix,
                     )
                     sell_ctx = StrategyContext(
-                        account_id=account_id, symbol=symbol,
-                        base_asset=base_asset, quote_asset="USDT",
-                        current_price=0.0, params=sell_params,
+                        account_id=account_id,
+                        symbol=symbol,
+                        base_asset=base_asset,
+                        quote_asset="USDT",
+                        current_price=0.0,
+                        params=sell_params,
                         client_order_prefix=prefix,
                     )
 
-                    combo_ctxs.append((
-                        combo, combo_id, buy_logic, sell_logic,
-                        repos, state, buy_ctx, sell_ctx,
-                    ))
+                    combo_ctxs.append(
+                        (
+                            combo,
+                            combo_id,
+                            buy_logic,
+                            sell_logic,
+                            repos,
+                            state,
+                            buy_ctx,
+                            sell_ctx,
+                        )
+                    )
 
                 # Progress logging
                 progress_interval = max(1, n_candles // 10)
@@ -212,13 +237,21 @@ class IsolatedBacktestRunner:
                     ts_ms = ts_ms_arr[i]
                     sim_time = ts_ms / 1000.0
                     client.set_candle(
-                        close=price, low=low_arr[i],
-                        high=high_arr[i], ts_ms=ts_ms,
+                        close=price,
+                        low=low_arr[i],
+                        high=high_arr[i],
+                        ts_ms=ts_ms,
                     )
 
                     for (
-                        combo, combo_id, buy_logic, sell_logic,
-                        repos, state, buy_ctx, sell_ctx,
+                        combo,
+                        combo_id,
+                        buy_logic,
+                        sell_logic,
+                        repos,
+                        state,
+                        buy_ctx,
+                        sell_ctx,
                     ) in combo_ctxs:
                         buy_logic._sim_time = sim_time
                         sell_logic._sim_time = sim_time
@@ -229,27 +262,41 @@ class IsolatedBacktestRunner:
                         # 0. pre_tick
                         try:
                             await buy_logic.pre_tick(
-                                buy_ctx, state, client, repos, combo_id,
+                                buy_ctx,
+                                state,
+                                client,
+                                repos,
+                                combo_id,
                             )
                         except Exception as exc:
                             logger.warning(
                                 "Backtest pre_tick error (combo=%s, price=%.2f): %s",
-                                combo["name"], price, exc,
+                                combo["name"],
+                                price,
+                                exc,
                             )
 
                         # 1. sell
                         open_lots = await lot_repo.get_open_lots_by_combo(
-                            account_id, symbol, combo_id,
+                            account_id,
+                            symbol,
+                            combo_id,
                         )
                         try:
                             await sell_logic.tick(
-                                sell_ctx, state, client,
-                                shared_asm, repos, open_lots,
+                                sell_ctx,
+                                state,
+                                client,
+                                shared_asm,
+                                repos,
+                                open_lots,
                             )
                         except Exception as exc:
                             logger.warning(
                                 "Backtest sell tick error (combo=%s, price=%.2f): %s",
-                                combo["name"], price, exc,
+                                combo["name"],
+                                price,
+                                exc,
                             )
 
                         # Update free_balance after sell (sell may have freed USDT)
@@ -258,13 +305,19 @@ class IsolatedBacktestRunner:
                         # 2. buy
                         try:
                             await buy_logic.tick(
-                                buy_ctx, state, client,
-                                shared_asm, repos, combo_id,
+                                buy_ctx,
+                                state,
+                                client,
+                                shared_asm,
+                                repos,
+                                combo_id,
                             )
                         except Exception as exc:
                             logger.warning(
                                 "Backtest buy tick error (combo=%s, price=%.2f): %s",
-                                combo["name"], price, exc,
+                                combo["name"],
+                                price,
+                                exc,
                             )
 
                     # Sample equity curve periodically
@@ -276,7 +329,10 @@ class IsolatedBacktestRunner:
                     if i > 0 and i % progress_interval == 0:
                         logger.info(
                             "Backtest %s: %d%% complete (%d/%d candles)",
-                            run_id, i * 100 // n_candles, i, n_candles,
+                            run_id,
+                            i * 100 // n_candles,
+                            i,
+                            n_candles,
                         )
 
                 # Final equity point
@@ -284,16 +340,23 @@ class IsolatedBacktestRunner:
                 final_equity = self._calc_equity(client, final_price, base_asset)
                 final_ts_ms = ts_ms_arr[-1]
                 if not equity_curve or equity_curve[-1]["ts_ms"] != final_ts_ms:
-                    equity_curve.append({
-                        "ts_ms": final_ts_ms,
-                        "value": round(final_equity, 2),
-                    })
+                    equity_curve.append(
+                        {
+                            "ts_ms": final_ts_ms,
+                            "value": round(final_equity, 2),
+                        }
+                    )
 
                 # Collect results
                 first_price = close_arr[0]
                 results = self._collect_results(
-                    client, first_price, final_price, initial_usdt,
-                    equity_curve, base_asset, lot_repo,
+                    client,
+                    first_price,
+                    final_price,
+                    initial_usdt,
+                    equity_curve,
+                    base_asset,
+                    lot_repo,
                 )
 
             finally:
@@ -315,9 +378,7 @@ class IsolatedBacktestRunner:
     # Helpers
     # ------------------------------------------------------------------
 
-    async def _load_candles(
-        self, symbol: str, start_ts_ms: int, end_ts_ms: int
-    ) -> dict[str, list] | None:
+    async def _load_candles(self, symbol: str, start_ts_ms: int, end_ts_ms: int) -> dict[str, list] | None:
         """Load candles from local Parquet file as columnar arrays.
 
         Returns dict with column lists (ts_ms, close, low, high) or None.
@@ -348,7 +409,9 @@ class IsolatedBacktestRunner:
 
             logger.info(
                 "Loaded %d candles from %s (%s)",
-                len(table), parquet_path.name, interval,
+                len(table),
+                parquet_path.name,
+                interval,
             )
 
             # Column-wise extraction via zero-copy numpy
@@ -387,13 +450,15 @@ class IsolatedBacktestRunner:
         # Trade log from in-memory client
         trade_log = []
         for t in client._trades:
-            trade_log.append({
-                "ts_ms": t.get("time", 0),
-                "side": t.get("side", ""),
-                "price": t.get("price", "0"),
-                "qty": t.get("qty", "0"),
-                "quote_qty": t.get("quoteQty", "0"),
-            })
+            trade_log.append(
+                {
+                    "ts_ms": t.get("time", 0),
+                    "side": t.get("side", ""),
+                    "price": t.get("price", "0"),
+                    "qty": t.get("qty", "0"),
+                    "quote_qty": t.get("quoteQty", "0"),
+                }
+            )
 
         # Win/loss stats — lot-based (actual net_profit_usdt per closed lot)
         winning = 0
@@ -447,9 +512,7 @@ class IsolatedBacktestRunner:
         base_total = btc_bal["free"] + btc_bal["locked"]
         usdt_total = usdt_bal["free"] + usdt_bal["locked"]
         qty_after = base_total + (usdt_total / first_price if first_price > 0 else 0.0)
-        qty_change_pct = (
-            (qty_after - qty_before) / qty_before * 100 if qty_before > 0 else 0.0
-        )
+        qty_change_pct = (qty_after - qty_before) / qty_before * 100 if qty_before > 0 else 0.0
 
         summary = {
             "final_value_usdt": round(final_value, 2),
@@ -523,15 +586,9 @@ class IsolatedBacktestRunner:
             await session.execute(stmt)
             await session.commit()
 
-    async def _update_status(
-        self, run_id: UUID, status: str, **kwargs
-    ) -> None:
+    async def _update_status(self, run_id: UUID, status: str, **kwargs) -> None:
         """Update backtest run status."""
         async with TradingSessionLocal() as session:
-            stmt = (
-                update(BacktestRun)
-                .where(BacktestRun.id == run_id)
-                .values(status=status, **kwargs)
-            )
+            stmt = update(BacktestRun).where(BacktestRun.id == run_id).values(status=status, **kwargs)
             await session.execute(stmt)
             await session.commit()

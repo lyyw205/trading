@@ -50,8 +50,8 @@ def resolve_buy_usdt(
             amount = calc_scaled_plan_amount(free_balance, sizing_round, x_pct)
         return min(amount, max_cap)
 
-    # fixed (default)
-    return min(params.get("buy_usdt", 100.0), max_cap)
+    # fixed (default) — 사용자가 지정한 금액 그대로 사용, max_cap 미적용
+    return params.get("buy_usdt", 100.0)
 
 
 def calc_scaled_plan_amount(

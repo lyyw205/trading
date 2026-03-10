@@ -157,9 +157,7 @@ async def test_sync_error_isolation(trader, caplog):
 async def test_sync_incremental_fills_uses_from_id(trader):
     """When fills exist in DB, get_my_trades_from_id must be called with from_id=last_id+1."""
     symbols = {"BTCUSDT", "ETHUSDT"}
-    account, order_repo, position_repo, session = _make_sync_deps(
-        last_trade_ids={"BTCUSDT": 500, "ETHUSDT": 300}
-    )
+    account, order_repo, position_repo, session = _make_sync_deps(last_trade_ids={"BTCUSDT": 500, "ETHUSDT": 300})
 
     trader._client = AsyncMock()
     trader._client.get_open_orders = AsyncMock(return_value=[])
@@ -187,9 +185,7 @@ async def test_sync_mixed_incremental_and_fallback(trader):
     """Known symbols use incremental fetch, new symbols use full fetch."""
     symbols = {"BTCUSDT", "ETHUSDT"}
     # Only BTCUSDT has existing fills
-    account, order_repo, position_repo, session = _make_sync_deps(
-        last_trade_ids={"BTCUSDT": 100}
-    )
+    account, order_repo, position_repo, session = _make_sync_deps(last_trade_ids={"BTCUSDT": 100})
 
     trader._client = AsyncMock()
     trader._client.get_open_orders = AsyncMock(return_value=[])
@@ -266,9 +262,7 @@ def test_should_attempt_buy_called_once_per_cycle_semantic():
     cycle = 0
     buys = 0
     for _ in range(10):
-        ok, cycle = BuyPauseManager.should_attempt_buy(
-            BuyPauseState.THROTTLED, balance_ok=True, throttle_cycle=cycle
-        )
+        ok, cycle = BuyPauseManager.should_attempt_buy(BuyPauseState.THROTTLED, balance_ok=True, throttle_cycle=cycle)
         if ok:
             buys += 1
     assert cycle == 10

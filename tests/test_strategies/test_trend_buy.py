@@ -96,9 +96,7 @@ def _make_exchange(
     exchange.get_symbol_filters = AsyncMock(return_value=MagicMock(min_notional=10.0))
     exchange.adjust_price = AsyncMock(side_effect=lambda p, s: p)
     exchange.adjust_qty = AsyncMock(side_effect=lambda q, s: q)
-    exchange.place_limit_buy_by_quote = AsyncMock(
-        return_value={"orderId": order_id, "transactTime": 1_000_000}
-    )
+    exchange.place_limit_buy_by_quote = AsyncMock(return_value={"orderId": order_id, "transactTime": 1_000_000})
     exchange.get_order = AsyncMock(
         return_value={
             "orderId": order_id,
@@ -157,12 +155,14 @@ class TestTrendBuyPending:
         strategy = TrendBuy()
         combo_id = uuid.uuid4()
         ctx = _make_ctx()
-        state, state_dict = _make_state_store({
-            "pending_order_id": "12345",
-            "pending_time_ms": "1000000",
-            "pending_bucket_usdt": "0",
-            "pending_trigger_price": "49700.0",
-        })
+        state, state_dict = _make_state_store(
+            {
+                "pending_order_id": "12345",
+                "pending_time_ms": "1000000",
+                "pending_bucket_usdt": "0",
+                "pending_trigger_price": "49700.0",
+            }
+        )
         exchange = _make_exchange(order_status="FILLED", executed_qty="0.001", cumulative_quote="50.0")
         repos = _make_repos()
         acct = _make_account_state()
@@ -187,12 +187,14 @@ class TestTrendBuyPending:
         strategy = TrendBuy()
         combo_id = uuid.uuid4()
         ctx = _make_ctx()
-        state, state_dict = _make_state_store({
-            "pending_order_id": "12345",
-            "pending_time_ms": "1000000",
-            "pending_bucket_usdt": "0",
-            "pending_trigger_price": "49700.0",
-        })
+        state, state_dict = _make_state_store(
+            {
+                "pending_order_id": "12345",
+                "pending_time_ms": "1000000",
+                "pending_bucket_usdt": "0",
+                "pending_trigger_price": "49700.0",
+            }
+        )
         exchange = _make_exchange(order_status="CANCELED")
         repos = _make_repos()
         acct = _make_account_state()
@@ -210,12 +212,14 @@ class TestTrendBuyPending:
         combo_id = uuid.uuid4()
         ctx = _make_ctx()
         old_time_ms = int((strategy._now() - 4 * 3600) * 1000)  # 4 hours ago
-        state, state_dict = _make_state_store({
-            "pending_order_id": "12345",
-            "pending_time_ms": str(old_time_ms),
-            "pending_bucket_usdt": "0",
-            "pending_trigger_price": "49700.0",
-        })
+        state, state_dict = _make_state_store(
+            {
+                "pending_order_id": "12345",
+                "pending_time_ms": str(old_time_ms),
+                "pending_bucket_usdt": "0",
+                "pending_trigger_price": "49700.0",
+            }
+        )
         exchange = _make_exchange(order_status="NEW")  # Still NEW after 4 hours
         repos = _make_repos()
         acct = _make_account_state()
@@ -233,12 +237,14 @@ class TestTrendBuyPending:
         combo_id = uuid.uuid4()
         ctx = _make_ctx()
         old_time_ms = int((strategy._now() - 4 * 3600) * 1000)
-        state, state_dict = _make_state_store({
-            "pending_order_id": "12345",
-            "pending_time_ms": str(old_time_ms),
-            "pending_bucket_usdt": "0",
-            "pending_trigger_price": "49700.0",
-        })
+        state, state_dict = _make_state_store(
+            {
+                "pending_order_id": "12345",
+                "pending_time_ms": str(old_time_ms),
+                "pending_bucket_usdt": "0",
+                "pending_trigger_price": "49700.0",
+            }
+        )
         exchange = _make_exchange(order_status="NEW")
         exchange.cancel_order = AsyncMock(side_effect=Exception("Exchange error"))
         repos = _make_repos()
@@ -255,23 +261,25 @@ class TestTrendBuyPending:
         strategy = TrendBuy()
         combo_id = uuid.uuid4()
         ctx = _make_ctx()
-        state, _ = _make_state_store({
-            "pending_order_id": "12345",
-            "pending_time_ms": "1000000",
-            "pending_bucket_usdt": "0",
-            "pending_trigger_price": "49700.0",
-        })
+        state, _ = _make_state_store(
+            {
+                "pending_order_id": "12345",
+                "pending_time_ms": "1000000",
+                "pending_bucket_usdt": "0",
+                "pending_trigger_price": "49700.0",
+            }
+        )
         exchange = _make_exchange(order_status="FILLED", executed_qty="0.001", cumulative_quote="50.0")
-        exchange.get_order = AsyncMock(return_value={
-            "orderId": 12345,
-            "status": "FILLED",
-            "executedQty": "0.001",
-            "cummulativeQuoteQty": "50.0",
-            "updateTime": 1_000_000,
-            "fills": [
-                {"commissionAsset": "BTC", "commission": "0.0000001", "qty": "0.001", "price": "50000.0"}
-            ],
-        })
+        exchange.get_order = AsyncMock(
+            return_value={
+                "orderId": 12345,
+                "status": "FILLED",
+                "executedQty": "0.001",
+                "cummulativeQuoteQty": "50.0",
+                "updateTime": 1_000_000,
+                "fills": [{"commissionAsset": "BTC", "commission": "0.0000001", "qty": "0.001", "price": "50000.0"}],
+            }
+        )
         repos = _make_repos()
         acct = _make_account_state()
 
@@ -286,12 +294,14 @@ class TestTrendBuyPending:
         strategy = TrendBuy()
         combo_id = uuid.uuid4()
         ctx = _make_ctx()
-        state, state_dict = _make_state_store({
-            "pending_order_id": "12345",
-            "pending_time_ms": "1000000",
-            "pending_bucket_usdt": "0",
-            "pending_trigger_price": "49700.0",
-        })
+        state, state_dict = _make_state_store(
+            {
+                "pending_order_id": "12345",
+                "pending_time_ms": "1000000",
+                "pending_bucket_usdt": "0",
+                "pending_trigger_price": "49700.0",
+            }
+        )
         exchange = _make_exchange()
         exchange.get_order = AsyncMock(side_effect=Exception("Connection failed"))
         repos = _make_repos()

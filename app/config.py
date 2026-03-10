@@ -59,6 +59,7 @@ class GlobalConfig(BaseSettings):
             if len(self.csrf_secret) < 32:
                 raise ValueError("CSRF_SECRET must be >= 32 characters")
             from cryptography.fernet import Fernet
+
             for key in self.encryption_keys.split(","):
                 key = key.strip()
                 if not key:
@@ -76,6 +77,7 @@ class GlobalConfig(BaseSettings):
                 _config_logger.warning("CSRF_SECRET auto-generated (non-production)")
             if not self.encryption_keys:
                 from cryptography.fernet import Fernet
+
                 self.encryption_keys = Fernet.generate_key().decode()
                 _config_logger.warning("ENCRYPTION_KEYS auto-generated (non-production)")
         return self

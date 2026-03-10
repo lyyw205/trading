@@ -1,4 +1,5 @@
 """Integration tests for AuthService — brute-force, lockout, timing attack prevention."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -14,7 +15,6 @@ pytestmark = pytest.mark.asyncio
 
 @pytest.mark.integration
 class TestAuthService:
-
     @pytest_asyncio.fixture
     async def auth(self, db_session_factory):
         return AuthService(session_factory=db_session_factory)
@@ -52,10 +52,13 @@ class TestAuthService:
         from sqlalchemy import update
 
         from app.models.user import UserProfile
+
         async with db_session_factory() as session:
-            stmt = update(UserProfile).where(
-                UserProfile.email == "test@example.com"
-            ).values(locked_until=datetime.now(UTC) - timedelta(minutes=1))
+            stmt = (
+                update(UserProfile)
+                .where(UserProfile.email == "test@example.com")
+                .values(locked_until=datetime.now(UTC) - timedelta(minutes=1))
+            )
             await session.execute(stmt)
             await session.commit()
         # Now should authenticate successfully

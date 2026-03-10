@@ -38,6 +38,7 @@ class ComboCreate(BaseModel):
         if not v:
             raise ValueError("symbols must contain at least one entry")
         import re
+
         pattern = re.compile(r"^[A-Z0-9]{2,20}$")
         result = [s.upper() for s in v]
         for s in result:
@@ -61,6 +62,7 @@ class ComboUpdate(BaseModel):
             if not v:
                 raise ValueError("symbols must contain at least one entry")
             import re
+
             pattern = re.compile(r"^[A-Z0-9]{2,20}$")
             result = [s.upper() for s in v]
             for s in result:

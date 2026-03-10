@@ -79,9 +79,8 @@ class TestPlaceLimitBuy:
         client.set_price(300.0)
         await client.place_limit_buy_by_quote(quote_usdt=100.0, price=200.0, symbol=SYMBOL)
         bal = await client.get_balance("USDT")
-        # price=200, adjust_qty(100/200=0.5, step=0.00001)=0.49999, cost=0.49999*200=99.998
-        adj_qty = 0.49999
-        cost = adj_qty * 200.0
+        # price=200, adjust_qty(100/200=0.5, step=0.00001)=0.5, cost=0.5*200=100.0
+        cost = 0.5 * 200.0  # 100.0
         assert bal["free"] == pytest.approx(10000.0 - cost, rel=1e-6)
         assert bal["locked"] == pytest.approx(cost, rel=1e-6)
 

@@ -191,13 +191,16 @@ async def test_canceled_sell_clears_order():
 
     lot = _make_lot(lot_id=3, buy_price=50000.0, buy_qty=0.001, sell_order_id=88888)
 
-    db_order = MagicMock()
-    db_order.order_id = 88888
-    db_order.status = "CANCELED"
-    db_order.executed_qty = Decimal("0")
-    db_order.cumulative_quote_qty = Decimal("0")
-    db_order.update_time_ms = 1000000
-    repos.order.get_order = AsyncMock(return_value=db_order)
+    # Override exchange.get_order to return CANCELED status
+    exchange.get_order = AsyncMock(
+        return_value={
+            "orderId": 88888,
+            "status": "CANCELED",
+            "executedQty": "0",
+            "cummulativeQuoteQty": "0",
+            "updateTime": 1000000,
+        }
+    )
 
     await strategy.tick(ctx, state, exchange, account_state, repos, open_lots=[lot])
 

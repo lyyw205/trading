@@ -283,12 +283,7 @@ async def get_price_candles(
 
         _models = {"1m": PriceCandle1m, "5m": PriceCandle5m, "1h": PriceCandle1h, "1d": PriceCandle1d}
         model = _models.get(interval, PriceCandle1m)
-        fallback_stmt = (
-            select(model)
-            .where(model.symbol == target_symbol)
-            .order_by(model.ts_ms.desc())
-            .limit(500)
-        )
+        fallback_stmt = select(model).where(model.symbol == target_symbol).order_by(model.ts_ms.desc()).limit(500)
         fallback_result = await session.execute(fallback_stmt)
         candles = list(reversed(fallback_result.scalars().all()))
 
@@ -302,7 +297,14 @@ async def get_price_candles(
             for c in raw:
                 key = (c.ts_ms // bucket_ms) * bucket_ms
                 if key not in buckets:
-                    buckets[key] = {"ts_ms": key, "open": float(c.open), "high": float(c.high), "low": float(c.low), "close": float(c.close), "volume": float(c.volume) if hasattr(c, "volume") else 0.0}
+                    buckets[key] = {
+                        "ts_ms": key,
+                        "open": float(c.open),
+                        "high": float(c.high),
+                        "low": float(c.low),
+                        "close": float(c.close),
+                        "volume": float(c.volume) if hasattr(c, "volume") else 0.0,
+                    }
                 else:
                     b = buckets[key]
                     b["high"] = max(b["high"], float(c.high))
@@ -418,13 +420,7 @@ async def get_trade_events(
     filters = [Fill.account_id == account.id]
     if symbol:
         filters.append(Fill.symbol == symbol)
-    stmt = (
-        select(Fill)
-        .options(defer(Fill.raw_json))
-        .where(*filters)
-        .order_by(Fill.trade_time_ms.desc())
-        .limit(limit)
-    )
+    stmt = select(Fill).options(defer(Fill.raw_json)).where(*filters).order_by(Fill.trade_time_ms.desc()).limit(limit)
     result = await session.execute(stmt)
     fills = result.scalars().all()
 
