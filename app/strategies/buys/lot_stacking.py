@@ -5,11 +5,12 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from app.models.core_btc_history import CoreBtcHistory
+from app.services.buy_pause_manager import MIN_TRADE_USDT
 from app.strategies.base import BaseBuyLogic, RepositoryBundle, StrategyContext
 from app.strategies.constants import PENDING_KEYS
 from app.strategies.registry import BuyLogicRegistry
 from app.strategies.sizing import resolve_buy_usdt
-from app.strategies.utils import extract_base_commission_qty
+from app.strategies.utils import parse_filled_buy_order
 
 if TYPE_CHECKING:
     from app.exchange.base_client import ExchangeClient
@@ -40,7 +41,7 @@ class LotStackingBuy(BaseBuyLogic):
         "drop_pct": 0.006,
         "prebuy_pct": 0.0015,
         "cancel_rebound_pct": 0.004,
-        "min_trade_usdt": 6.0,
+        "min_trade_usdt": MIN_TRADE_USDT,
         "recenter_enabled": True,
         "recenter_pct": 0.02,
         "recenter_ema_n": 40,
@@ -272,17 +273,12 @@ class LotStackingBuy(BaseBuyLogic):
         kind: str = "LOT",
         core_bucket_locked: float = 0.0,
     ) -> None:
-        bought_qty = float(order_data.get("executedQty", 0))
-        spent_usdt = float(order_data.get("cummulativeQuoteQty", 0))
-        order_id = int(order_data.get("orderId", 0))
-        update_time_ms = int(order_data.get("updateTime", 0)) or int(self._now() * 1000)
-
-        base_fee_qty = extract_base_commission_qty(order_data, ctx.base_asset)
-        bought_qty_net = bought_qty - base_fee_qty
-        if bought_qty_net <= 0:
-            bought_qty_net = bought_qty
-
-        avg_price = spent_usdt / bought_qty_net if bought_qty_net > 0 else ctx.current_price
+        parsed = parse_filled_buy_order(order_data, ctx.base_asset, ctx.current_price, int(self._now() * 1000))
+        bought_qty_net = parsed.bought_qty_net
+        spent_usdt = parsed.spent_usdt
+        avg_price = parsed.avg_price
+        order_id = parsed.order_id
+        update_time_ms = parsed.update_time_ms
 
         if kind == "INIT":
             await account_state.set_reserve_qty(bought_qty_net)
@@ -412,7 +408,7 @@ class LotStackingBuy(BaseBuyLogic):
 
         drop_pct = ctx.params.get("drop_pct", 0.006)
         prebuy_pct = ctx.params.get("prebuy_pct", 0.0015)
-        min_trade_usdt = ctx.params.get("min_trade_usdt", 6.0)
+        min_trade_usdt = ctx.params.get("min_trade_usdt", MIN_TRADE_USDT)
 
         trigger_price = base_price * (1 - drop_pct)
         prebuy_price = trigger_price * (1 + prebuy_pct)

@@ -32,7 +32,6 @@ async def authenticated_client(app_client, db_session):
 
     cookie_value = session_mgr.create_session_cookie(
         user_id=str(user.id),
-        email=user.email,
         role=user.role,
     )
     app_client.cookies.set(session_mgr.cookie_name, cookie_value)
@@ -61,7 +60,6 @@ async def admin_client(app_client, db_session):
 
     cookie_value = session_mgr.create_session_cookie(
         user_id=str(user.id),
-        email=user.email,
         role=user.role,
     )
     app_client.cookies.set(session_mgr.cookie_name, cookie_value)

@@ -10,9 +10,9 @@ logger = logging.getLogger(__name__)
 class SessionManager:
     """
     서버사이드 세션 관리.
-    - uid+email+role을 암호화된 쿠키에 저장 (itsdangerous 서명)
+    - uid+role을 서명된 쿠키에 저장 (itsdangerous 서명)
     - httponly=True, secure=True (운영환경), samesite="lax"
-    - max_age = 7일
+    - max_age = 24시간
     """
 
     def __init__(self, secret_keys: str | list[str]):
@@ -22,13 +22,13 @@ class SessionManager:
         self.cookie_name = "session"
         self.max_age = 24 * 3600  # 24 hours
 
-    def create_session_cookie(self, user_id: str, email: str, role: str) -> str:
-        """Encode uid+email+role into a signed cookie value"""
-        payload = {"uid": user_id, "email": email, "role": role}
+    def create_session_cookie(self, user_id: str, role: str, **_kwargs) -> str:
+        """Encode uid+role into a signed cookie value (email excluded for PII minimization)"""
+        payload = {"uid": user_id, "role": role}
         return self._serializer.dumps(payload)
 
     def read_session_cookie(self, cookie_value: str) -> dict | None:
-        """Decode and verify cookie. Returns {"uid", "email", "role"} or None.
+        """Decode and verify cookie. Returns {"uid", "role"} or None.
         Returns None for legacy {"at", "rt"} format (graceful transition)."""
         try:
             data = self._serializer.loads(cookie_value, max_age=self.max_age)

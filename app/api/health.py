@@ -7,6 +7,7 @@ from fastapi import APIRouter, Request
 from sqlalchemy import text
 
 from app.db.session import engine_trading
+from app.schemas.health import HealthCheckResponse
 
 router = APIRouter(tags=["system"])
 logger = logging.getLogger(__name__)
@@ -14,7 +15,7 @@ logger = logging.getLogger(__name__)
 _start_time = time.monotonic()
 
 
-@router.get("/health")
+@router.get("/health", response_model=HealthCheckResponse)
 async def health_check(request: Request):
     """Liveness probe — returns minimal status for Docker/infra healthchecks."""
     db_check = await _check_database()

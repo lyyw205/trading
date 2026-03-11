@@ -40,6 +40,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# 서킷 브레이커 발동 임계값 (연속 실패 횟수)
+CB_FAILURE_THRESHOLD = 5
+
 
 class AccountTrader:
     """
@@ -90,7 +93,7 @@ class AccountTrader:
                 raise RuntimeError(f"Account {self.account_id} not found")
             # Phase 3-C: DB에서 서킷 브레이커 상태 복원
             self._consecutive_failures = account.circuit_breaker_failures or 0
-            if self._consecutive_failures >= 5:
+            if self._consecutive_failures >= CB_FAILURE_THRESHOLD:
                 logger.warning(
                     "Circuit breaker already tripped (%d failures), not starting", self._consecutive_failures
                 )
@@ -247,71 +250,16 @@ class AccountTrader:
                     combo_symbols = combo.symbols if combo.symbols else [account.symbol]
 
                     for symbol in combo_symbols:
-                        try:
-                            base_asset, quote_asset = parse_symbol(symbol)
-                        except ValueError:
-                            logger.warning("Cannot parse symbol %s, skipping", symbol)
-                            continue
-
-                        # Fetch price for this symbol
-                        cur_price = await self._price_collector.get_price(symbol)
-                        if cur_price <= 0:
-                            cur_price = await self._price_collector.refresh_symbol(symbol)
-                        if cur_price <= 0:
-                            logger.warning("Price is 0 for %s, skipping", symbol)
-                            continue
-
-                        buy_logic = self._get_or_create_buy(combo.id, symbol, combo.buy_logic_name)
-                        sell_logic = self._get_or_create_sell(combo.id, symbol, combo.sell_logic_name)
-
-                        combo_state = StrategyStateStore(self.account_id, f"{combo.id}:{symbol}", session)
-                        await combo_state.preload()
-                        prefix = f"CMT_{str(self.account_id)[:8]}_{str(combo.id)[:8]}_"
-
-                        # Pre-fetch open lots once for both buy and sell
-                        open_lots = await lot_repo.get_open_lots_by_combo(
-                            self.account_id,
+                        await self._execute_symbol_tick(
+                            combo,
                             symbol,
-                            combo.id,
+                            free_balance,
+                            balance_ok,
+                            should_buy,
+                            repos,
+                            session,
+                            account_state,
                         )
-                        # Buy params (inject reference_combo_id if set)
-                        buy_params = buy_logic.validate_params(combo.buy_params or {})
-                        if combo.reference_combo_id:
-                            buy_params["_reference_combo_id"] = str(combo.reference_combo_id)
-
-                        buy_ctx = StrategyContext(
-                            account_id=self.account_id,
-                            symbol=symbol,
-                            base_asset=base_asset,
-                            quote_asset=quote_asset,
-                            current_price=cur_price,
-                            params=buy_params,
-                            client_order_prefix=prefix,
-                            free_balance=free_balance if balance_ok else 0.0,
-                            open_lots=open_lots,
-                        )
-
-                        # 0. pre_tick: recenter (항상 실행 — PAUSED에서도 base_price 유지)
-                        await buy_logic.pre_tick(buy_ctx, combo_state, self._client, repos, combo.id)
-
-                        # 1. 매도 (항상 실행 — 기존 로트 관리, TP 체결 시 적립)
-                        sell_params = sell_logic.validate_params(combo.sell_params or {})
-                        sell_ctx = StrategyContext(
-                            account_id=self.account_id,
-                            symbol=symbol,
-                            base_asset=base_asset,
-                            quote_asset=quote_asset,
-                            current_price=cur_price,
-                            params=sell_params,
-                            client_order_prefix=prefix,
-                            free_balance=free_balance if balance_ok else 0.0,
-                            open_lots=open_lots,
-                        )
-                        await sell_logic.tick(sell_ctx, combo_state, self._client, account_state, repos, open_lots)
-
-                        # 2. 매수 (buy-pause 가드 적용 — 사이클 단위 판정)
-                        if should_buy:
-                            await buy_logic.tick(buy_ctx, combo_state, self._client, account_state, repos, combo.id)
 
                 # --- Sell detection: compare open lot count before/after strategies ---
                 open_lots_after_stmt = (
@@ -362,6 +310,84 @@ class AccountTrader:
             current_cycle_id.reset(cycle_token)
             TRADING_CYCLE_DURATION.labels(account_id=str(self.account_id)).observe(time.perf_counter() - start_time)
         return result
+
+    async def _execute_symbol_tick(
+        self,
+        combo: TradingCombo,
+        symbol: str,
+        free_balance: float,
+        balance_ok: bool,
+        should_buy: bool,
+        repos: RepositoryBundle,
+        session,
+        account_state: AccountStateManager,
+    ) -> None:
+        """Execute buy/sell strategies for a single combo×symbol pair."""
+        try:
+            base_asset, quote_asset = parse_symbol(symbol)
+        except ValueError:
+            logger.warning("Cannot parse symbol %s, skipping", symbol)
+            return
+
+        # Fetch price for this symbol
+        cur_price = await self._price_collector.get_price(symbol)
+        if cur_price <= 0:
+            cur_price = await self._price_collector.refresh_symbol(symbol)
+        if cur_price <= 0:
+            logger.warning("Price is 0 for %s, skipping", symbol)
+            return
+
+        buy_logic = self._get_or_create_buy(combo.id, symbol, combo.buy_logic_name)
+        sell_logic = self._get_or_create_sell(combo.id, symbol, combo.sell_logic_name)
+
+        combo_state = StrategyStateStore(self.account_id, f"{combo.id}:{symbol}", session)
+        await combo_state.preload()
+        prefix = f"CMT_{str(self.account_id)[:8]}_{str(combo.id)[:8]}_"
+
+        # Pre-fetch open lots once for both buy and sell
+        open_lots = await repos.lot.get_open_lots_by_combo(
+            self.account_id,
+            symbol,
+            combo.id,
+        )
+        # Buy params (inject reference_combo_id if set)
+        buy_params = buy_logic.validate_params(combo.buy_params or {})
+        if combo.reference_combo_id:
+            buy_params["_reference_combo_id"] = str(combo.reference_combo_id)
+
+        buy_ctx = StrategyContext(
+            account_id=self.account_id,
+            symbol=symbol,
+            base_asset=base_asset,
+            quote_asset=quote_asset,
+            current_price=cur_price,
+            params=buy_params,
+            client_order_prefix=prefix,
+            free_balance=free_balance if balance_ok else 0.0,
+            open_lots=open_lots,
+        )
+
+        # 0. pre_tick: recenter (항상 실행 — PAUSED에서도 base_price 유지)
+        await buy_logic.pre_tick(buy_ctx, combo_state, self._client, repos, combo.id)
+
+        # 1. 매도 (항상 실행 — 기존 로트 관리, TP 체결 시 적립)
+        sell_params = sell_logic.validate_params(combo.sell_params or {})
+        sell_ctx = StrategyContext(
+            account_id=self.account_id,
+            symbol=symbol,
+            base_asset=base_asset,
+            quote_asset=quote_asset,
+            current_price=cur_price,
+            params=sell_params,
+            client_order_prefix=prefix,
+            free_balance=free_balance if balance_ok else 0.0,
+            open_lots=open_lots,
+        )
+        await sell_logic.tick(sell_ctx, combo_state, self._client, account_state, repos, open_lots)
+
+        # 2. 매수 (buy-pause 가드 적용 — 사이클 단위 판정)
+        if should_buy:
+            await buy_logic.tick(buy_ctx, combo_state, self._client, account_state, repos, combo.id)
 
     async def _sync_orders_and_fills(
         self,
@@ -514,7 +540,7 @@ class AccountTrader:
                 logger.error("_init_client() failed (%s): %s", err_type.name, e)
                 self._failure_history.append(f"init_client: {e}")
                 if err_type == ErrorType.PERMANENT:
-                    self._consecutive_failures = 5
+                    self._consecutive_failures = CB_FAILURE_THRESHOLD
                     await self._disable_with_circuit_breaker()
                     return
                 # Transient init failure — pause buying, retry after backoff
@@ -525,7 +551,7 @@ class AccountTrader:
                     await self._init_client()
                 except Exception as e2:
                     logger.error("_init_client() retry failed: %s — CB trip", e2)
-                    self._consecutive_failures = 5
+                    self._consecutive_failures = CB_FAILURE_THRESHOLD
                     await self._disable_with_circuit_breaker()
                     return
 
@@ -552,7 +578,7 @@ class AccountTrader:
                     if err_type == ErrorType.PERMANENT:
                         logger.error("Permanent error, triggering CB: %s", e)
                         self._failure_history.append(f"[PERMANENT] {e}")
-                        self._consecutive_failures = 5
+                        self._consecutive_failures = CB_FAILURE_THRESHOLD
                         await self._disable_with_circuit_breaker()
                         return
                     elif err_type == ErrorType.RATE_LIMIT:

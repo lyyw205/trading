@@ -20,7 +20,7 @@ async def login(login_req: LoginRequest, request: Request):
     if not user:
         raise HTTPException(status_code=401, detail="이메일 또는 비밀번호가 올바르지 않습니다.")
 
-    cookie_value = session_mgr.create_session_cookie(user_id=user["id"], email=user["email"], role=user["role"])
+    cookie_value = session_mgr.create_session_cookie(user_id=user["id"], role=user["role"])
 
     response = LoginResponse(success=True, user=UserResponse(**user))
     json_resp = JSONResponse(content=response.model_dump())
@@ -42,8 +42,15 @@ async def login(login_req: LoginRequest, request: Request):
 async def logout(request: Request):
     """Clear session cookie"""
     session_mgr = request.app.state.session_manager
+    is_secure = not request.app.state.settings_debug
     response = RedirectResponse(url="/login", status_code=302)
-    response.delete_cookie(key=session_mgr.cookie_name)
+    response.delete_cookie(
+        key=session_mgr.cookie_name,
+        path="/",
+        httponly=True,
+        secure=is_secure,
+        samesite="lax",
+    )
     return response
 
 

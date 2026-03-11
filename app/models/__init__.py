@@ -10,6 +10,7 @@ from app.models.persistent_log import PersistentLog
 from app.models.position import Position
 from app.models.price_candle import PriceCandle1d, PriceCandle1h, PriceCandle1m, PriceCandle5m
 from app.models.price_snapshot import PriceSnapshot
+from app.models.reconciliation_log import ReconciliationLog
 from app.models.strategy_config import StrategyConfig
 from app.models.strategy_state import StrategyState
 from app.models.trading_combo import TradingCombo
@@ -43,4 +44,6 @@ __all__ = [
     # Log Persistence
     "PersistentLog",
     "DailyReport",
+    # Reconciliation
+    "ReconciliationLog",
 ]

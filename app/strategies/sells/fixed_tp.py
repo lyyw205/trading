@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from app.services.buy_pause_manager import MIN_TRADE_USDT
 from app.strategies.base import BaseSellLogic, RepositoryBundle, StrategyContext
 from app.strategies.registry import SellLogicRegistry
 from app.strategies.utils import extract_fee_usdt
@@ -29,7 +30,7 @@ class FixedTpSell(BaseSellLogic):
 
     default_params = {
         "tp_pct": 0.033,
-        "min_trade_usdt": 6.0,
+        "min_trade_usdt": MIN_TRADE_USDT,
         "base_price_update_mode": "always",
     }
 
@@ -71,7 +72,7 @@ class FixedTpSell(BaseSellLogic):
             return
 
         tp_pct = float(ctx.params.get("tp_pct", 0.033))
-        min_trade_usdt = float(ctx.params.get("min_trade_usdt", 6.0))
+        min_trade_usdt = float(ctx.params.get("min_trade_usdt", MIN_TRADE_USDT))
         base_mode = ctx.params.get("base_price_update_mode", "always")
         filters = await exchange.get_symbol_filters(ctx.symbol)
 

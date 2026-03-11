@@ -39,7 +39,7 @@ class TestSessionManagerMultiKey:
         from app.services.session_manager import SessionManager
 
         mgr = SessionManager("test-secret-key")
-        cookie = mgr.create_session_cookie("uid1", "test@test.com", "user")
+        cookie = mgr.create_session_cookie("uid1", "user")
         data = mgr.read_session_cookie(cookie)
         assert data["uid"] == "uid1"
 
@@ -48,7 +48,7 @@ class TestSessionManagerMultiKey:
         from app.services.session_manager import SessionManager
 
         old_mgr = SessionManager("old-key")
-        cookie = old_mgr.create_session_cookie("uid1", "test@test.com", "user")
+        cookie = old_mgr.create_session_cookie("uid1", "user")
 
         # New manager with both keys can read old token
         new_mgr = SessionManager(["new-key", "old-key"])
@@ -61,7 +61,7 @@ class TestSessionManagerMultiKey:
         from app.services.session_manager import SessionManager
 
         multi_mgr = SessionManager(["new-key", "old-key"])
-        cookie = multi_mgr.create_session_cookie("uid1", "test@test.com", "user")
+        cookie = multi_mgr.create_session_cookie("uid1", "user")
 
         # Multi-key manager can read its own tokens
         data = multi_mgr.read_session_cookie(cookie)
@@ -80,7 +80,7 @@ class TestSessionManagerMultiKey:
 
         cfg = GlobalConfig(session_secret_key="new-key,old-key")
         mgr = SessionManager(cfg.session_secret_key_list)
-        cookie = mgr.create_session_cookie("uid1", "test@test.com", "user")
+        cookie = mgr.create_session_cookie("uid1", "user")
 
         # new-key alone can read it (it was used for signing)
         new_only = SessionManager("new-key")
@@ -93,7 +93,7 @@ class TestSessionManagerMultiKey:
         str_mgr = SessionManager("the-key")
         list_mgr = SessionManager(["the-key"])
 
-        cookie = str_mgr.create_session_cookie("uid1", "test@test.com", "user")
+        cookie = str_mgr.create_session_cookie("uid1", "user")
         data = list_mgr.read_session_cookie(cookie)
         assert data is not None
         assert data["uid"] == "uid1"

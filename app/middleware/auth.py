@@ -86,7 +86,8 @@ class LazyAuthMiddleware:
         session_data = session_manager.read_session_cookie(cookie_value)
         if not session_data:
             # Legacy {"at","rt"} format or invalid → force logout
-            response = self._force_logout(path, session_manager)
+            is_secure = not getattr(app_state.state, "settings_debug", False)
+            response = self._force_logout(path, session_manager, is_secure=is_secure)
             await response(scope, receive, send)
             return
 
@@ -95,7 +96,8 @@ class LazyAuthMiddleware:
         db_user = await self._validate_user_from_db(app_state, uid)
         if not db_user:
             # 비활성/삭제된 사용자 → 강제 로그아웃
-            response = self._force_logout(path, session_manager)
+            is_secure = not getattr(app_state.state, "settings_debug", False)
+            response = self._force_logout(path, session_manager, is_secure=is_secure)
             await response(scope, receive, send)
             return
 
@@ -119,10 +121,16 @@ class LazyAuthMiddleware:
             return JSONResponse({"detail": "Unauthorized"}, status_code=401)
         return RedirectResponse(url="/login", status_code=302)
 
-    def _force_logout(self, path: str, session_manager):
+    def _force_logout(self, path: str, session_manager, *, is_secure: bool = True):
         """Legacy session format detected → clear cookie and redirect."""
         from starlette.responses import RedirectResponse
 
         response = RedirectResponse(url="/login", status_code=302)
-        response.delete_cookie(key=session_manager.cookie_name)
+        response.delete_cookie(
+            key=session_manager.cookie_name,
+            path="/",
+            httponly=True,
+            secure=is_secure,
+            samesite="lax",
+        )
         return response

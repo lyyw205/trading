@@ -82,7 +82,7 @@ jobs:
             PREV_IMAGE=$(docker inspect trading-app-1 --format='{{.Config.Image}}' 2>/dev/null || echo "")
 
             # DB 마이그레이션
-            docker compose -f docker-compose.prod.yml run --rm app alembic upgrade head 2>/dev/null || true
+            docker compose -f docker-compose.prod.yml run --rm app alembic upgrade head
 
             # 컨테이너 시작
             docker compose -f docker-compose.prod.yml up -d

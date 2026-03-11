@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import func as sa_func
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,7 +30,7 @@ async def admin_list_trades(
     session: AsyncSession = Depends(get_trading_session),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
-    account_id: str | None = Query(default=None),
+    account_id: UUID | None = Query(default=None),
     side: Literal["BUY", "SELL"] | None = Query(default=None),
 ):
     """Cross-account trade history with pagination."""
@@ -38,12 +38,8 @@ async def admin_list_trades(
     count_stmt = select(sa_func.count(Order.order_id))
 
     if account_id:
-        try:
-            uid = UUID(account_id)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid account_id")
-        stmt = stmt.where(Order.account_id == uid)
-        count_stmt = count_stmt.where(Order.account_id == uid)
+        stmt = stmt.where(Order.account_id == account_id)
+        count_stmt = count_stmt.where(Order.account_id == account_id)
     if side:
         stmt = stmt.where(Order.side == side.upper())
         count_stmt = count_stmt.where(Order.side == side.upper())
@@ -75,7 +71,7 @@ async def admin_list_lots(
     admin: dict = Depends(require_admin),
     session: AsyncSession = Depends(get_trading_session),
     status: Literal["OPEN", "CLOSED", "CANCELLED"] | None = Query(default=None),
-    account_id: str | None = Query(default=None),
+    account_id: UUID | None = Query(default=None),
     strategy: str | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
@@ -93,12 +89,8 @@ async def admin_list_lots(
         stmt = stmt.where(Lot.status == status.upper())
         count_stmt = count_stmt.where(Lot.status == status.upper())
     if account_id:
-        try:
-            uid = UUID(account_id)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid account_id")
-        stmt = stmt.where(Lot.account_id == uid)
-        count_stmt = count_stmt.where(Lot.account_id == uid)
+        stmt = stmt.where(Lot.account_id == account_id)
+        count_stmt = count_stmt.where(Lot.account_id == account_id)
     if strategy:
         stmt = stmt.where(Lot.strategy_name == strategy)
         count_stmt = count_stmt.where(Lot.strategy_name == strategy)
@@ -175,7 +167,7 @@ async def admin_list_combos(
     request: Request,
     admin: dict = Depends(require_admin),
     session: AsyncSession = Depends(get_trading_session),
-    account_id: str | None = Query(default=None),
+    account_id: UUID | None = Query(default=None),
     enabled: str | None = Query(default=None),
 ):
     """Cross-account combo overview with open lot counts."""
@@ -207,11 +199,7 @@ async def admin_list_combos(
     )
 
     if account_id:
-        try:
-            uid = UUID(account_id)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid account_id")
-        stmt = stmt.where(TradingCombo.account_id == uid)
+        stmt = stmt.where(TradingCombo.account_id == account_id)
     if enabled == "true":
         stmt = stmt.where(TradingCombo.is_enabled.is_(True))
     elif enabled == "false":
@@ -247,7 +235,7 @@ async def admin_list_fills(
     request: Request,
     admin: dict = Depends(require_admin),
     session: AsyncSession = Depends(get_trading_session),
-    account_id: str | None = Query(default=None),
+    account_id: UUID | None = Query(default=None),
     side: Literal["BUY", "SELL"] | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
@@ -262,12 +250,8 @@ async def admin_list_fills(
     count_stmt = select(sa_func.count(Fill.trade_id))
 
     if account_id:
-        try:
-            uid = UUID(account_id)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid account_id")
-        stmt = stmt.where(Fill.account_id == uid)
-        count_stmt = count_stmt.where(Fill.account_id == uid)
+        stmt = stmt.where(Fill.account_id == account_id)
+        count_stmt = count_stmt.where(Fill.account_id == account_id)
     if side:
         stmt = stmt.where(Fill.side == side.upper())
         count_stmt = count_stmt.where(Fill.side == side.upper())

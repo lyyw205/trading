@@ -13,7 +13,7 @@ from sqlalchemy import select
 from app.db.account_repo import AccountRepository
 from app.db.session import TradingSessionLocal
 from app.models.trading_combo import TradingCombo
-from app.services.account_trader import AccountTrader
+from app.services.account_trader import CB_FAILURE_THRESHOLD, AccountTrader
 from app.services.buy_pause_manager import BuyPauseManager
 from app.services.kline_ws_manager import KlineWsManager
 from app.services.price_collector import PriceCollector
@@ -134,7 +134,7 @@ class TradingEngine:
         async with TradingSessionLocal() as session:
             repo = AccountRepository(session)
             account = await repo.get_by_id(account_id)
-            if account and (account.circuit_breaker_failures or 0) >= 5:
+            if account and (account.circuit_breaker_failures or 0) >= CB_FAILURE_THRESHOLD:
                 logger.warning(
                     f"Account {account_id} has active circuit breaker ({account.circuit_breaker_failures} failures), "
                     "skipping trader start (WS subscriptions kept for candle collection)"

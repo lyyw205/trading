@@ -139,7 +139,7 @@ async def admin_list_positions(
     request: Request,
     admin: dict = Depends(require_admin),
     session: AsyncSession = Depends(get_trading_session),
-    account_id: str | None = Query(default=None),
+    account_id: UUID | None = Query(default=None),
 ):
     """Cross-account positions."""
     stmt = (
@@ -148,11 +148,7 @@ async def admin_list_positions(
         .order_by(TradingAccount.name, Position.symbol)
     )
     if account_id:
-        try:
-            uid = UUID(account_id)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid account_id")
-        stmt = stmt.where(Position.account_id == uid)
+        stmt = stmt.where(Position.account_id == account_id)
 
     result = await session.execute(stmt)
     rows = result.all()
@@ -180,7 +176,7 @@ async def admin_list_earnings(
     request: Request,
     admin: dict = Depends(require_admin),
     session: AsyncSession = Depends(get_trading_session),
-    account_id: str | None = Query(default=None),
+    account_id: UUID | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ):
@@ -204,12 +200,8 @@ async def admin_list_earnings(
     count_stmt = select(sa_func.count(CoreBtcHistory.id))
 
     if account_id:
-        try:
-            uid = UUID(account_id)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid account_id")
-        hist_stmt = hist_stmt.where(CoreBtcHistory.account_id == uid)
-        count_stmt = count_stmt.where(CoreBtcHistory.account_id == uid)
+        hist_stmt = hist_stmt.where(CoreBtcHistory.account_id == account_id)
+        count_stmt = count_stmt.where(CoreBtcHistory.account_id == account_id)
 
     total = (await session.execute(count_stmt)).scalar() or 0
     result = await session.execute(hist_stmt.offset(offset).limit(limit))
@@ -343,49 +335,39 @@ async def admin_system_health(
 @router.get("/reconciliation/{account_id}")
 @limiter.limit("10/minute")
 async def reconcile_account(
-    account_id: str,
+    account_id: UUID,
     request: Request,
     admin: dict = Depends(require_admin),
     session: AsyncSession = Depends(get_trading_session),
 ):
     """Manual reconciliation trigger for a specific account."""
-    try:
-        uid = UUID(account_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid account_id")
-
     engine = request.app.state.trading_engine
-    tc = engine.get_trader_client(uid)
+    tc = engine.get_trader_client(account_id)
     if not tc:
         raise HTTPException(status_code=404, detail="Account not running or client not initialized")
 
     service = ReconciliationService(session, tc[1])
-    result = await service.reconcile_account(uid)
+    result = await service.reconcile_account(account_id)
     return result.to_dict()
 
 
 @router.post("/reconciliation/{account_id}/repair/{symbol}")
 @limiter.limit("5/minute")
 async def repair_fill_gaps(
-    account_id: str,
+    account_id: UUID,
     symbol: str,
     request: Request,
     admin: dict = Depends(require_admin),
     session: AsyncSession = Depends(get_trading_session),
 ):
     """Repair fill gaps for a specific account/symbol."""
-    try:
-        uid = UUID(account_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid account_id")
-
     engine = request.app.state.trading_engine
-    tc = engine.get_trader_client(uid)
+    tc = engine.get_trader_client(account_id)
     if not tc:
         raise HTTPException(status_code=404, detail="Account not running or client not initialized")
 
     service = ReconciliationService(session, tc[1])
-    count = await service.repair_fill_gaps(uid, symbol.upper())
+    count = await service.repair_fill_gaps(account_id, symbol.upper())
     await session.commit()
     return {"status": "repaired", "fills_added": count, "symbol": symbol.upper()}
 
