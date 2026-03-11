@@ -8,6 +8,8 @@ from __future__ import annotations
 import asyncio
 from uuid import uuid4
 
+import pytest
+
 import app.strategies.state_store as _ss_mod
 from app.backtest.mem_stores import (
     InMemoryAccountStateManager,
@@ -16,6 +18,8 @@ from app.backtest.mem_stores import (
     InMemoryStateStore,
     _NoOpSession,
 )
+
+pytestmark = pytest.mark.unit
 
 
 def run(coro):

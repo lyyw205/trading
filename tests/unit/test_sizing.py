@@ -7,6 +7,8 @@ from app.strategies.sizing import (
     resolve_buy_usdt,
 )
 
+pytestmark = pytest.mark.unit
+
 
 class TestResolveBuyUsdt:
     """resolve_buy_usdt() 테스트."""
