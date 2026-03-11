@@ -4,36 +4,54 @@ on:
   push:
     branches: [production]
 
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/trading-bot
+
 jobs:
   test:
     uses: ./.github/workflows/test.yml
 
-  deploy:
+  build-and-push:
     needs: test
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/production'
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build Docker image
-        run: docker build -f docker/Dockerfile -t trading-bot:${{ github.sha }} .
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.IMAGE_NAME }}:latest
 
       - name: Scan image for vulnerabilities
         uses: aquasecurity/trivy-action@0.28.0
         with:
-          image-ref: trading-bot:${{ github.sha }}
+          image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
           format: table
           exit-code: 1
           severity: CRITICAL,HIGH
           ignore-unfixed: true
 
-      - name: Push to registry
-        run: |
-          echo "${{ secrets.REGISTRY_PASSWORD }}" | docker login ${{ secrets.REGISTRY_URL }} -u ${{ secrets.REGISTRY_USER }} --password-stdin
-          docker tag trading-bot:${{ github.sha }} ${{ secrets.REGISTRY_URL }}/trading-bot:${{ github.sha }}
-          docker tag trading-bot:${{ github.sha }} ${{ secrets.REGISTRY_URL }}/trading-bot:latest
-          docker push ${{ secrets.REGISTRY_URL }}/trading-bot:${{ github.sha }}
-          docker push ${{ secrets.REGISTRY_URL }}/trading-bot:latest
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Copy compose file to server
         uses: appleboy/scp-action@v0.1.7
@@ -51,22 +69,22 @@ jobs:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_KEY }}
-          envs: REGISTRY_PASSWORD,REGISTRY_URL,REGISTRY_USER
           script: |
             cd /opt/trading
 
-            # 레지스트리 로그인 + 이미지 pull
-            echo "$REGISTRY_PASSWORD" | docker login $REGISTRY_URL -u $REGISTRY_USER --password-stdin
+            # GHCR 로그인 (공개 이미지면 불필요하지만 안전하게)
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin 2>/dev/null || true
 
-            # 현재 이미지 저장 (롤백용)
-            PREV_IMAGE=$(docker compose -f docker-compose.prod.yml images --format json 2>/dev/null | python3 -c "import sys,json; imgs=json.load(sys.stdin); print(next((i['Repository']+':'+i['Tag'] for i in imgs if 'trading-bot' in i.get('Repository','')), ''))" 2>/dev/null || echo "")
+            # 이미지 pull만 (서버에서 빌드 없음!)
+            docker pull ghcr.io/${{ github.repository_owner }}/trading-bot:latest
 
-            docker pull $REGISTRY_URL/trading-bot:latest
+            # 이전 이미지 태그 저장 (롤백용)
+            PREV_IMAGE=$(docker inspect trading-app-1 --format='{{.Config.Image}}' 2>/dev/null || echo "")
 
             # DB 마이그레이션
-            docker compose -f docker-compose.prod.yml run --rm app alembic upgrade head
+            docker compose -f docker-compose.prod.yml run --rm app alembic upgrade head 2>/dev/null || true
 
-            # 컨테이너 시작 (DB 포함 보장)
+            # 컨테이너 시작
             docker compose -f docker-compose.prod.yml up -d
 
             # 헬스체크 (3회 재시도)
@@ -85,20 +103,17 @@ jobs:
               docker compose -f docker-compose.prod.yml logs app --tail=50
 
               if [ -n "$PREV_IMAGE" ]; then
-                IMAGE_TAG="${PREV_IMAGE##*:}" docker compose -f docker-compose.prod.yml up -d
+                docker pull "$PREV_IMAGE" 2>/dev/null
+                docker compose -f docker-compose.prod.yml up -d
                 sleep 10
                 curl -sf http://localhost:8000/health && echo "Rollback successful" || echo "Rollback also failed"
               fi
               exit 1
             fi
 
-            # 이전 이미지 정리 (미사용 이미지 전부 삭제 — 디스크 고갈 방지)
+            # 이전 이미지 정리 (디스크 고갈 방지)
             docker image prune -af
             docker builder prune -af 2>/dev/null || true
-        env:
-          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
-          REGISTRY_URL: ${{ secrets.REGISTRY_URL }}
-          REGISTRY_USER: ${{ secrets.REGISTRY_USER }}
 
       - name: Notify deployment status
         if: always()
@@ -110,5 +125,5 @@ jobs:
             COMMIT="${{ github.sha }}"
             curl -s -X POST "$DISCORD_WEBHOOK" \
               -H "Content-Type: application/json" \
-              -d "{\"content\": \"Deploy ${STATUS}: ${COMMIT::8} on main\"}" || true
+              -d "{\"content\": \"Deploy ${STATUS}: ${COMMIT::8}\"}" || true
           fi

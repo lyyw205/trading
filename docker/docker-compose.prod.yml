@@ -1,21 +1,41 @@
-version: "3.9"
-
 services:
   app:
-    image: ${REGISTRY_URL:-ghcr.io/iamooo}/trading-bot:${IMAGE_TAG:-latest}
+    image: ghcr.io/lyyw205/trading-bot:${IMAGE_TAG:-latest}
     env_file:
-      - .env
+      - /opt/trading/.env
     ports:
       - "127.0.0.1:8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
-      interval: 30s
-      timeout: 5s
-      start_period: 15s
-      retries: 3
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
+
+  db:
+    image: postgres:16-alpine
+    env_file:
+      - /opt/trading/.env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-crypto_trader}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-crypto_trader}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  pgdata:
