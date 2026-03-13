@@ -171,7 +171,7 @@ async def get_lots(
     request: Request,
     strategy: str | None = None,
     combo_id: UUID | None = None,
-    status: Literal["OPEN", "CLOSED", "CANCELLED"] = "OPEN",
+    status: Literal["OPEN", "CLOSED", "CANCELLED", "MERGED"] = "OPEN",
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     account=Depends(get_owned_account),

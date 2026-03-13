@@ -131,7 +131,7 @@ class MemLot:
     buy_qty: float
     buy_time: datetime
     buy_time_ms: int | None
-    status: str  # "OPEN" | "CLOSED"
+    status: str  # "OPEN" | "CLOSED" | "MERGED"
     combo_id: UUID | None
     sell_order_id: int | None = None
     sell_order_time_ms: int | None = None
@@ -168,6 +168,16 @@ class InMemoryLotRepository:
         buy_time_ms: int,
         combo_id: UUID | None = None,
     ) -> MemLot:
+        # Duplicate guard: return existing OPEN lot with same buy_order_id
+        if buy_order_id is not None:
+            for lot in self._lots.values():
+                if (
+                    lot.account_id == account_id
+                    and lot.buy_order_id == buy_order_id
+                    and lot.status == "OPEN"
+                ):
+                    return lot
+
         lot_id = self._next_lot_id
         self._next_lot_id += 1
         lot = MemLot(

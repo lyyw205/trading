@@ -70,7 +70,7 @@ async def admin_list_lots(
     request: Request,
     admin: dict = Depends(require_admin),
     session: AsyncSession = Depends(get_trading_session),
-    status: Literal["OPEN", "CLOSED", "CANCELLED"] | None = Query(default=None),
+    status: Literal["OPEN", "CLOSED", "CANCELLED", "MERGED"] | None = Query(default=None),
     account_id: UUID | None = Query(default=None),
     strategy: str | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),

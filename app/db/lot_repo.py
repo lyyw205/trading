@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -8,6 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer
 
 from app.models.lot import Lot
+
+logger = logging.getLogger(__name__)
 
 
 class LotRepository:
@@ -68,7 +71,24 @@ class LotRepository:
         buy_time_ms: int,
         combo_id: UUID | None = None,
     ) -> Lot:
-        """Insert a new lot."""
+        """Insert a new lot. Returns existing OPEN lot if buy_order_id is duplicated."""
+        if buy_order_id is not None:
+            stmt = select(Lot).where(
+                Lot.account_id == account_id,
+                Lot.buy_order_id == buy_order_id,
+                Lot.status == "OPEN",
+                Lot.sell_order_id.is_(None),
+            )
+            result = await self._session.execute(stmt)
+            existing = result.scalars().first()
+            if existing is not None:
+                logger.warning(
+                    "insert_lot: 중복 buy_order_id %s 감지, 기존 lot %s 반환",
+                    buy_order_id,
+                    existing.lot_id,
+                )
+                return existing
+
         lot = Lot(
             account_id=account_id,
             symbol=symbol,

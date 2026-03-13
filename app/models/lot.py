@@ -2,14 +2,14 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, Index, Numeric, String, func
+from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, Index, Numeric, String, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
 
-LOT_STATUSES = ("OPEN", "CLOSED")
+LOT_STATUSES = ("OPEN", "CLOSED", "MERGED")
 
 
 class Lot(Base):
@@ -19,6 +19,13 @@ class Lot(Base):
         Index("idx_lots_strategy", "account_id", "strategy_name", "status"),
         Index("idx_lots_combo", "account_id", "combo_id", "status"),
         Index("idx_lots_buy_time", "buy_time"),
+        Index(
+            "idx_lots_unique_buy_order",
+            "account_id",
+            "buy_order_id",
+            unique=True,
+            postgresql_where=text("buy_order_id IS NOT NULL AND status = 'OPEN' AND sell_order_id IS NULL"),
+        ),
         CheckConstraint(f"status IN {LOT_STATUSES!r}", name="chk_lot_status"),
     )
 
