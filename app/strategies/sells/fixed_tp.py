@@ -263,8 +263,7 @@ class FixedTpSell(BaseSellLogic):
             retry_after = await state.get_float(f"sell_retry_after:{lot.lot_id}", 0.0)
             if self._now() < retry_after:
                 logger.debug(
-                    "fixed_tp: lot %s sell retry cooldown active (%d failures), "
-                    "skipping until %.0f",
+                    "fixed_tp: lot %s sell retry cooldown active (%d failures), skipping until %.0f",
                     lot.lot_id,
                     retry_count,
                     retry_after,
@@ -283,10 +282,12 @@ class FixedTpSell(BaseSellLogic):
             )
         except Exception as exc:
             new_count = retry_count + 1
-            await state.set_many({
-                f"sell_retry_count:{lot.lot_id}": new_count,
-                f"sell_retry_after:{lot.lot_id}": self._now() + _SELL_RETRY_COOLDOWN_SEC,
-            })
+            await state.set_many(
+                {
+                    f"sell_retry_count:{lot.lot_id}": new_count,
+                    f"sell_retry_after:{lot.lot_id}": self._now() + _SELL_RETRY_COOLDOWN_SEC,
+                }
+            )
             logger.error(
                 "fixed_tp: place TP sell for lot %s failed (%d/%d): %s",
                 lot.lot_id,
@@ -315,10 +316,12 @@ class FixedTpSell(BaseSellLogic):
             # while the orphan is unreconciled.
             new_count = retry_count + 1
             with contextlib.suppress(Exception):
-                await state.set_many({
-                    f"sell_retry_count:{lot.lot_id}": new_count,
-                    f"sell_retry_after:{lot.lot_id}": self._now() + _SELL_RETRY_COOLDOWN_SEC,
-                })
+                await state.set_many(
+                    {
+                        f"sell_retry_count:{lot.lot_id}": new_count,
+                        f"sell_retry_after:{lot.lot_id}": self._now() + _SELL_RETRY_COOLDOWN_SEC,
+                    }
+                )
             logger.critical(
                 "fixed_tp: FLUSH FAILED after placing sell order %s for lot %s. "
                 "Order remains on Binance -- orphan recovery will handle it. "

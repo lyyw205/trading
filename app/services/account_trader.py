@@ -566,13 +566,10 @@ class AccountTrader:
         Returns the number of orphans reconciled.
         """
         # 1. Find OPEN lots with sell_order_id IS NULL for this account
-        orphan_lot_stmt = (
-            select(Lot.lot_id)
-            .where(
-                Lot.account_id == self.account_id,
-                Lot.status == "OPEN",
-                Lot.sell_order_id.is_(None),
-            )
+        orphan_lot_stmt = select(Lot.lot_id).where(
+            Lot.account_id == self.account_id,
+            Lot.status == "OPEN",
+            Lot.sell_order_id.is_(None),
         )
         orphan_lot_result = await session.execute(orphan_lot_stmt)
         orphan_lot_ids = {row[0] for row in orphan_lot_result.all()}
@@ -581,14 +578,11 @@ class AccountTrader:
             return 0
 
         # 2. Find open/new sell orders with clientOrderId containing _TP_
-        sell_order_stmt = (
-            select(Order.order_id, Order.client_order_id, Order.update_time_ms)
-            .where(
-                Order.account_id == self.account_id,
-                Order.side == "SELL",
-                Order.status.in_(("NEW", "PARTIALLY_FILLED")),
-                Order.client_order_id.isnot(None),
-            )
+        sell_order_stmt = select(Order.order_id, Order.client_order_id, Order.update_time_ms).where(
+            Order.account_id == self.account_id,
+            Order.side == "SELL",
+            Order.status.in_(("NEW", "PARTIALLY_FILLED")),
+            Order.client_order_id.isnot(None),
         )
         sell_order_result = await session.execute(sell_order_stmt)
 
@@ -611,8 +605,7 @@ class AccountTrader:
             orphan_lot_ids.discard(lot_id)  # prevent duplicate matching
             reconciled += 1
             logger.info(
-                "Orphan recovery: linked sell order %s to lot %s "
-                "(clientOrderId=%s)",
+                "Orphan recovery: linked sell order %s to lot %s (clientOrderId=%s)",
                 order_id,
                 lot_id,
                 client_order_id,

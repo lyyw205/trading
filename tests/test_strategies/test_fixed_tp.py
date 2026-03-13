@@ -81,8 +81,11 @@ def _make_exchange(min_notional=10.0):
 
 def _make_state():
     state = AsyncMock()
+    state.get_int = AsyncMock(return_value=0)
     state.get_float = AsyncMock(return_value=0.0)
     state.set = AsyncMock()
+    state.set_many = AsyncMock()
+    state.clear_keys = AsyncMock()
     return state
 
 

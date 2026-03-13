@@ -18,6 +18,7 @@ from app.strategies.sells.fixed_tp import FixedTpSell
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_ctx(account_id=None, symbol="ETHUSDT", prefix="CMT_test_"):
     """Build a minimal StrategyContext-like object."""
     ctx = MagicMock()
@@ -108,9 +109,9 @@ def _make_sell_strategy(sim_time=1000.0):
 # Task 1: Atomic flush, no cancel on failure
 # ===========================================================================
 
+
 @pytest.mark.unit
 class TestAtomicFlush:
-
     @pytest.mark.asyncio
     async def test_flush_called_after_set_sell_order(self):
         """flush() is called after upsert_order + set_sell_order."""
@@ -122,7 +123,13 @@ class TestAtomicFlush:
         lot = _make_lot()
 
         await strategy._place_new_sell_order(
-            ctx, state, exchange, repos, lot, 2066.0, 0.01,
+            ctx,
+            state,
+            exchange,
+            repos,
+            lot,
+            2066.0,
+            0.01,
         )
 
         repos.order.upsert_order.assert_awaited_once()
@@ -142,7 +149,13 @@ class TestAtomicFlush:
 
         # Should not raise
         await strategy._place_new_sell_order(
-            ctx, state, exchange, repos, lot, 2066.0, 0.01,
+            ctx,
+            state,
+            exchange,
+            repos,
+            lot,
+            2066.0,
+            0.01,
         )
 
         # Exchange cancel must NOT be called
@@ -162,7 +175,13 @@ class TestAtomicFlush:
         # No exception should escape
         try:
             await strategy._place_new_sell_order(
-                ctx, state, exchange, repos, lot, 2066.0, 0.01,
+                ctx,
+                state,
+                exchange,
+                repos,
+                lot,
+                2066.0,
+                0.01,
             )
         except Exception:
             pytest.fail("flush failure should not propagate")
@@ -172,9 +191,9 @@ class TestAtomicFlush:
 # Task 2: Retry limiting with cooldown reset
 # ===========================================================================
 
+
 @pytest.mark.unit
 class TestRetryLimiting:
-
     @pytest.mark.asyncio
     async def test_retry_counter_increments_on_failure(self):
         """Each sell placement failure increments the retry counter."""
@@ -188,7 +207,13 @@ class TestRetryLimiting:
 
         for _i in range(3):
             await strategy._place_new_sell_order(
-                ctx, state, exchange, repos, lot, 2066.0, 0.01,
+                ctx,
+                state,
+                exchange,
+                repos,
+                lot,
+                2066.0,
+                0.01,
             )
 
         assert state._store.get("sell_retry_count:42") == "3"
@@ -208,7 +233,13 @@ class TestRetryLimiting:
         lot = _make_lot(lot_id=42)
 
         await strategy._place_new_sell_order(
-            ctx, state, exchange, repos, lot, 2066.0, 0.01,
+            ctx,
+            state,
+            exchange,
+            repos,
+            lot,
+            2066.0,
+            0.01,
         )
 
         # Exchange should NOT be called
@@ -228,7 +259,13 @@ class TestRetryLimiting:
         lot = _make_lot(lot_id=42)
 
         await strategy._place_new_sell_order(
-            ctx, state, exchange, repos, lot, 2066.0, 0.01,
+            ctx,
+            state,
+            exchange,
+            repos,
+            lot,
+            2066.0,
+            0.01,
         )
 
         # Exchange SHOULD be called (fresh retry)
@@ -255,43 +292,50 @@ class TestRetryLimiting:
             state._store["sell_retry_after:42"] = str(9999.0)
 
             if status == "FILLED":
-                exchange.get_order = AsyncMock(return_value={
-                    "orderId": 99999,
-                    "status": status,
-                    "executedQty": "0.01",
-                    "cummulativeQuoteQty": "20.66",
-                    "updateTime": 1700000000000,
-                })
+                exchange.get_order = AsyncMock(
+                    return_value={
+                        "orderId": 99999,
+                        "status": status,
+                        "executedQty": "0.01",
+                        "cummulativeQuoteQty": "20.66",
+                        "updateTime": 1700000000000,
+                    }
+                )
                 repos.lot.close_lot = AsyncMock()
                 account_state.add_pending_earnings = AsyncMock()
             else:
-                exchange.get_order = AsyncMock(return_value={
-                    "orderId": 99999,
-                    "status": status,
-                })
+                exchange.get_order = AsyncMock(
+                    return_value={
+                        "orderId": 99999,
+                        "status": status,
+                    }
+                )
                 repos.lot.clear_sell_order = AsyncMock()
 
             repos.order.upsert_order = AsyncMock()
 
             await strategy._check_existing_sell_order(
-                ctx, state, exchange, account_state, repos, lot, 2066.0, "always",
+                ctx,
+                state,
+                exchange,
+                account_state,
+                repos,
+                lot,
+                2066.0,
+                "always",
             )
 
-            assert state._store.get("sell_retry_count:42") is None, (
-                f"sell_retry_count not cleared for status {status}"
-            )
-            assert state._store.get("sell_retry_after:42") is None, (
-                f"sell_retry_after not cleared for status {status}"
-            )
+            assert state._store.get("sell_retry_count:42") is None, f"sell_retry_count not cleared for status {status}"
+            assert state._store.get("sell_retry_after:42") is None, f"sell_retry_after not cleared for status {status}"
 
 
 # ===========================================================================
 # Task 3: Orphaned order recovery
 # ===========================================================================
 
+
 @pytest.mark.unit
 class TestOrphanRecovery:
-
     @pytest.mark.asyncio
     async def test_orphan_recovery_matches_client_order_id(self):
         """Orphan order with _TP_{lot_id} pattern is linked to the lot."""
