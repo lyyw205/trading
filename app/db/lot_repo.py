@@ -136,6 +136,10 @@ class LotRepository:
         )
         await self._session.execute(stmt)
 
+    async def flush(self) -> None:
+        """Flush pending changes to the database within the current transaction."""
+        await self._session.flush()
+
     async def clear_sell_order(
         self,
         *,

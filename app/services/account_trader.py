@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import re
 import time
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -202,6 +203,15 @@ class AccountTrader:
                     if c.symbols:
                         all_combo_symbols.update(s.upper() for s in c.symbols)
                 await self._sync_orders_and_fills(account, all_combo_symbols, order_repo, position_repo, session)
+
+                # Reconcile orphaned sell orders (Binance has them, DB lots don't)
+                orphan_count = await self._reconcile_orphan_sells(order_repo, lot_repo, session)
+                if orphan_count > 0:
+                    logger.warning(
+                        "Reconciled %d orphaned sell orders for account %s",
+                        orphan_count,
+                        self.account_id,
+                    )
 
                 # Sentry context for this trading cycle
                 try:
@@ -522,6 +532,86 @@ class AccountTrader:
         # 4-6: Conditional recompute — only for symbols with new fills
         for sym in symbols_with_new_fills:
             await position_repo.recompute_from_fills(self.account_id, sym)
+
+    _ORPHAN_TP_RE = re.compile(r"_TP_(\d+)$")
+
+    async def _reconcile_orphan_sells(
+        self,
+        order_repo: OrderRepository,
+        lot_repo: LotRepository,
+        session,
+    ) -> int:
+        """Reconcile orphaned sell orders: Binance has them, DB lots do not.
+
+        Scans the Order table for SELL orders with clientOrderId matching
+        the _TP_{lot_id} pattern, then links them to lots where sell_order_id IS NULL.
+
+        Returns the number of orphans reconciled.
+        """
+        # 1. Find OPEN lots with sell_order_id IS NULL for this account
+        orphan_lot_stmt = (
+            select(Lot.lot_id)
+            .where(
+                Lot.account_id == self.account_id,
+                Lot.status == "OPEN",
+                Lot.sell_order_id.is_(None),
+            )
+        )
+        orphan_lot_result = await session.execute(orphan_lot_stmt)
+        orphan_lot_ids = {row[0] for row in orphan_lot_result.all()}
+
+        if not orphan_lot_ids:
+            return 0
+
+        # 2. Find open/new sell orders with clientOrderId containing _TP_
+        sell_order_stmt = (
+            select(Order.order_id, Order.client_order_id, Order.update_time_ms)
+            .where(
+                Order.account_id == self.account_id,
+                Order.side == "SELL",
+                Order.status.in_(("NEW", "PARTIALLY_FILLED")),
+                Order.client_order_id.isnot(None),
+            )
+        )
+        sell_order_result = await session.execute(sell_order_stmt)
+
+        reconciled = 0
+        for order_id, client_order_id, update_time_ms in sell_order_result.all():
+            match = self._ORPHAN_TP_RE.search(client_order_id or "")
+            if not match:
+                continue
+            lot_id = int(match.group(1))
+            if lot_id not in orphan_lot_ids:
+                continue
+
+            # Link the orphan
+            await lot_repo.set_sell_order(
+                account_id=self.account_id,
+                lot_id=lot_id,
+                sell_order_id=order_id,
+                sell_order_time_ms=update_time_ms or 0,
+            )
+            reconciled += 1
+            logger.info(
+                "Orphan recovery: linked sell order %s to lot %s "
+                "(clientOrderId=%s)",
+                order_id,
+                lot_id,
+                client_order_id,
+            )
+
+        if reconciled > 0:
+            try:
+                await session.flush()
+            except Exception as flush_exc:
+                logger.warning(
+                    "Orphan recovery flush failed (%d links may be lost): %s",
+                    reconciled,
+                    flush_exc,
+                )
+                return 0
+
+        return reconciled
 
     async def run_forever(self):
         """Main trading loop with circuit breaker and exponential backoff.

@@ -17,6 +17,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _ORDER_COOLDOWN_SEC = 5.0
+_MAX_SELL_RETRIES = 3
+_SELL_RETRY_COOLDOWN_SEC = 300.0  # 5 minutes
 
 
 @SellLogicRegistry.register
@@ -203,6 +205,12 @@ class FixedTpSell(BaseSellLogic):
             # from pushing base_price upward on the next pre_tick
             await state.set("recenter_ema", sell_price)
 
+            # Clean up retry state for this lot
+            await state.clear_keys(
+                f"sell_retry_count:{lot.lot_id}",
+                f"sell_retry_after:{lot.lot_id}",
+            )
+
             logger.info(
                 "fixed_tp: lot %s TP filled sell=%.2f profit=%.4f pending_earnings+=%.4f",
                 lot.lot_id,
@@ -221,6 +229,11 @@ class FixedTpSell(BaseSellLogic):
             await repos.lot.clear_sell_order(
                 account_id=ctx.account_id,
                 lot_id=lot.lot_id,
+            )
+            # Clean up retry state for this lot
+            await state.clear_keys(
+                f"sell_retry_count:{lot.lot_id}",
+                f"sell_retry_after:{lot.lot_id}",
             )
 
         elif sell_status == "NEW":
@@ -243,6 +256,23 @@ class FixedTpSell(BaseSellLogic):
         if self._sim_time is None and not self._cooldown_ok(_ORDER_COOLDOWN_SEC):
             return
 
+        # --- Retry limiting (per-lot) ---
+        retry_count = await state.get_int(f"sell_retry_count:{lot.lot_id}", 0)
+        if retry_count >= _MAX_SELL_RETRIES:
+            retry_after = await state.get_float(f"sell_retry_after:{lot.lot_id}", 0.0)
+            if self._now() < retry_after:
+                logger.debug(
+                    "fixed_tp: lot %s sell retry cooldown active (%d failures), "
+                    "skipping until %.0f",
+                    lot.lot_id,
+                    retry_count,
+                    retry_after,
+                )
+                return
+            # Cooldown expired -- reset counter for fresh retries
+            retry_count = 0
+            await state.set(f"sell_retry_count:{lot.lot_id}", 0)
+
         try:
             sell_resp = await exchange.place_limit_sell(
                 qty_base=sell_qty,
@@ -251,23 +281,51 @@ class FixedTpSell(BaseSellLogic):
                 client_oid=f"{ctx.client_order_prefix}_TP_{lot.lot_id}",
             )
         except Exception as exc:
+            new_count = retry_count + 1
+            await state.set_many({
+                f"sell_retry_count:{lot.lot_id}": new_count,
+                f"sell_retry_after:{lot.lot_id}": self._now() + _SELL_RETRY_COOLDOWN_SEC,
+            })
             logger.error(
-                "fixed_tp: place TP sell for lot %s failed: %s",
+                "fixed_tp: place TP sell for lot %s failed (%d/%d): %s",
                 lot.lot_id,
+                new_count,
+                _MAX_SELL_RETRIES,
                 exc,
             )
             return
 
-        await repos.order.upsert_order(ctx.account_id, sell_resp)
         sell_order_id = int(sell_resp.get("orderId", 0))
         sell_time_ms = int(sell_resp.get("transactTime", 0)) or int(self._now() * 1000)
 
-        await repos.lot.set_sell_order(
-            account_id=ctx.account_id,
-            lot_id=lot.lot_id,
-            sell_order_id=sell_order_id,
-            sell_order_time_ms=sell_time_ms,
+        try:
+            await repos.order.upsert_order(ctx.account_id, sell_resp)
+            await repos.lot.set_sell_order(
+                account_id=ctx.account_id,
+                lot_id=lot.lot_id,
+                sell_order_id=sell_order_id,
+                sell_order_time_ms=sell_time_ms,
+            )
+            await repos.lot.flush()
+        except Exception as db_exc:
+            # Do NOT cancel the Binance order -- orphan recovery will
+            # reconcile it on the next cycle via clientOrderId matching.
+            logger.critical(
+                "fixed_tp: FLUSH FAILED after placing sell order %s for lot %s. "
+                "Order remains on Binance -- orphan recovery will handle it. "
+                "Error: %s",
+                sell_order_id,
+                lot.lot_id,
+                db_exc,
+            )
+            return
+
+        # Clear retry counters on successful placement
+        await state.clear_keys(
+            f"sell_retry_count:{lot.lot_id}",
+            f"sell_retry_after:{lot.lot_id}",
         )
+
         self._touch_order()
 
         logger.info(
