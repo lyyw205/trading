@@ -20,7 +20,8 @@ depends_on = None
 
 def upgrade() -> None:
     # Step 1: Update CheckConstraint to allow MERGED status
-    op.drop_constraint("chk_lot_status", "lots")
+    conn = op.get_bind()
+    conn.execute(sa.text("ALTER TABLE lots DROP CONSTRAINT IF EXISTS chk_lot_status"))
     op.create_check_constraint(
         "chk_lot_status",
         "lots",
@@ -30,7 +31,6 @@ def upgrade() -> None:
     # Step 2: Merge duplicate dust lots
     # Only merge OPEN lots with sell_order_id IS NULL (protect active Binance orders)
     # For each group of duplicates: keep MIN(lot_id), sum buy_qty, weighted avg buy_price
-    conn = op.get_bind()
 
     # Count before
     before = conn.execute(sa.text("SELECT COUNT(*) FROM lots WHERE status = 'OPEN'")).scalar()
