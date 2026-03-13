@@ -171,11 +171,7 @@ class InMemoryLotRepository:
         # Duplicate guard: return existing OPEN lot with same buy_order_id
         if buy_order_id is not None:
             for lot in self._lots.values():
-                if (
-                    lot.account_id == account_id
-                    and lot.buy_order_id == buy_order_id
-                    and lot.status == "OPEN"
-                ):
+                if lot.account_id == account_id and lot.buy_order_id == buy_order_id and lot.status == "OPEN":
                     return lot
 
         lot_id = self._next_lot_id

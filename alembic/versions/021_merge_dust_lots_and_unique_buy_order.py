@@ -33,9 +33,7 @@ def upgrade() -> None:
     conn = op.get_bind()
 
     # Count before
-    before = conn.execute(
-        sa.text("SELECT COUNT(*) FROM lots WHERE status = 'OPEN'")
-    ).scalar()
+    before = conn.execute(sa.text("SELECT COUNT(*) FROM lots WHERE status = 'OPEN'")).scalar()
     print(f"  [021] OPEN lots before merge: {before}")
 
     # Find duplicate groups and merge
@@ -85,12 +83,8 @@ def upgrade() -> None:
         """)
     )
 
-    after = conn.execute(
-        sa.text("SELECT COUNT(*) FROM lots WHERE status = 'OPEN'")
-    ).scalar()
-    merged = conn.execute(
-        sa.text("SELECT COUNT(*) FROM lots WHERE status = 'MERGED'")
-    ).scalar()
+    after = conn.execute(sa.text("SELECT COUNT(*) FROM lots WHERE status = 'OPEN'")).scalar()
+    merged = conn.execute(sa.text("SELECT COUNT(*) FROM lots WHERE status = 'MERGED'")).scalar()
     print(f"  [021] OPEN lots after merge: {after}, MERGED: {merged}")
 
     # Step 3: Create partial unique index
@@ -99,9 +93,7 @@ def upgrade() -> None:
         "lots",
         ["account_id", "buy_order_id"],
         unique=True,
-        postgresql_where=sa.text(
-            "buy_order_id IS NOT NULL AND status = 'OPEN' AND sell_order_id IS NULL"
-        ),
+        postgresql_where=sa.text("buy_order_id IS NOT NULL AND status = 'OPEN' AND sell_order_id IS NULL"),
     )
 
 
@@ -111,11 +103,7 @@ def downgrade() -> None:
 
     # Revert MERGED lots to OPEN (best effort — quantities not restored)
     conn = op.get_bind()
-    conn.execute(
-        sa.text(
-            "UPDATE lots SET status = 'OPEN' WHERE status = 'MERGED'"
-        )
-    )
+    conn.execute(sa.text("UPDATE lots SET status = 'OPEN' WHERE status = 'MERGED'"))
 
     # Restore original CheckConstraint
     op.drop_constraint("chk_lot_status", "lots")

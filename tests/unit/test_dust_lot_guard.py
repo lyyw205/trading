@@ -198,12 +198,8 @@ class TestHandleFilledBuyDuplicate:
         }
 
         # Call twice with same order
-        await strategy._handle_filled_buy(
-            ctx, state, order_data, account_state, repos, combo_id, kind="LOT"
-        )
-        await strategy._handle_filled_buy(
-            ctx, state, order_data, account_state, repos, combo_id, kind="LOT"
-        )
+        await strategy._handle_filled_buy(ctx, state, order_data, account_state, repos, combo_id, kind="LOT")
+        await strategy._handle_filled_buy(ctx, state, order_data, account_state, repos, combo_id, kind="LOT")
 
         all_lots = await lot_repo.get_open_lots(account_id, "ETHUSDT")
         assert len(all_lots) == 1
