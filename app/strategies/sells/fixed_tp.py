@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 from typing import TYPE_CHECKING
 
@@ -310,6 +311,14 @@ class FixedTpSell(BaseSellLogic):
         except Exception as db_exc:
             # Do NOT cancel the Binance order -- orphan recovery will
             # reconcile it on the next cycle via clientOrderId matching.
+            # Increment retry counter to prevent duplicate place_limit_sell calls
+            # while the orphan is unreconciled.
+            new_count = retry_count + 1
+            with contextlib.suppress(Exception):
+                await state.set_many({
+                    f"sell_retry_count:{lot.lot_id}": new_count,
+                    f"sell_retry_after:{lot.lot_id}": self._now() + _SELL_RETRY_COOLDOWN_SEC,
+                })
             logger.critical(
                 "fixed_tp: FLUSH FAILED after placing sell order %s for lot %s. "
                 "Order remains on Binance -- orphan recovery will handle it. "

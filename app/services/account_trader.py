@@ -205,7 +205,13 @@ class AccountTrader:
                 await self._sync_orders_and_fills(account, all_combo_symbols, order_repo, position_repo, session)
 
                 # Reconcile orphaned sell orders (Binance has them, DB lots don't)
-                orphan_count = await self._reconcile_orphan_sells(order_repo, lot_repo, session)
+                # Wrapped in SAVEPOINT so failure doesn't abort the trading cycle
+                orphan_count = 0
+                try:
+                    async with session.begin_nested():
+                        orphan_count = await self._reconcile_orphan_sells(order_repo, lot_repo, session)
+                except Exception as e:
+                    logger.warning("Orphan reconciliation failed (non-fatal): %s", e)
                 if orphan_count > 0:
                     logger.warning(
                         "Reconciled %d orphaned sell orders for account %s",
@@ -449,20 +455,26 @@ class AccountTrader:
             order_sym_result = await session.execute(order_sym_stmt)
             order_symbol_map = {row[0]: row[1] for row in order_sym_result.all()}
 
-            async def _refresh_order(oid: int):
+            async def _fetch_order_data(oid: int):
                 sym = order_symbol_map.get(oid, account.symbol)
                 await self._rate_limiter.acquire(weight=1)
-                o = await self._client.get_order(oid, sym)
-                await order_repo.upsert_order(self.account_id, o)
-                synced_oids.add(oid)
+                return oid, await self._client.get_order(oid, sym)
 
+            # API calls in parallel, DB writes sequential (AsyncSession is not concurrency-safe)
             results = await asyncio.gather(
-                *[_refresh_order(oid) for oid in to_refresh],
+                *[_fetch_order_data(oid) for oid in to_refresh],
                 return_exceptions=True,
             )
-            for oid, res in zip(to_refresh, results, strict=False):
+            for res in results:
                 if isinstance(res, Exception):
-                    logger.warning("Order %s sync failed: %s", oid, res)
+                    logger.warning("Order sync fetch failed: %s", res)
+                    continue
+                oid, order_data = res
+                try:
+                    await order_repo.upsert_order(self.account_id, order_data)
+                    synced_oids.add(oid)
+                except Exception as e:
+                    logger.warning("Order %s upsert failed: %s", oid, e)
 
         # Step 3: Sync recent fills per symbol (incremental fetch via last trade_id)
         try:
@@ -511,21 +523,26 @@ class AccountTrader:
                 if trades:
                     symbols_with_new_fills.add(sym)
 
-                # Parallel fetch for unseen order IDs
+                # Parallel fetch for unseen order IDs (API parallel, DB sequential)
                 if unseen_oids:
 
-                    async def _fetch_fill_order(fill_oid: int, fill_sym: str = sym):
+                    async def _fetch_fill_order_data(fill_oid: int, fill_sym: str = sym):
                         await self._rate_limiter.acquire(weight=1)
-                        o = await self._client.get_order(fill_oid, fill_sym)
-                        await order_repo.upsert_order(self.account_id, o)
+                        return fill_oid, await self._client.get_order(fill_oid, fill_sym)
 
                     fill_results = await asyncio.gather(
-                        *[_fetch_fill_order(oid) for oid in unseen_oids],
+                        *[_fetch_fill_order_data(oid) for oid in unseen_oids],
                         return_exceptions=True,
                     )
-                    for oid, res in zip(unseen_oids, fill_results, strict=False):
+                    for res in fill_results:
                         if isinstance(res, Exception):
-                            logger.warning("Fill order %s sync failed: %s", oid, res)
+                            logger.warning("Fill order fetch failed: %s", res)
+                            continue
+                        fill_oid, order_data = res
+                        try:
+                            await order_repo.upsert_order(self.account_id, order_data)
+                        except Exception as e:
+                            logger.warning("Fill order %s upsert failed: %s", fill_oid, e)
             except Exception as e:
                 logger.warning("Fills processing failed for %s: %s", sym, e)
 
@@ -533,7 +550,7 @@ class AccountTrader:
         for sym in symbols_with_new_fills:
             await position_repo.recompute_from_fills(self.account_id, sym)
 
-    _ORPHAN_TP_RE = re.compile(r"_TP_(\d+)$")
+    _ORPHAN_TP_RE = re.compile(r"^CMT_[0-9a-f]{8}_[0-9a-f]{8}__TP_(\d+)$")
 
     async def _reconcile_orphan_sells(
         self,
@@ -591,6 +608,7 @@ class AccountTrader:
                 sell_order_id=order_id,
                 sell_order_time_ms=update_time_ms or 0,
             )
+            orphan_lot_ids.discard(lot_id)  # prevent duplicate matching
             reconciled += 1
             logger.info(
                 "Orphan recovery: linked sell order %s to lot %s "

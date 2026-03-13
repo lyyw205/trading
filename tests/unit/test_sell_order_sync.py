@@ -311,7 +311,7 @@ class TestOrphanRecovery:
         # Mock sell order query result
         sell_order_result = MagicMock()
         sell_order_result.all.return_value = [
-            (12345, "CMT_abc12345_def67890__TP_42", 1700000000000),
+            (12345, "CMT_a1b2c3d4_e5f6a7b8__TP_42", 1700000000000),
         ]
 
         session.execute = AsyncMock(side_effect=[orphan_lot_result, sell_order_result])
@@ -406,7 +406,7 @@ class TestOrphanRecovery:
         # Order references lot 42 (not orphaned)
         sell_order_result = MagicMock()
         sell_order_result.all.return_value = [
-            (12345, "CMT_abc_def__TP_42", 1700000000000),
+            (12345, "CMT_a1b2c3d4_e5f6a7b8__TP_42", 1700000000000),
         ]
 
         session.execute = AsyncMock(side_effect=[orphan_lot_result, sell_order_result])
