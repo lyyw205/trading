@@ -15,11 +15,11 @@ depends_on = None
 
 def upgrade() -> None:
     op.execute(
-        "CREATE INDEX CONCURRENTLY IF NOT EXISTS "
+        "CREATE INDEX IF NOT EXISTS "
         "idx_fills_recompute ON fills (account_id, symbol) "
         "INCLUDE (side, qty, quote_qty)"
     )
 
 
 def downgrade() -> None:
-    op.execute("DROP INDEX CONCURRENTLY IF EXISTS idx_fills_recompute")
+    op.execute("DROP INDEX IF EXISTS idx_fills_recompute")
