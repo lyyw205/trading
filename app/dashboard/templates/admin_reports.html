@@ -143,7 +143,7 @@ async function loadReports() {
 
         container.innerHTML = reports.map(r => {
             const s = r.summary || {};
-            const score = r.health_score;
+            const score = parseFloat(r.health_score) || 0;
             const cls = score >= 80 ? 'health-good' : score >= 50 ? 'health-warn' : 'health-bad';
             const topMods = (s.top_error_modules || []).map(m =>
                 `<li><span>${_esc(m.module)}</span><span class="count">${parseInt(m.count) || 0}</span></li>`

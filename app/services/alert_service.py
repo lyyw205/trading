@@ -37,6 +37,8 @@ class AlertService:
     def __init__(self, settings: GlobalConfig | None = None):
         self._settings = settings or get_settings()
         self._enabled = bool(self._settings.telegram_bot_token and self._settings.telegram_chat_id)
+        if not self._enabled:
+            logger.warning("AlertService disabled: TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set")
         self._rate_limit = self._settings.alert_rate_limit_per_hour
         self._send_times: deque[float] = deque(maxlen=self._rate_limit)
         self._consecutive_failures = 0

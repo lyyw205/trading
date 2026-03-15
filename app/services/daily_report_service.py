@@ -197,7 +197,7 @@ class DailyReportService:
 
         from app.services.alert_service import AlertSeverity
 
-        sent = await alert_service.send(msg, AlertSeverity.INFO)
+        sent = await alert_service.send(msg, AlertSeverity.HIGH)
 
         if sent:
             async with TradingSessionLocal() as session:
@@ -286,7 +286,9 @@ async def run_daily_report_loop(alert_service=None) -> None:
                         if alert_service:
                             await alert_service.send_high(f"⚠️ 일일 리포트 생성 실패: {today_kst} (3회 재시도 실패)")
             elif report and alert_service:
-                await service.send_telegram_report(report, alert_service)
+                sent = await service.send_telegram_report(report, alert_service)
+                if not sent:
+                    logger.warning("Daily report for %s generated but Telegram send failed/skipped", today_kst)
 
             # Run cleanup
             await service.cleanup_old_data()
