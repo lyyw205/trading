@@ -273,6 +273,34 @@ class FixedTpSell(BaseSellLogic):
             retry_count = 0
             await state.set(f"sell_retry_count:{lot.lot_id}", 0)
 
+        # --- Balance guard: 누적 dust로 인한 잔액 부족 방지 ---
+        free_balance = await exchange.get_free_balance(ctx.base_asset)
+        if sell_qty > free_balance:
+            sell_qty = await exchange.adjust_qty(free_balance, ctx.symbol)
+            if sell_qty <= 0:
+                logger.warning(
+                    "fixed_tp: lot %s sell_qty=0 after balance cap (free=%.8f), skipping",
+                    lot.lot_id,
+                    free_balance,
+                )
+                return
+            notional = sell_qty * target_price
+            filters = await exchange.get_symbol_filters(ctx.symbol)
+            if notional < filters.min_notional:
+                logger.warning(
+                    "fixed_tp: lot %s notional %.4f below min after balance cap, skipping",
+                    lot.lot_id,
+                    notional,
+                )
+                return
+            logger.info(
+                "fixed_tp: lot %s sell_qty capped %.8f -> %.8f (free_balance=%.8f)",
+                lot.lot_id,
+                float(lot.buy_qty),
+                sell_qty,
+                free_balance,
+            )
+
         try:
             sell_resp = await exchange.place_limit_sell(
                 qty_base=sell_qty,

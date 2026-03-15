@@ -67,6 +67,7 @@ def _make_exchange(min_notional=10.0):
             "status": "NEW",
         }
     )
+    exchange.get_free_balance = AsyncMock(return_value=1e8)  # 충분한 잔액
     exchange.get_order = AsyncMock(
         return_value={
             "orderId": 99999,

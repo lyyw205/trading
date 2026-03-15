@@ -94,6 +94,9 @@ def _make_exchange(sell_resp=None):
         }
     exchange.place_limit_sell = AsyncMock(return_value=sell_resp)
     exchange.cancel_order = AsyncMock()
+    exchange.get_free_balance = AsyncMock(return_value=1e8)  # 충분한 잔액
+    exchange.get_symbol_filters = AsyncMock(return_value=MagicMock(min_notional=10.0))
+    exchange.adjust_qty = AsyncMock(side_effect=lambda q, s: float(q))
     return exchange
 
 
