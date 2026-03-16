@@ -82,6 +82,7 @@ class AccountTrader:
         self._has_open_positions: bool = False
         self._buy_pause_mgr: BuyPauseManager | None = None
         self._throttle_cycle: int = 0
+        self._last_scan_log_at: float = 0.0  # 스캔 로그 throttle (1시간 간격)
         # Wake event for interruptible sleep (manual resume)
         self._wake_event = asyncio.Event()
 
@@ -261,14 +262,17 @@ class AccountTrader:
                 )
                 open_lots_count_before = (await session.execute(open_lots_before_stmt)).scalar_one()
 
-                total_symbols = sum(len(c.symbols) if c.symbols else 1 for c in combos)
-                logger.info(
-                    "스캔 중: %d개 콤보, %d개 심볼 | 잔고=%.2f | 상태=%s",
-                    len(combos),
-                    total_symbols,
-                    free_balance,
-                    self._buy_pause_state.value,
-                )
+                now = time.time()
+                if now - self._last_scan_log_at >= 3600:
+                    total_symbols = sum(len(c.symbols) if c.symbols else 1 for c in combos)
+                    logger.info(
+                        "스캔 중: %d개 콤보, %d개 심볼 | 잔고=%.2f | 상태=%s",
+                        len(combos),
+                        total_symbols,
+                        free_balance,
+                        self._buy_pause_state.value,
+                    )
+                    self._last_scan_log_at = now
 
                 for combo in combos:
                     # Get symbols from combo (fallback to account symbol)
