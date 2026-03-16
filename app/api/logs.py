@@ -51,6 +51,8 @@ _USER_VISIBLE_RE: re.Pattern[str] = re.compile(
             r"notional .+ below minimum",
             # Trading loop lifecycle
             r"Trading loop started",
+            # Scanning activity (periodic heartbeat)
+            r"Scanning \d+ combo",
             # Sell order status changes (user cares if cancelled/expired)
             r"sell order \d+ for lot \d+ (CANCELED|EXPIRED)",
             # Place order failures (user's money is affected)

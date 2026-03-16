@@ -261,6 +261,15 @@ class AccountTrader:
                 )
                 open_lots_count_before = (await session.execute(open_lots_before_stmt)).scalar_one()
 
+                total_symbols = sum(len(c.symbols) if c.symbols else 1 for c in combos)
+                logger.info(
+                    "Scanning %d combo(s), %d symbol(s) | balance=%.2f | pause=%s",
+                    len(combos),
+                    total_symbols,
+                    free_balance,
+                    self._buy_pause_state.value,
+                )
+
                 for combo in combos:
                     # Get symbols from combo (fallback to account symbol)
                     combo_symbols = combo.symbols if combo.symbols else [account.symbol]

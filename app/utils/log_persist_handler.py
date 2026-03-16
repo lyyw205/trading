@@ -1,4 +1,4 @@
-"""Custom logging handler that persists ERROR/CRITICAL logs to database via queue."""
+"""Custom logging handler that persists ERROR/CRITICAL logs and trade events to database via queue."""
 
 from __future__ import annotations
 
@@ -19,6 +19,35 @@ _SKIP_LOGGER_PREFIXES = (
     "app.services.daily_report_service",
     "app.utils.log_persist_handler",
     "app.db.session",
+)
+
+# Trade event patterns that should be persisted even at INFO/WARNING level.
+_TRADE_EVENT_RE = re.compile(
+    "|".join(
+        (
+            # Buy/sell fills
+            r"buy filled",
+            r"TP filled",
+            # Order placement
+            r"placed .+ order",
+            # Order failures
+            r"place .+ failed",
+            # Buy pause state changes
+            r"Buy pause",
+            r"pause cleared",
+            r"pause manually resumed",
+            r"pause forced",
+            # Circuit breaker
+            r"Circuit breaker",
+            r"Auto-recovering CB",
+            # Sell order status
+            r"sell order .+ (CANCELED|EXPIRED)",
+            # Scanning activity
+            r"Scanning",
+            # Trading loop lifecycle
+            r"Trading loop started",
+        )
+    )
 )
 
 # Thread-local reentrance guard to prevent infinite recursion
@@ -50,7 +79,7 @@ class PersistLogHandler(logging.Handler):
     """
 
     def __init__(self, maxsize: int = 10000) -> None:
-        super().__init__(level=logging.ERROR)
+        super().__init__(level=logging.INFO)
         self.log_queue: queue.Queue[dict] = queue.Queue(maxsize=maxsize)
         self._drop_count = 0
         self._drop_lock = threading.Lock()
@@ -59,6 +88,12 @@ class PersistLogHandler(logging.Handler):
         # Recursion guard: skip loggers from DB-touching modules
         if record.name.startswith(_SKIP_LOGGER_PREFIXES):
             return
+
+        # INFO/WARNING: only persist if it matches a trade event pattern
+        if record.levelno < logging.ERROR:
+            msg = record.getMessage()
+            if not _TRADE_EVENT_RE.search(msg):
+                return
         # Thread-local reentrance guard
         if getattr(_reentrant, "in_emit", False):
             return
