@@ -262,7 +262,7 @@ def test_should_attempt_buy_called_once_per_cycle_semantic():
     cycle = 0
     buys = 0
     for _ in range(10):
-        ok, cycle = BuyPauseManager.should_attempt_buy(BuyPauseState.THROTTLED, balance_ok=True, throttle_cycle=cycle)
+        ok, cycle = BuyPauseManager.should_attempt_buy(BuyPauseState.THROTTLED, is_balance_sufficient=True, throttle_cycle=cycle)
         if ok:
             buys += 1
     assert cycle == 10
@@ -274,7 +274,7 @@ def test_should_attempt_buy_called_once_per_cycle_semantic():
     for _ in range(10):
         for _ in range(4):  # inner combo*symbol loop
             ok, cycle_bug = BuyPauseManager.should_attempt_buy(
-                BuyPauseState.THROTTLED, balance_ok=True, throttle_cycle=cycle_bug
+                BuyPauseState.THROTTLED, is_balance_sufficient=True, throttle_cycle=cycle_bug
             )
             if ok:
                 buys_bug += 1

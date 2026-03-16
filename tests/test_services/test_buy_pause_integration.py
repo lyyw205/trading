@@ -64,15 +64,15 @@ async def _reload(session, account_id: uuid.UUID) -> TradingAccount:
 
 @pytest.mark.integration
 class TestUpdateStateTransitions:
-    async def test_active_balance_ok_stays_active(self, db_session):
+    async def test_active_is_balance_sufficient_stays_active(self, db_session):
         account = await _create_account(db_session)
         mgr = BuyPauseManager(account.id, db_session)
 
         new_state, new_count = await mgr.update_state(
             current_state=BuyPauseState.ACTIVE,
             consecutive_low=0,
-            balance_ok=True,
-            sell_occurred=False,
+            is_balance_sufficient=True,
+            did_sell_occur=False,
         )
 
         assert new_state == BuyPauseState.ACTIVE
@@ -85,8 +85,8 @@ class TestUpdateStateTransitions:
         new_state, new_count = await mgr.update_state(
             current_state=BuyPauseState.ACTIVE,
             consecutive_low=0,
-            balance_ok=False,
-            sell_occurred=False,
+            is_balance_sufficient=False,
+            did_sell_occur=False,
         )
 
         assert new_state == BuyPauseState.THROTTLED
@@ -99,8 +99,8 @@ class TestUpdateStateTransitions:
         new_state, new_count = await mgr.update_state(
             current_state=BuyPauseState.THROTTLED,
             consecutive_low=1,
-            balance_ok=False,
-            sell_occurred=False,
+            is_balance_sufficient=False,
+            did_sell_occur=False,
         )
 
         assert new_state == BuyPauseState.THROTTLED
@@ -113,36 +113,36 @@ class TestUpdateStateTransitions:
         new_state, new_count = await mgr.update_state(
             current_state=BuyPauseState.THROTTLED,
             consecutive_low=2,
-            balance_ok=False,
-            sell_occurred=False,
+            is_balance_sufficient=False,
+            did_sell_occur=False,
         )
 
         assert new_state == BuyPauseState.PAUSED
         assert new_count == 3
 
-    async def test_paused_balance_ok_transitions_to_active(self, db_session):
+    async def test_paused_is_balance_sufficient_transitions_to_active(self, db_session):
         account = await _create_account(db_session, state=BuyPauseState.PAUSED)
         mgr = BuyPauseManager(account.id, db_session)
 
         new_state, new_count = await mgr.update_state(
             current_state=BuyPauseState.PAUSED,
             consecutive_low=3,
-            balance_ok=True,
-            sell_occurred=False,
+            is_balance_sufficient=True,
+            did_sell_occur=False,
         )
 
         assert new_state == BuyPauseState.ACTIVE
         assert new_count == 0
 
-    async def test_paused_sell_occurred_but_still_low_stays_paused(self, db_session):
+    async def test_paused_did_sell_occur_but_still_low_stays_paused(self, db_session):
         account = await _create_account(db_session, state=BuyPauseState.PAUSED)
         mgr = BuyPauseManager(account.id, db_session)
 
         new_state, new_count = await mgr.update_state(
             current_state=BuyPauseState.PAUSED,
             consecutive_low=3,
-            balance_ok=False,
-            sell_occurred=True,
+            is_balance_sufficient=False,
+            did_sell_occur=True,
         )
 
         assert new_state == BuyPauseState.PAUSED
@@ -163,8 +163,8 @@ class TestUpdateStatePersistence:
         await mgr.update_state(
             current_state=BuyPauseState.ACTIVE,
             consecutive_low=0,
-            balance_ok=False,
-            sell_occurred=False,
+            is_balance_sufficient=False,
+            did_sell_occur=False,
         )
         await db_session.flush()
 
@@ -179,8 +179,8 @@ class TestUpdateStatePersistence:
         await mgr.update_state(
             current_state=BuyPauseState.ACTIVE,
             consecutive_low=0,
-            balance_ok=False,
-            sell_occurred=False,
+            is_balance_sufficient=False,
+            did_sell_occur=False,
         )
         await db_session.flush()
 
@@ -195,8 +195,8 @@ class TestUpdateStatePersistence:
         await mgr.update_state(
             current_state=BuyPauseState.PAUSED,
             consecutive_low=3,
-            balance_ok=True,
-            sell_occurred=False,
+            is_balance_sufficient=True,
+            did_sell_occur=False,
         )
         await db_session.flush()
 
@@ -213,8 +213,8 @@ class TestUpdateStatePersistence:
         await mgr.update_state(
             current_state=BuyPauseState.THROTTLED,
             consecutive_low=1,
-            balance_ok=False,
-            sell_occurred=False,
+            is_balance_sufficient=False,
+            did_sell_occur=False,
         )
         await db_session.flush()
 
@@ -236,7 +236,7 @@ class TestUpdateStatePersistence:
 
     async def test_no_db_write_when_nothing_changes(self, db_session):
         """
-        When state and counter are unchanged (ACTIVE + balance_ok=True),
+        When state and counter are unchanged (ACTIVE + is_balance_sufficient=True),
         no UPDATE is issued.  We verify by checking the account row stays
         identical.
         """
@@ -246,8 +246,8 @@ class TestUpdateStatePersistence:
         new_state, new_count = await mgr.update_state(
             current_state=BuyPauseState.ACTIVE,
             consecutive_low=0,
-            balance_ok=True,
-            sell_occurred=False,
+            is_balance_sufficient=True,
+            did_sell_occur=False,
         )
 
         assert new_state == BuyPauseState.ACTIVE
