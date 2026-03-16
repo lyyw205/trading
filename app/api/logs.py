@@ -56,7 +56,7 @@ _USER_VISIBLE_RE: re.Pattern[str] = re.compile(
             # Sell order status changes (user cares if cancelled/expired)
             r"sell order \d+ for lot \d+ (CANCELED|EXPIRED)",
             # Place order failures (user's money is affected)
-            r"place (LOT|TREND|TP) (buy|sell) failed",
+            r"place (LOT|TREND|TP) (buy|sell).*failed",
         )
     )
 )

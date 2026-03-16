@@ -42,8 +42,7 @@ _TRADE_EVENT_RE = re.compile(
             r"Auto-recovering CB",
             # Sell order status
             r"sell order .+ (CANCELED|EXPIRED)",
-            # Scanning activity
-            r"스캔 중:",
+            # (스캔 중 로그는 인메모리 버퍼에만 유지, DB 저장 불필요)
             # Trading loop lifecycle
             r"트레이딩 루프가 정상 시작",
         )
