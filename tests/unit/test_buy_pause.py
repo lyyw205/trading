@@ -22,12 +22,16 @@ class TestShouldAttemptBuy:
     # --- ACTIVE state ---
 
     def test_active_is_balance_sufficient_returns_true_cycle_zero(self):
-        ok, cycle = BuyPauseManager.should_attempt_buy(BuyPauseState.ACTIVE, is_balance_sufficient=True, throttle_cycle=7)
+        ok, cycle = BuyPauseManager.should_attempt_buy(
+            BuyPauseState.ACTIVE, is_balance_sufficient=True, throttle_cycle=7
+        )
         assert ok is True
         assert cycle == 0  # ACTIVE always resets the counter
 
     def test_active_balance_not_ok_returns_false_cycle_zero(self):
-        ok, cycle = BuyPauseManager.should_attempt_buy(BuyPauseState.ACTIVE, is_balance_sufficient=False, throttle_cycle=3)
+        ok, cycle = BuyPauseManager.should_attempt_buy(
+            BuyPauseState.ACTIVE, is_balance_sufficient=False, throttle_cycle=3
+        )
         assert ok is False
         assert cycle == 0  # counter is still reset on ACTIVE path
 
@@ -41,17 +45,23 @@ class TestShouldAttemptBuy:
     # --- PAUSED state ---
 
     def test_paused_is_balance_sufficient_returns_false_cycle_unchanged(self):
-        ok, cycle = BuyPauseManager.should_attempt_buy(BuyPauseState.PAUSED, is_balance_sufficient=True, throttle_cycle=2)
+        ok, cycle = BuyPauseManager.should_attempt_buy(
+            BuyPauseState.PAUSED, is_balance_sufficient=True, throttle_cycle=2
+        )
         assert ok is False
         assert cycle == 2  # untouched
 
     def test_paused_balance_not_ok_returns_false_cycle_unchanged(self):
-        ok, cycle = BuyPauseManager.should_attempt_buy(BuyPauseState.PAUSED, is_balance_sufficient=False, throttle_cycle=0)
+        ok, cycle = BuyPauseManager.should_attempt_buy(
+            BuyPauseState.PAUSED, is_balance_sufficient=False, throttle_cycle=0
+        )
         assert ok is False
         assert cycle == 0
 
     def test_paused_large_cycle_unchanged(self):
-        ok, cycle = BuyPauseManager.should_attempt_buy(BuyPauseState.PAUSED, is_balance_sufficient=True, throttle_cycle=99)
+        ok, cycle = BuyPauseManager.should_attempt_buy(
+            BuyPauseState.PAUSED, is_balance_sufficient=True, throttle_cycle=99
+        )
         assert ok is False
         assert cycle == 99
 
@@ -59,33 +69,45 @@ class TestShouldAttemptBuy:
 
     def test_throttled_cycle_0_increments_to_1_not_multiple_of_5(self):
         # cycle 0 -> 1; 1 % 5 != 0 -> False
-        ok, cycle = BuyPauseManager.should_attempt_buy(BuyPauseState.THROTTLED, is_balance_sufficient=True, throttle_cycle=0)
+        ok, cycle = BuyPauseManager.should_attempt_buy(
+            BuyPauseState.THROTTLED, is_balance_sufficient=True, throttle_cycle=0
+        )
         assert ok is False
         assert cycle == 1
 
     def test_throttled_cycle_1_increments_to_2(self):
-        ok, cycle = BuyPauseManager.should_attempt_buy(BuyPauseState.THROTTLED, is_balance_sufficient=True, throttle_cycle=1)
+        ok, cycle = BuyPauseManager.should_attempt_buy(
+            BuyPauseState.THROTTLED, is_balance_sufficient=True, throttle_cycle=1
+        )
         assert ok is False
         assert cycle == 2
 
     def test_throttled_cycle_2_increments_to_3(self):
-        ok, cycle = BuyPauseManager.should_attempt_buy(BuyPauseState.THROTTLED, is_balance_sufficient=False, throttle_cycle=2)
+        ok, cycle = BuyPauseManager.should_attempt_buy(
+            BuyPauseState.THROTTLED, is_balance_sufficient=False, throttle_cycle=2
+        )
         assert ok is False
         assert cycle == 3
 
     def test_throttled_cycle_3_increments_to_4(self):
-        ok, cycle = BuyPauseManager.should_attempt_buy(BuyPauseState.THROTTLED, is_balance_sufficient=True, throttle_cycle=3)
+        ok, cycle = BuyPauseManager.should_attempt_buy(
+            BuyPauseState.THROTTLED, is_balance_sufficient=True, throttle_cycle=3
+        )
         assert ok is False
         assert cycle == 4
 
     def test_throttled_cycle_4_increments_to_5_allows_buy(self):
         # cycle 4 -> 5; 5 % 5 == 0 -> True (every-Nth buy)
-        ok, cycle = BuyPauseManager.should_attempt_buy(BuyPauseState.THROTTLED, is_balance_sufficient=True, throttle_cycle=4)
+        ok, cycle = BuyPauseManager.should_attempt_buy(
+            BuyPauseState.THROTTLED, is_balance_sufficient=True, throttle_cycle=4
+        )
         assert ok is True
         assert cycle == 5
 
     def test_throttled_cycle_9_increments_to_10_allows_buy(self):
-        ok, cycle = BuyPauseManager.should_attempt_buy(BuyPauseState.THROTTLED, is_balance_sufficient=False, throttle_cycle=9)
+        ok, cycle = BuyPauseManager.should_attempt_buy(
+            BuyPauseState.THROTTLED, is_balance_sufficient=False, throttle_cycle=9
+        )
         # is_balance_sufficient is irrelevant in THROTTLED; only cycle matters
         assert ok is True
         assert cycle == 10
@@ -101,7 +123,9 @@ class TestShouldAttemptBuy:
 
     def test_throttled_is_balance_sufficient_false_does_not_suppress_nth_cycle(self):
         """THROTTLED ignores is_balance_sufficient; the Nth cycle fires regardless."""
-        ok, cycle = BuyPauseManager.should_attempt_buy(BuyPauseState.THROTTLED, is_balance_sufficient=False, throttle_cycle=4)
+        ok, cycle = BuyPauseManager.should_attempt_buy(
+            BuyPauseState.THROTTLED, is_balance_sufficient=False, throttle_cycle=4
+        )
         assert ok is True
         assert cycle == 5
 
