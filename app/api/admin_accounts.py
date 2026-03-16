@@ -239,6 +239,158 @@ async def admin_list_earnings(
 # ============================================================
 #  System Health — consolidated monitoring
 # ============================================================
+
+# Alert thresholds and cooldown tracking
+_ALERT_THRESHOLDS = {
+    "cpu_percent": 90.0,
+    "memory_percent": 90.0,
+    "db_pool_exhaustion": 0.9,  # checked_out / pool_size ratio
+    "api_error_rate": 0.1,  # 10%
+}
+_alert_cooldowns: dict[str, float] = {}
+_ALERT_COOLDOWN_SEC = 300  # 5 minutes
+
+
+def _check_alerts(server: dict, db_pool: dict, api_overview: dict) -> list[dict]:
+    """Check metrics against thresholds, return active alerts."""
+    now = time.time()
+    alerts = []
+
+    checks = [
+        ("cpu_high", server.get("cpu_percent", 0), _ALERT_THRESHOLDS["cpu_percent"], "CPU"),
+        ("memory_high", server.get("memory_percent", 0), _ALERT_THRESHOLDS["memory_percent"], "메모리"),
+    ]
+    pool_size = db_pool.get("pool_size", 1) or 1
+    pool_ratio = db_pool.get("checked_out", 0) / pool_size
+    checks.append(("db_pool_exhaustion", pool_ratio, _ALERT_THRESHOLDS["db_pool_exhaustion"], "DB 풀"))
+
+    error_rate = api_overview.get("error_rate", 0)
+    checks.append(("api_error_high", error_rate, _ALERT_THRESHOLDS["api_error_rate"], "API 에러율"))
+
+    for alert_type, value, threshold, label in checks:
+        if value >= threshold:
+            alerts.append(
+                {
+                    "type": alert_type,
+                    "label": label,
+                    "value": round(value, 2),
+                    "threshold": threshold,
+                    "severity": "HIGH",
+                }
+            )
+            # Discord alert with cooldown
+            if now - _alert_cooldowns.get(alert_type, 0) >= _ALERT_COOLDOWN_SEC:
+                _alert_cooldowns[alert_type] = now
+                _send_discord_alert(alert_type, label, value, threshold)
+
+    return alerts
+
+
+def _send_discord_alert(alert_type: str, label: str, value: float, threshold: float) -> None:
+    """Send alert to Discord webhook (fire-and-forget)."""
+    import asyncio
+
+    import httpx
+
+    from app.config import get_settings
+
+    webhook_url = get_settings().discord_webhook_url
+    if not webhook_url:
+        return
+
+    embed = {
+        "title": f"⚠️ {label} 임계값 초과",
+        "description": f"**{label}**: {value:.1f} (임계값: {threshold:.0f})",
+        "color": 0xFF4444,
+        "fields": [
+            {"name": "유형", "value": alert_type, "inline": True},
+            {"name": "현재값", "value": f"{value:.1f}", "inline": True},
+            {"name": "임계값", "value": f"{threshold:.0f}", "inline": True},
+        ],
+    }
+
+    async def _send():
+        try:
+            async with httpx.AsyncClient(timeout=5) as client:
+                await client.post(webhook_url, json={"embeds": [embed]})
+        except Exception:
+            pass
+
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(_send())
+    except RuntimeError:
+        pass
+
+
+def _get_server_stats() -> dict:
+    """Get server resource stats via psutil (non-blocking)."""
+    try:
+        import os
+
+        import psutil
+
+        proc = psutil.Process(os.getpid())
+        mem = psutil.virtual_memory()
+        disk = psutil.disk_usage("/")
+        return {
+            "cpu_percent": psutil.cpu_percent(interval=None),
+            "memory_percent": round(mem.percent, 1),
+            "memory_rss_mb": round(proc.memory_info().rss / 1024 / 1024, 1),
+            "disk_usage_percent": round(disk.percent, 1),
+            "uptime_hours": round((time.time() - proc.create_time()) / 3600, 1),
+            "threads": proc.num_threads(),
+        }
+    except Exception:
+        return {
+            "cpu_percent": 0,
+            "memory_percent": 0,
+            "memory_rss_mb": 0,
+            "disk_usage_percent": 0,
+            "uptime_hours": 0,
+            "threads": 0,
+        }
+
+
+def _get_pool_stats() -> dict:
+    pool = engine_trading.pool
+    return {
+        "pool_size": pool.size(),
+        "checked_in": pool.checkedin(),
+        "checked_out": pool.checkedout(),
+        "overflow": pool.overflow(),
+    }
+
+
+@router.get("/system-health/light")
+@limiter.limit("120/minute")
+async def admin_system_health_light(
+    request: Request,
+    admin: dict = Depends(require_admin),
+):
+    """Lightweight health endpoint for 5-second polling. Zero DB queries."""
+    from app.utils.request_metrics import request_metrics
+
+    server = _get_server_stats()
+    db_pool = _get_pool_stats()
+    api_overview = request_metrics.get_overview()
+
+    engine = request.app.state.trading_engine
+    ws_status = engine.get_ws_status()
+
+    alerts = _check_alerts(server, db_pool, api_overview)
+
+    return {
+        "server": server,
+        "db_pool": db_pool,
+        "api_overview": api_overview,
+        "engine": {"active_accounts": engine.active_account_count},
+        "websocket": ws_status,
+        "alerts": alerts,
+        "ts": datetime.now(UTC).isoformat(),
+    }
+
+
 @router.get("/system-health")
 @limiter.limit("30/minute")
 async def admin_system_health(
@@ -246,10 +398,17 @@ async def admin_system_health(
     admin: dict = Depends(require_admin),
     session: AsyncSession = Depends(get_trading_session),
 ):
-    """Consolidated system health: DB, WebSocket, candles, engine."""
+    """Full system health for 60-second polling. Includes DB queries."""
     import logging
 
+    from app.utils.request_metrics import request_metrics
+
     _logger = logging.getLogger(__name__)
+
+    server = _get_server_stats()
+    db_pool = _get_pool_stats()
+    api_overview = request_metrics.get_overview()
+    api_top = request_metrics.get_summary()
 
     # --- DB connections ---
     active_connections = None
@@ -261,20 +420,20 @@ async def admin_system_health(
     except Exception as exc:
         _logger.warning("Failed to query pg_stat_activity: %s", exc)
 
-    # --- Connection pool ---
-    pool = engine_trading.pool
-    pool_stats = {
-        "pool_size": pool.size(),
-        "checked_in": pool.checkedin(),
-        "checked_out": pool.checkedout(),
-        "overflow": pool.overflow(),
-    }
-
     # --- Slow queries (optional) ---
-    slow_queries_count = None
+    slow_queries = []
     try:
-        result = await session.execute(text("SELECT count(*) FROM pg_stat_statements WHERE mean_exec_time > 1000"))
-        slow_queries_count = result.scalar_one()
+        result = await session.execute(
+            text(
+                "SELECT query, calls, round(mean_exec_time::numeric, 1) as avg_ms, "
+                "round(total_exec_time::numeric, 0) as total_ms "
+                "FROM pg_stat_statements ORDER BY mean_exec_time DESC LIMIT 5"
+            )
+        )
+        slow_queries = [
+            {"query": row[0][:120], "calls": row[1], "avg_ms": float(row[2]), "total_ms": float(row[3])}
+            for row in result.fetchall()
+        ]
     except Exception:
         pass
 
@@ -288,6 +447,14 @@ async def admin_system_health(
     except Exception:
         pass
 
+    # --- DB size ---
+    db_size_mb = 0
+    try:
+        result = await session.execute(text("SELECT pg_database_size(current_database()) / 1024 / 1024"))
+        db_size_mb = result.scalar_one()
+    except Exception:
+        pass
+
     # --- WebSocket status ---
     engine = request.app.state.trading_engine
     ws_status = engine.get_ws_status()
@@ -297,6 +464,36 @@ async def admin_system_health(
         "active_accounts": engine.active_account_count,
         "total_traders": engine.active_account_count,
     }
+
+    # --- Trading activity (last hour, using indexed update_time_ms) ---
+    now_ms = int(time.time() * 1000)
+    hour_ago_ms = now_ms - 3600_000
+    orders_last_hour = 0
+    fills_last_hour = 0
+    try:
+        result = await session.execute(select(sa_func.count()).where(Order.update_time_ms >= hour_ago_ms))
+        orders_last_hour = result.scalar_one()
+        result = await session.execute(
+            select(sa_func.count()).where(Order.update_time_ms >= hour_ago_ms, Order.status == "FILLED")
+        )
+        fills_last_hour = result.scalar_one()
+    except Exception:
+        pass
+
+    # --- Error trend (last 6 hours, hourly buckets) ---
+    error_trend = []
+    try:
+        result = await session.execute(
+            text(
+                "SELECT date_trunc('hour', logged_at) AS h, count(*) "
+                "FROM persistent_logs "
+                "WHERE logged_at >= now() - interval '6 hours' AND level = 'ERROR' "
+                "GROUP BY h ORDER BY h"
+            )
+        )
+        error_trend = [{"hour": row[0].isoformat(), "count": row[1]} for row in result.fetchall()]
+    except Exception:
+        pass
 
     # --- Candle counts ---
     candle_stats = []
@@ -317,15 +514,28 @@ async def admin_system_health(
         pass
 
     return {
+        "server": server,
         "database": {
             "active_connections": active_connections,
-            "connection_pool": pool_stats,
-            "slow_queries_count": slow_queries_count,
+            "connection_pool": db_pool,
+            "slow_queries": slow_queries,
             "dead_tuples": dead_tuples,
+            "db_size_mb": db_size_mb,
+        },
+        "api_metrics": {
+            "overview": api_overview,
+            "top_endpoints": api_top,
+        },
+        "trading_activity": {
+            "orders_last_hour": orders_last_hour,
+            "fills_last_hour": fills_last_hour,
+            "error_trend": error_trend,
         },
         "websocket": ws_status,
         "engine": engine_status,
         "candles": candle_stats,
+        "alerts": _check_alerts(server, db_pool, api_overview),
+        "ts": datetime.now(UTC).isoformat(),
     }
 
 

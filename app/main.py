@@ -36,6 +36,7 @@ from app.db.session import TradingSessionLocal
 from app.dependencies import limiter
 from app.middleware.auth import LazyAuthMiddleware
 from app.middleware.csrf_middleware import CSRF_EXEMPT_PATHS
+from app.middleware.metrics_middleware import MetricsMiddleware
 from app.middleware.no_cache_html import NoCacheHTMLMiddleware
 from app.middleware.request_id import RequestIdMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
@@ -234,6 +235,7 @@ app.add_middleware(
 
 
 app.add_middleware(LazyAuthMiddleware)
+app.add_middleware(MetricsMiddleware)
 app.add_middleware(RequestIdMiddleware)
 
 # CORS middleware

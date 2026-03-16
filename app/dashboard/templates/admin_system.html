@@ -1,185 +1,923 @@
 {% extends "base.html" %}
 
-{% block title %}System Health - Crypto Multi-Trader{% endblock %}
+{% block title %}시스템 헬스 - Crypto Multi-Trader{% endblock %}
+
+{% block extra_styles %}
+<style>
+/* ── Auto-refresh pulse indicator ──────────────────────────── */
+.refresh-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--success);
+  margin-right: 6px;
+  vertical-align: middle;
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+.refresh-dot.paused { background: var(--text-faint); animation: none; }
+.refresh-dot.error  { background: var(--danger); animation: pulse-dot 0.8s ease-in-out infinite; }
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.4; transform: scale(0.75); }
+}
+
+/* ── Hero meta bar ─────────────────────────────────────────── */
+.hero-meta {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-top: 0.75rem;
+}
+.hero-meta-item {
+  font-size: 0.78rem;
+  color: rgba(255,255,255,0.6);
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.hero-meta-item strong { color: rgba(255,255,255,0.92); font-weight: 600; }
+
+/* ── Alert banner (top of page, shown when alerts exist) ───── */
+.alert-banner-strip {
+  display: none;
+  background: var(--danger-light);
+  border: 1px solid rgba(240,68,82,0.3);
+  border-radius: var(--radius-md);
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  animation: fade-up 0.3s var(--ease) both;
+}
+.alert-banner-strip.visible { display: flex; align-items: flex-start; gap: 0.75rem; flex-wrap: wrap; }
+.alert-strip-icon { color: var(--danger); flex-shrink: 0; margin-top: 1px; }
+.alert-strip-items { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.alert-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: var(--danger-light);
+  color: var(--danger);
+  border: 1px solid rgba(240,68,82,0.25);
+}
+.alert-chip.warn { background: var(--warning-light); color: var(--warning); border-color: rgba(255,171,0,0.25); }
+
+/* ── Two-column grid ────────────────────────────────────────── */
+.two-col-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  margin-bottom: 1.25rem;
+}
+@media (max-width: 900px) { .two-col-grid { grid-template-columns: 1fr; } }
+
+/* ── Gauge (CPU / Mem / Disk) ──────────────────────────────── */
+.gauge-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+.gauge-item {}
+.gauge-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 0.3rem;
+}
+.gauge-label {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.gauge-value {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+}
+.gauge-track {
+  width: 100%;
+  height: 7px;
+  background: var(--bg-surface);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+.gauge-fill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--success);
+  transition: width 0.6s var(--ease), background 0.4s var(--ease);
+  min-width: 2px;
+}
+.gauge-fill.warn   { background: var(--warning); }
+.gauge-fill.danger { background: var(--danger); }
+
+/* ── Stat row (below gauges) ───────────────────────────────── */
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+.stat-cell {
+  background: var(--bg-surface);
+  border-radius: var(--radius);
+  padding: 0.6rem 0.75rem;
+  text-align: center;
+}
+.stat-cell-label {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.stat-cell-value {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text);
+  font-family: var(--font-mono);
+  margin-top: 0.1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── KPI value transition flash ────────────────────────────── */
+@keyframes kpi-flash {
+  0%   { opacity: 0.3; }
+  100% { opacity: 1; }
+}
+.kpi-value.flash { animation: kpi-flash 0.35s var(--ease-out); }
+
+/* ── Error trend bar chart ─────────────────────────────────── */
+.error-trend-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  height: 80px;
+  margin-top: 0.5rem;
+}
+.trend-bar-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.3rem;
+  height: 100%;
+}
+.trend-bar {
+  width: 100%;
+  border-radius: var(--radius-xs) var(--radius-xs) 0 0;
+  background: var(--danger-light);
+  border-top: 2px solid var(--danger);
+  transition: height 0.6s var(--ease);
+  min-height: 3px;
+}
+.trend-bar.zero { background: var(--bg-surface); border-color: var(--bg-surface-active); }
+.trend-bar-label {
+  font-size: 0.62rem;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+.trend-bar-count {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+/* ── Trading activity mini cards ───────────────────────────── */
+.activity-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+.activity-mini {
+  background: var(--bg-surface);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  text-align: center;
+}
+.activity-mini-label {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-weight: 500;
+  margin-bottom: 0.35rem;
+}
+.activity-mini-value {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+/* ── DB pool status pills ──────────────────────────────────── */
+.pool-pills {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+.pool-pill {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--bg-surface);
+  border-radius: var(--radius-md);
+  padding: 0.65rem 1rem;
+  min-width: 80px;
+  flex: 1;
+}
+.pool-pill-label {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.pool-pill-value {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--text);
+  font-family: var(--font-mono);
+  margin-top: 0.15rem;
+  font-variant-numeric: tabular-nums;
+}
+.pool-pill-value.warn   { color: var(--warning); }
+.pool-pill-value.danger { color: var(--danger); }
+
+/* ── Connection error badge ────────────────────────────────── */
+.conn-error-badge {
+  display: none;
+  align-items: center;
+  gap: 0.35rem;
+  background: var(--danger-light);
+  color: var(--danger);
+  border: 1px solid rgba(240,68,82,0.25);
+  border-radius: var(--radius-pill);
+  padding: 0.2rem 0.7rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.conn-error-badge.visible { display: inline-flex; }
+
+/* ── Endpoint table — compact ──────────────────────────────── */
+.endpoint-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+.endpoint-table th {
+  text-align: left;
+  padding: 0.4rem 0.6rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--table-border);
+}
+.endpoint-table td {
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid var(--table-border);
+  color: var(--text-secondary);
+  vertical-align: middle;
+}
+.endpoint-table tr:last-child td { border-bottom: none; }
+.endpoint-table td:first-child { font-family: var(--font-mono); font-size: 0.72rem; color: var(--text); }
+.endpoint-table td.num { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.err-rate-hi { color: var(--danger); font-weight: 700; }
+.err-rate-md { color: var(--warning); font-weight: 600; }
+
+/* ── Slow query table ─────────────────────────────────────── */
+.sub-section-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 1.25rem 0 0.6rem;
+}
+</style>
+{% endblock %}
 
 {% block content %}
+
+<!-- Alert Banner Strip (conditionally visible) -->
+<div class="alert-banner-strip" id="alert-banner">
+  <span class="alert-strip-icon">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+  </span>
+  <div class="alert-strip-items" id="alert-chips"></div>
+</div>
+
+<!-- Hero Banner -->
 <div class="hero-banner">
-  <h1 class="page-title">System Health</h1>
-  <p class="hero-subtitle">Database, WebSocket, trading engine, and candle storage monitoring.</p>
-  <div class="hero-actions">
-    <button class="btn btn-hero btn-sm" onclick="loadSystemHealth()">
+  <h1 class="page-title">시스템 헬스</h1>
+  <div class="hero-meta">
+    <span class="hero-meta-item">
+      <span class="refresh-dot" id="refresh-dot"></span>
+      <span id="refresh-status-text">자동 새로고침 중</span>
+    </span>
+    <span class="hero-meta-item">
+      마지막 업데이트: <strong id="last-update-text">—</strong>
+    </span>
+    <span class="conn-error-badge" id="conn-error-badge">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:12px;height:12px;"><line x1="1" y1="1" x2="23" y2="23"/><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55M5 12.55a10.94 10.94 0 0 1 5.17-2.39M10.71 5.05A16 16 0 0 1 22.56 9M1.42 9a15.91 15.91 0 0 1 4.7-2.88M8.53 16.11a6 6 0 0 1 6.95 0M12 20h.01"/></svg>
+      연결 끊김
+    </span>
+  </div>
+  <div class="hero-actions" style="margin-top:0.75rem;">
+    <button class="btn btn-hero btn-sm" onclick="manualRefresh()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-      Refresh
+      수동 새로고침
     </button>
   </div>
 </div>
 
-<!-- KPI Cards -->
-<div class="kpi-grid" id="system-kpi">
-  <div class="loading-spinner">Loading...</div>
+<!-- KPI Row (6 cards, light endpoint) -->
+<div class="kpi-grid" id="kpi-row" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr));">
+  <div class="kpi-card"><div class="kpi-card-header"><span class="kpi-label">CPU</span><span class="kpi-icon kpi-icon-primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg></span></div><div class="kpi-value" id="kpi-cpu">—</div><div class="kpi-desc" id="kpi-cpu-desc">사용률</div></div>
+  <div class="kpi-card"><div class="kpi-card-header"><span class="kpi-label">메모리</span><span class="kpi-icon kpi-icon-info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3z"/><path d="M9 9h6v6H9z"/></svg></span></div><div class="kpi-value" id="kpi-mem">—</div><div class="kpi-desc" id="kpi-mem-desc">사용률</div></div>
+  <div class="kpi-card"><div class="kpi-card-header"><span class="kpi-label">DB 풀</span><span class="kpi-icon kpi-icon-warning"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg></span></div><div class="kpi-value" id="kpi-pool">—</div><div class="kpi-desc" id="kpi-pool-desc">사용 중 / 전체</div></div>
+  <div class="kpi-card"><div class="kpi-card-header"><span class="kpi-label">활성 계정</span><span class="kpi-icon kpi-icon-success"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></span></div><div class="kpi-value" id="kpi-accounts">—</div><div class="kpi-desc">트레이딩 엔진</div></div>
+  <div class="kpi-card"><div class="kpi-card-header"><span class="kpi-label">웹소켓</span><span class="kpi-icon kpi-icon-success" id="kpi-ws-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></span></div><div class="kpi-value" id="kpi-ws">—</div><div class="kpi-desc" id="kpi-ws-desc">구독 수</div></div>
+  <div class="kpi-card"><div class="kpi-card-header"><span class="kpi-label">API 에러율</span><span class="kpi-icon kpi-icon-danger"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span></div><div class="kpi-value" id="kpi-errrate">—</div><div class="kpi-desc" id="kpi-errrate-desc">전체 요청 대비</div></div>
 </div>
 
-<!-- Database Section -->
+<!-- Row 1: Server Resources + API Top Endpoints -->
+<div class="two-col-grid">
+
+  <!-- Server Resources -->
+  <section class="dashboard-section">
+    <div class="section-header">
+      <h2 class="section-title">서버 리소스</h2>
+      <span class="section-subtitle" id="server-uptime-badge">업타임: —</span>
+    </div>
+    <div class="gauge-row" id="server-gauges">
+      <!-- CPU -->
+      <div class="gauge-item">
+        <div class="gauge-label-row"><span class="gauge-label">CPU 사용률</span><span class="gauge-value" id="g-cpu">—</span></div>
+        <div class="gauge-track"><div class="gauge-fill" id="gf-cpu" style="width:0%"></div></div>
+      </div>
+      <!-- Memory -->
+      <div class="gauge-item">
+        <div class="gauge-label-row"><span class="gauge-label">메모리 사용률</span><span class="gauge-value" id="g-mem">—</span></div>
+        <div class="gauge-track"><div class="gauge-fill" id="gf-mem" style="width:0%"></div></div>
+      </div>
+      <!-- Disk -->
+      <div class="gauge-item">
+        <div class="gauge-label-row"><span class="gauge-label">디스크 사용률</span><span class="gauge-value" id="g-disk">—</span></div>
+        <div class="gauge-track"><div class="gauge-fill" id="gf-disk" style="width:0%"></div></div>
+      </div>
+    </div>
+    <div class="stat-row">
+      <div class="stat-cell"><div class="stat-cell-label">RSS</div><div class="stat-cell-value" id="s-rss">—</div></div>
+      <div class="stat-cell"><div class="stat-cell-label">스레드</div><div class="stat-cell-value" id="s-threads">—</div></div>
+      <div class="stat-cell"><div class="stat-cell-label">업타임</div><div class="stat-cell-value" id="s-uptime">—</div></div>
+    </div>
+  </section>
+
+  <!-- API Top Endpoints -->
+  <section class="dashboard-section">
+    <div class="section-header">
+      <h2 class="section-title">API 메트릭</h2>
+      <span class="section-subtitle" id="api-overview-badge">—</span>
+    </div>
+    <div id="api-endpoints-wrap">
+      <table class="endpoint-table">
+        <thead>
+          <tr>
+            <th>엔드포인트</th>
+            <th style="text-align:right;">호출</th>
+            <th style="text-align:right;">평균ms</th>
+            <th style="text-align:right;">에러율</th>
+          </tr>
+        </thead>
+        <tbody id="api-endpoints-tbody">
+          <tr><td colspan="4" class="table-empty" style="padding:1.5rem 0;text-align:center;color:var(--text-faint);">로딩 중...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<!-- Row 2: Trading Activity + Error Trend -->
+<div class="two-col-grid">
+
+  <!-- Trading Activity -->
+  <section class="dashboard-section">
+    <div class="section-header">
+      <h2 class="section-title">트레이딩 활동</h2>
+      <span class="section-subtitle">최근 1시간</span>
+    </div>
+    <div class="activity-pair">
+      <div class="activity-mini">
+        <div class="activity-mini-label">주문 수</div>
+        <div class="activity-mini-value" id="act-orders">—</div>
+      </div>
+      <div class="activity-mini">
+        <div class="activity-mini-label">체결 수</div>
+        <div class="activity-mini-value" id="act-fills">—</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Error Trend -->
+  <section class="dashboard-section">
+    <div class="section-header">
+      <h2 class="section-title">에러 추이</h2>
+      <span class="section-subtitle">최근 6시간</span>
+    </div>
+    <div class="error-trend-chart" id="error-trend-chart">
+      <!-- bars injected by JS -->
+      <div style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--text-faint);font-size:0.78rem;">로딩 중...</div>
+    </div>
+  </section>
+</div>
+
+<!-- DB Performance (full width) -->
 <section class="dashboard-section">
   <div class="section-header">
-    <h2 class="section-title">Database</h2>
-  </div>
-  <div id="db-pool-info" style="margin-bottom:1rem;">
-    <div class="loading-spinner">Loading...</div>
+    <h2 class="section-title">DB 성능</h2>
+    <span class="section-subtitle" id="db-size-badge">—</span>
   </div>
 
-  <h3 style="font-size:0.9rem;font-weight:600;margin:1.25rem 0 0.75rem;color:var(--text-muted);">Dead Tuples (Top 10)</h3>
+  <!-- Pool pills -->
+  <div class="pool-pills" id="db-pool-pills">
+    <div class="pool-pill"><span class="pool-pill-label">풀 크기</span><span class="pool-pill-value" id="pp-size">—</span></div>
+    <div class="pool-pill"><span class="pool-pill-label">대기 중</span><span class="pool-pill-value" id="pp-in">—</span></div>
+    <div class="pool-pill"><span class="pool-pill-label">사용 중</span><span class="pool-pill-value" id="pp-out">—</span></div>
+    <div class="pool-pill"><span class="pool-pill-label">오버플로</span><span class="pool-pill-value" id="pp-overflow">—</span></div>
+    <div class="pool-pill"><span class="pool-pill-label">활성 연결</span><span class="pool-pill-value" id="pp-active">—</span></div>
+  </div>
+
+  <!-- Slow queries -->
+  <p class="sub-section-title">느린 쿼리 (평균 &gt; 200ms)</p>
+  <div class="table-wrapper">
+    <table class="data-table" id="slow-query-table">
+      <thead>
+        <tr>
+          <th>쿼리</th>
+          <th style="text-align:right;">호출 수</th>
+          <th style="text-align:right;">평균 ms</th>
+          <th style="text-align:right;">합계 ms</th>
+        </tr>
+      </thead>
+      <tbody id="slow-query-tbody">
+        <tr><td colspan="4" class="table-empty">로딩 중...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Dead tuples -->
+  <p class="sub-section-title">Dead Tuples (상위 10개)</p>
   <div class="table-wrapper">
     <table class="data-table" id="dead-tuples-table">
       <thead>
         <tr>
-          <th>Table</th>
-          <th>Dead Tuples</th>
-          <th>Live Tuples</th>
-          <th>Ratio</th>
+          <th>테이블</th>
+          <th style="text-align:right;">Dead</th>
+          <th style="text-align:right;">Live</th>
+          <th style="text-align:right;">비율</th>
         </tr>
       </thead>
       <tbody id="dead-tuples-tbody">
-        <tr><td colspan="4" class="table-empty">Loading...</td></tr>
+        <tr><td colspan="4" class="table-empty">로딩 중...</td></tr>
       </tbody>
     </table>
   </div>
 </section>
 
-<!-- Candle Storage Section -->
+<!-- Candle Storage (full width) -->
 <section class="dashboard-section">
   <div class="section-header">
-    <h2 class="section-title">Candle Storage</h2>
+    <h2 class="section-title">캔들 저장소</h2>
   </div>
   <div class="table-wrapper">
     <table class="data-table" id="candles-table">
       <thead>
         <tr>
-          <th>Interval</th>
-          <th>Symbol</th>
-          <th>Records</th>
+          <th>인터벌</th>
+          <th>심볼</th>
+          <th style="text-align:right;">레코드 수</th>
         </tr>
       </thead>
       <tbody id="candles-tbody">
-        <tr><td colspan="3" class="table-empty">Loading...</td></tr>
+        <tr><td colspan="3" class="table-empty">로딩 중...</td></tr>
       </tbody>
     </table>
   </div>
 </section>
+
 {% endblock %}
 
 {% block scripts %}
 <script>
-async function loadSystemHealth() {
-  try {
-    const resp = await apiFetch('/api/admin/system-health');
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const data = await resp.json();
+/* ─────────────────────────────────────────────────────────────
+   State
+───────────────────────────────────────────────────────────── */
+let _lightTimer = null;
+let _heavyTimer = null;
+let _lastLightTs = null;
+let _lastHeavyTs = null;
+let _lastUpdateSec = null;
+let _secTicker = null;
+let _connError = false;
+let _hidden = false;
 
-    renderKPIs(data);
-    renderDbInfo(data.database);
-    renderDeadTuples(data.database.dead_tuples || []);
-    renderCandles(data.candles || []);
-  } catch (e) {
-    document.getElementById('system-kpi').innerHTML = `<p class="error-text">Failed to load: ${escapeHtml(e.message)}</p>`;
+const LIGHT_INTERVAL  = 5_000;
+const HEAVY_INTERVAL  = 60_000;
+
+const INTERVAL_LABELS = {
+  price_candles_1m: '1분',
+  price_candles_5m: '5분',
+  price_candles_1h: '1시간',
+  price_candles_1d: '1일',
+};
+
+/* ─────────────────────────────────────────────────────────────
+   Utilities
+───────────────────────────────────────────────────────────── */
+function toKST(isoStr) {
+  if (!isoStr) return '—';
+  const d = new Date(isoStr);
+  // UTC+9
+  const kst = new Date(d.getTime() + 9 * 3600 * 1000);
+  return kst.toISOString().replace('T', ' ').slice(0, 19);
+}
+
+function gaugeClass(pct) {
+  if (pct >= 90) return 'danger';
+  if (pct >= 70) return 'warn';
+  return '';
+}
+
+function setGauge(fillId, labelId, pct, text) {
+  const fill = document.getElementById(fillId);
+  const lbl  = document.getElementById(labelId);
+  if (!fill || !lbl) return;
+  const cls = gaugeClass(pct);
+  fill.style.width = Math.min(pct, 100) + '%';
+  fill.className = 'gauge-fill' + (cls ? ' ' + cls : '');
+  lbl.textContent = text;
+}
+
+function flashKpi(el) {
+  if (!el) return;
+  el.classList.remove('flash');
+  // force reflow
+  void el.offsetWidth;
+  el.classList.add('flash');
+}
+
+function setKpi(id, value, flash) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const prev = el.textContent;
+  if (prev !== String(value)) {
+    el.textContent = value;
+    if (flash !== false) flashKpi(el);
   }
 }
 
-function renderKPIs(data) {
-  const db = data.database || {};
-  const ws = data.websocket || {};
-  const eng = data.engine || {};
-  const pool = db.connection_pool || {};
-
-  const wsHealthClass = ws.healthy ? 'kpi-positive' : 'kpi-negative';
-  const wsHealthText = ws.healthy ? 'Healthy' : 'Unhealthy';
-
-  document.getElementById('system-kpi').innerHTML = `
-    <div class="kpi-card">
-      <div class="kpi-card-header"><span class="kpi-label">DB Connections</span></div>
-      <div class="kpi-value">${db.active_connections != null ? db.active_connections : '-'}</div>
-      <div class="kpi-detail">Pool: ${pool.checked_out || 0} out / ${pool.pool_size || 0} size</div>
-    </div>
-    <div class="kpi-card">
-      <div class="kpi-card-header"><span class="kpi-label">WebSocket</span></div>
-      <div class="kpi-value ${wsHealthClass}">${wsHealthText}</div>
-      <div class="kpi-detail">${ws.subscriptions || 0} subscriptions</div>
-    </div>
-    <div class="kpi-card">
-      <div class="kpi-card-header"><span class="kpi-label">Trading Engine</span></div>
-      <div class="kpi-value">${eng.active_accounts || 0}</div>
-      <div class="kpi-detail">${eng.total_traders || 0} total traders</div>
-    </div>
-    <div class="kpi-card">
-      <div class="kpi-card-header"><span class="kpi-label">Slow Queries</span></div>
-      <div class="kpi-value">${db.slow_queries_count != null ? db.slow_queries_count : 'N/A'}</div>
-      <div class="kpi-detail">Queries > 1s avg execution</div>
-    </div>
-  `;
+function setText(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = value;
 }
 
-function renderDbInfo(db) {
-  const pool = db.connection_pool || {};
-  document.getElementById('db-pool-info').innerHTML = `
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:0.75rem;">
-      <div class="health-card">
-        <div class="health-card-label">Pool Size</div>
-        <div class="health-card-value">${pool.pool_size || 0}</div>
-      </div>
-      <div class="health-card">
-        <div class="health-card-label">Checked In</div>
-        <div class="health-card-value">${pool.checked_in || 0}</div>
-      </div>
-      <div class="health-card">
-        <div class="health-card-label">Checked Out</div>
-        <div class="health-card-value">${pool.checked_out || 0}</div>
-      </div>
-      <div class="health-card">
-        <div class="health-card-label">Overflow</div>
-        <div class="health-card-value">${pool.overflow || 0}</div>
-      </div>
-    </div>
-  `;
+function setConnError(hasError) {
+  _connError = hasError;
+  const badge = document.getElementById('conn-error-badge');
+  const dot   = document.getElementById('refresh-dot');
+  if (badge) badge.classList.toggle('visible', hasError);
+  if (dot)   dot.classList.toggle('error', hasError);
+}
+
+function markUpdated() {
+  _lastUpdateSec = Math.floor(Date.now() / 1000);
+  setConnError(false);
+  tickSecCounter();
+}
+
+function tickSecCounter() {
+  if (!_lastUpdateSec) return;
+  const ago = Math.floor(Date.now() / 1000) - _lastUpdateSec;
+  setText('last-update-text', ago < 5 ? '방금' : ago + '초 전');
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Light endpoint (5 s)
+───────────────────────────────────────────────────────────── */
+async function fetchLight() {
+  try {
+    const resp = await apiFetch('/api/admin/system-health/light');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const d = await resp.json();
+    _lastLightTs = d.ts;
+    markUpdated();
+    renderLight(d);
+  } catch (e) {
+    setConnError(true);
+  }
+}
+
+function renderLight(d) {
+  const srv  = d.server       || {};
+  const pool = d.db_pool      || {};
+  const api  = d.api_overview || {};
+  const eng  = d.engine       || {};
+  const ws   = d.websocket    || {};
+
+  // KPI — CPU
+  const cpu = srv.cpu_percent != null ? srv.cpu_percent.toFixed(1) + '%' : '—';
+  setKpi('kpi-cpu', cpu);
+  const cpuCls = gaugeClass(srv.cpu_percent || 0);
+  const cpuEl = document.getElementById('kpi-cpu');
+  if (cpuEl) cpuEl.style.color = cpuCls === 'danger' ? 'var(--danger)' : cpuCls === 'warn' ? 'var(--warning)' : '';
+
+  // KPI — Memory
+  const mem = srv.memory_percent != null ? srv.memory_percent.toFixed(1) + '%' : '—';
+  setKpi('kpi-mem', mem);
+
+  // KPI — DB pool
+  const poolOut  = pool.checked_out  != null ? pool.checked_out  : '—';
+  const poolSize = pool.pool_size     != null ? pool.pool_size     : '—';
+  setKpi('kpi-pool', poolOut + ' / ' + poolSize);
+
+  // KPI — Active accounts
+  setKpi('kpi-accounts', eng.active_accounts != null ? eng.active_accounts : '—');
+
+  // KPI — WebSocket
+  const wsHealthy = ws.healthy;
+  const wsEl = document.getElementById('kpi-ws');
+  if (wsEl) {
+    const wsText = wsHealthy === true ? '정상' : wsHealthy === false ? '불량' : '—';
+    if (wsEl.textContent !== wsText) {
+      wsEl.textContent = wsText;
+      flashKpi(wsEl);
+    }
+    wsEl.style.color = wsHealthy === false ? 'var(--danger)' : wsHealthy === true ? 'var(--success)' : '';
+  }
+  setText('kpi-ws-desc', ws.subscriptions != null ? ws.subscriptions + ' 구독' : '—');
+  const wsIcon = document.getElementById('kpi-ws-icon');
+  if (wsIcon) wsIcon.className = 'kpi-icon ' + (wsHealthy === false ? 'kpi-icon-danger' : 'kpi-icon-success');
+
+  // KPI — API error rate
+  const errRate = api.error_rate != null ? (api.error_rate * 100).toFixed(2) + '%' : '—';
+  setKpi('kpi-errrate', errRate);
+  const errEl = document.getElementById('kpi-errrate');
+  if (errEl) errEl.style.color = (api.error_rate || 0) > 0.05 ? 'var(--danger)' : '';
+  setText('kpi-errrate-desc', api.total_requests != null ? '총 ' + api.total_requests.toLocaleString() + '건' : '');
+
+  // Server gauges
+  setGauge('gf-cpu',  'g-cpu',  srv.cpu_percent    || 0, (srv.cpu_percent    || 0).toFixed(1) + '%');
+  setGauge('gf-mem',  'g-mem',  srv.memory_percent || 0, (srv.memory_percent || 0).toFixed(1) + '%');
+  setGauge('gf-disk', 'g-disk', srv.disk_usage_percent || 0, (srv.disk_usage_percent || 0).toFixed(1) + '%');
+
+  setText('s-rss',     srv.memory_rss_mb != null ? srv.memory_rss_mb.toFixed(0) + ' MB' : '—');
+  setText('s-threads', srv.threads != null ? srv.threads : '—');
+  const upHours = srv.uptime_hours;
+  if (upHours != null) {
+    const h = Math.floor(upHours);
+    const m = Math.round((upHours - h) * 60);
+    setText('s-uptime', h + 'h ' + m + 'm');
+    setText('server-uptime-badge', '업타임: ' + h + 'h ' + m + 'm');
+  }
+
+  // API overview badge
+  if (api.avg_response_ms != null) {
+    setText('api-overview-badge', '평균 응답: ' + api.avg_response_ms.toFixed(0) + 'ms');
+  }
+
+  // Alerts
+  renderAlerts(d.alerts || []);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Heavy endpoint (60 s)
+───────────────────────────────────────────────────────────── */
+async function fetchHeavy() {
+  try {
+    const resp = await apiFetch('/api/admin/system-health');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const d = await resp.json();
+    _lastHeavyTs = d.ts;
+    renderHeavy(d);
+  } catch (e) {
+    // keep old data, light endpoint handles conn error display
+  }
+}
+
+function renderHeavy(d) {
+  const db      = d.database        || {};
+  const api     = d.api_metrics     || {};
+  const trading = d.trading_activity || {};
+  const pool    = db.connection_pool || {};
+
+  // DB pool pills
+  const ppOut = pool.checked_out || 0;
+  const ppSize = pool.pool_size  || 0;
+  setText('pp-size',     ppSize);
+  setText('pp-in',       pool.checked_in  != null ? pool.checked_in  : '—');
+  const ppOutEl = document.getElementById('pp-out');
+  if (ppOutEl) {
+    ppOutEl.textContent = ppOut;
+    ppOutEl.className = 'pool-pill-value' + (ppOut > ppSize * 0.8 ? ' warn' : '');
+  }
+  const ppOvEl = document.getElementById('pp-overflow');
+  if (ppOvEl) {
+    ppOvEl.textContent = pool.overflow != null ? pool.overflow : '—';
+    ppOvEl.className = 'pool-pill-value' + ((pool.overflow || 0) > 0 ? ' warn' : '');
+  }
+  setText('pp-active', db.active_connections != null ? db.active_connections : '—');
+  setText('db-size-badge', db.db_size_mb != null ? 'DB 크기: ' + db.db_size_mb + ' MB' : '');
+
+  // Slow queries
+  renderSlowQueries(db.slow_queries || []);
+
+  // Dead tuples
+  renderDeadTuples(db.dead_tuples || []);
+
+  // API endpoints
+  const overview = api.overview || {};
+  if (overview.avg_response_ms != null) {
+    setText('api-overview-badge', '평균 응답: ' + overview.avg_response_ms.toFixed(0) + 'ms · 총 ' + (overview.total_requests || 0).toLocaleString() + '건');
+  }
+  renderEndpoints(api.top_endpoints || []);
+
+  // Trading activity
+  setText('act-orders', trading.orders_last_hour != null ? trading.orders_last_hour.toLocaleString() : '—');
+  setText('act-fills',  trading.fills_last_hour  != null ? trading.fills_last_hour.toLocaleString()  : '—');
+
+  // Error trend
+  renderErrorTrend(trading.error_trend || []);
+
+  // Candles
+  renderCandles(d.candles || []);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Render helpers
+───────────────────────────────────────────────────────────── */
+function renderAlerts(alerts) {
+  const banner = document.getElementById('alert-banner');
+  const chips  = document.getElementById('alert-chips');
+  if (!banner || !chips) return;
+
+  if (!alerts.length) {
+    banner.classList.remove('visible');
+    return;
+  }
+  banner.classList.add('visible');
+  chips.innerHTML = alerts.map(a => {
+    const isWarn = (a.severity || '').toLowerCase() !== 'critical';
+    return `<span class="alert-chip${isWarn ? ' warn' : ''}">
+      ${escapeHtml(a.label)}: ${a.value != null ? a.value.toFixed(1) : '?'} / ${a.threshold != null ? a.threshold : '?'}
+    </span>`;
+  }).join('');
+}
+
+function renderEndpoints(endpoints) {
+  const tbody = document.getElementById('api-endpoints-tbody');
+  if (!tbody) return;
+  if (!endpoints.length) {
+    tbody.innerHTML = '<tr><td colspan="4" class="table-empty" style="padding:1.5rem 0;text-align:center;color:var(--text-faint);">데이터 없음</td></tr>';
+    return;
+  }
+  tbody.innerHTML = endpoints.map(ep => {
+    const errPct = (ep.error_rate || 0) * 100;
+    const errCls = errPct > 5 ? 'err-rate-hi' : errPct > 1 ? 'err-rate-md' : '';
+    return `<tr>
+      <td>${escapeHtml(ep.endpoint || '—')}</td>
+      <td class="num">${(ep.calls || 0).toLocaleString()}</td>
+      <td class="num">${ep.avg_ms != null ? ep.avg_ms.toFixed(0) : '—'}</td>
+      <td class="num ${errCls}">${errPct.toFixed(2)}%</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderSlowQueries(queries) {
+  const tbody = document.getElementById('slow-query-tbody');
+  if (!tbody) return;
+  if (!queries.length) {
+    tbody.innerHTML = '<tr><td colspan="4" class="table-empty">느린 쿼리 없음</td></tr>';
+    return;
+  }
+  tbody.innerHTML = queries.map(q => `<tr>
+    <td style="font-family:var(--font-mono);font-size:0.72rem;max-width:340px;word-break:break-all;">${escapeHtml((q.query || '').slice(0, 120))}${(q.query || '').length > 120 ? '…' : ''}</td>
+    <td style="text-align:right;font-family:var(--font-mono);">${(q.calls || 0).toLocaleString()}</td>
+    <td style="text-align:right;font-family:var(--font-mono);${(q.avg_ms || 0) > 1000 ? 'color:var(--danger);font-weight:700;' : ''}">${q.avg_ms != null ? q.avg_ms.toFixed(0) : '—'}</td>
+    <td style="text-align:right;font-family:var(--font-mono);">${q.total_ms != null ? q.total_ms.toFixed(0) : '—'}</td>
+  </tr>`).join('');
 }
 
 function renderDeadTuples(tuples) {
   const tbody = document.getElementById('dead-tuples-tbody');
+  if (!tbody) return;
   if (!tuples.length) {
-    tbody.innerHTML = '<tr><td colspan="4" class="table-empty">No data</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="4" class="table-empty">데이터 없음</td></tr>';
     return;
   }
   tbody.innerHTML = tuples.map(t => {
-    const ratio = t.live_tuples > 0 ? ((t.dead_tuples / t.live_tuples) * 100).toFixed(1) + '%' : '-';
-    const ratioClass = t.dead_tuples > 10000 ? 'style="color:var(--danger);font-weight:600;"' : '';
+    const ratio = t.live_tuples > 0 ? ((t.dead_tuples / t.live_tuples) * 100).toFixed(1) + '%' : '—';
+    const isDanger = t.dead_tuples > 10_000;
     return `<tr>
       <td style="font-weight:500;">${escapeHtml(t.table)}</td>
-      <td ${ratioClass}>${t.dead_tuples.toLocaleString()}</td>
-      <td>${t.live_tuples.toLocaleString()}</td>
-      <td ${ratioClass}>${ratio}</td>
+      <td style="text-align:right;font-family:var(--font-mono);${isDanger ? 'color:var(--danger);font-weight:700;' : ''}">${t.dead_tuples.toLocaleString()}</td>
+      <td style="text-align:right;font-family:var(--font-mono);">${t.live_tuples.toLocaleString()}</td>
+      <td style="text-align:right;font-family:var(--font-mono);${isDanger ? 'color:var(--danger);font-weight:700;' : ''}">${ratio}</td>
     </tr>`;
+  }).join('');
+}
+
+function renderErrorTrend(trend) {
+  const chart = document.getElementById('error-trend-chart');
+  if (!chart) return;
+  if (!trend.length) {
+    chart.innerHTML = '<div style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--text-faint);font-size:0.78rem;">데이터 없음</div>';
+    return;
+  }
+  const maxCount = Math.max(...trend.map(b => b.count || 0), 1);
+  chart.innerHTML = trend.map(b => {
+    const count = b.count || 0;
+    const heightPct = (count / maxCount) * 100;
+    const hour = b.hour ? new Date(b.hour) : null;
+    const labelHour = hour ? ((hour.getUTCHours() + 9) % 24) + '시' : '?';
+    return `<div class="trend-bar-col">
+      <span class="trend-bar-count">${count > 0 ? count : ''}</span>
+      <div class="trend-bar${count === 0 ? ' zero' : ''}" style="height:${heightPct}%;"></div>
+      <span class="trend-bar-label">${escapeHtml(labelHour)}</span>
+    </div>`;
   }).join('');
 }
 
 function renderCandles(candles) {
   const tbody = document.getElementById('candles-tbody');
+  if (!tbody) return;
   if (!candles.length) {
-    tbody.innerHTML = '<tr><td colspan="3" class="table-empty">No candle data</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="3" class="table-empty">캔들 데이터 없음</td></tr>';
     return;
   }
-  const intervalLabels = {
-    'price_candles_1m': '1 Minute',
-    'price_candles_5m': '5 Minutes',
-    'price_candles_1h': '1 Hour',
-    'price_candles_1d': '1 Day',
-  };
   tbody.innerHTML = candles.map(c => `<tr>
-    <td><span class="status-badge badge-info">${intervalLabels[c.table] || c.table}</span></td>
+    <td><span class="status-badge badge-info">${escapeHtml(INTERVAL_LABELS[c.table] || c.table)}</span></td>
     <td>${escapeHtml(c.symbol)}</td>
-    <td style="font-weight:600;">${c.count.toLocaleString()}</td>
+    <td style="text-align:right;font-family:var(--font-mono);font-weight:600;">${c.count.toLocaleString()}</td>
   </tr>`).join('');
 }
 
-document.addEventListener('DOMContentLoaded', () => { loadSystemHealth(); });
-</script>
+/* ─────────────────────────────────────────────────────────────
+   Polling lifecycle
+───────────────────────────────────────────────────────────── */
+function startPolling() {
+  fetchLight();
+  fetchHeavy();
+  _lightTimer = setInterval(fetchLight, LIGHT_INTERVAL);
+  _heavyTimer = setInterval(fetchHeavy, HEAVY_INTERVAL);
 
+  const dot = document.getElementById('refresh-dot');
+  if (dot) dot.classList.remove('paused');
+  setText('refresh-status-text', '자동 새로고침 중');
+}
+
+function stopPolling() {
+  clearInterval(_lightTimer);
+  clearInterval(_heavyTimer);
+  _lightTimer = null;
+  _heavyTimer = null;
+  const dot = document.getElementById('refresh-dot');
+  if (dot) dot.classList.add('paused');
+  setText('refresh-status-text', '일시 중지됨');
+}
+
+function manualRefresh() {
+  fetchLight();
+  fetchHeavy();
+}
+
+/* Page Visibility API */
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    _hidden = true;
+    stopPolling();
+  } else {
+    _hidden = false;
+    startPolling();
+  }
+});
+
+/* Seconds counter ticker */
+document.addEventListener('DOMContentLoaded', () => {
+  startPolling();
+  _secTicker = setInterval(tickSecCounter, 5_000);
+});
+</script>
 {% endblock %}
