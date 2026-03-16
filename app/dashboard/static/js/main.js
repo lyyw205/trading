@@ -731,12 +731,15 @@ async function submitEarningsApproval() {
 
 let _allLots = [];
 let _currentLotFilter = 'all';
+let _lotsPage = 0;
+const _LOTS_PER_PAGE = 30;
 
 async function loadLots(accountId) {
   try {
     const resp = await apiFetch('/api/dashboard/' + accountId + '/lots');
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     _allLots = await resp.json();
+    _lotsPage = 0;
     _renderLots(_currentLotFilter);
   } catch (e) {
     const tbody = document.getElementById('lots-tbody');
@@ -746,7 +749,13 @@ async function loadLots(accountId) {
 
 function filterLots(filter) {
   _currentLotFilter = filter;
+  _lotsPage = 0;
   _renderLots(filter);
+}
+
+function lotsGoPage(page) {
+  _lotsPage = page;
+  _renderLots(_currentLotFilter);
 }
 
 function _renderLots(filter) {
@@ -758,13 +767,20 @@ function _renderLots(filter) {
   if (!tbody) return;
   if (!filtered.length) {
     tbody.innerHTML = '<tr><td colspan="8" class="table-empty">No lots found</td></tr>';
+    _renderLotsPagination(0, 0);
     return;
   }
-  tbody.innerHTML = filtered.map((lot, i) => {
+
+  const totalPages = Math.ceil(filtered.length / _LOTS_PER_PAGE);
+  if (_lotsPage >= totalPages) _lotsPage = totalPages - 1;
+  const start = _lotsPage * _LOTS_PER_PAGE;
+  const page = filtered.slice(start, start + _LOTS_PER_PAGE);
+
+  tbody.innerHTML = page.map((lot, i) => {
     const pnl = lot.pnl_pct;
     const pnlClass = pnl == null ? '' : (pnl >= 0 ? 'pnl-positive' : 'pnl-negative');
     return `<tr>
-      <td>${i + 1}</td>
+      <td>${start + i + 1}</td>
       <td><span class="strategy-badge">${escapeHtml(lot.strategy || '-')}</span></td>
       <td>${fmt(lot.buy_price, 2)}</td>
       <td>${fmt(lot.qty, 6)}</td>
@@ -774,6 +790,28 @@ function _renderLots(filter) {
       <td><span class="order-status">${escapeHtml(lot.sell_order_status || '-')}</span></td>
     </tr>`;
   }).join('');
+
+  _renderLotsPagination(filtered.length, totalPages);
+}
+
+function _renderLotsPagination(total, totalPages) {
+  const container = document.getElementById('lots-pagination');
+  if (!container) return;
+  if (totalPages <= 1) { container.innerHTML = ''; return; }
+  let html = '<div class="pagination">';
+  html += `<span class="pagination-info">${total}건 중 ${_lotsPage * _LOTS_PER_PAGE + 1}-${Math.min((_lotsPage + 1) * _LOTS_PER_PAGE, total)}건</span>`;
+  html += `<button class="pagination-btn" onclick="lotsGoPage(0)" ${_lotsPage === 0 ? 'disabled' : ''}>&laquo;</button>`;
+  html += `<button class="pagination-btn" onclick="lotsGoPage(${_lotsPage - 1})" ${_lotsPage === 0 ? 'disabled' : ''}>&lsaquo;</button>`;
+  // Show max 5 page buttons around current page
+  const startP = Math.max(0, _lotsPage - 2);
+  const endP = Math.min(totalPages, startP + 5);
+  for (let p = startP; p < endP; p++) {
+    html += `<button class="pagination-btn${p === _lotsPage ? ' active' : ''}" onclick="lotsGoPage(${p})">${p + 1}</button>`;
+  }
+  html += `<button class="pagination-btn" onclick="lotsGoPage(${_lotsPage + 1})" ${_lotsPage >= totalPages - 1 ? 'disabled' : ''}>&rsaquo;</button>`;
+  html += `<button class="pagination-btn" onclick="lotsGoPage(${totalPages - 1})" ${_lotsPage >= totalPages - 1 ? 'disabled' : ''}>&raquo;</button>`;
+  html += '</div>';
+  container.innerHTML = html;
 }
 
 /* ============================================================
