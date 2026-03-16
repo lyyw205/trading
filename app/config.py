@@ -42,6 +42,9 @@ class GlobalConfig(BaseSettings):
     telegram_chat_id: str = ""
     alert_rate_limit_per_hour: int = 10
 
+    # Alerts (Discord)
+    discord_webhook_url: str = ""
+
     @model_validator(mode="after")
     def _validate_secrets(self):
         """프로덕션: 필수 시크릿 누락 시 시작 차단. 개발: 자동 생성 + 경고."""

@@ -8,6 +8,7 @@ import os
 from datetime import UTC, date, datetime, timedelta, timezone
 from decimal import Decimal
 
+import httpx
 from sqlalchemy import delete, extract, func, select, text
 from sqlalchemy.exc import IntegrityError
 
@@ -624,6 +625,111 @@ class DailyReportService:
 
         return sent
 
+    async def send_discord_report(self, report: DailyReport) -> bool:
+        """Send report summary to Discord via webhook embed."""
+        if report.discord_sent_at is not None:
+            return False  # Already sent
+
+        from app.config import get_settings
+
+        webhook_url = get_settings().discord_webhook_url
+        if not webhook_url:
+            return False
+
+        s = report.summary
+        tt = s.get("trading_totals", {})
+        recon = s.get("reconciliation", {})
+        score = float(report.health_score)
+
+        # Color: green >= 80, yellow >= 50, red < 50
+        if score >= 80:
+            color = 0x2ECC71  # green
+        elif score >= 50:
+            color = 0xF1C40F  # yellow
+        else:
+            color = 0xE74C3C  # red
+
+        # Build fields
+        fields = []
+
+        # Health score
+        fields.append({"name": "건강 점수", "value": f"**{score:.0f}** / 100", "inline": True})
+
+        # Trading performance
+        profit = tt.get("total_profit_usdt", 0)
+        profit_sign = "+" if profit >= 0 else ""
+        fields.append({
+            "name": "💰 거래 성과",
+            "value": (
+                f"매수 **{tt.get('total_bought', 0)}**건 | 매도 **{tt.get('total_closed', 0)}**건\n"
+                f"손익 **{profit_sign}{profit:.2f}** USDT\n"
+                f"수수료 {tt.get('total_fees_usdt', 0):.2f} USDT"
+            ),
+            "inline": True,
+        })
+
+        # Errors
+        fields.append({
+            "name": "🔴 장애",
+            "value": (
+                f"CRITICAL **{s.get('total_criticals', 0)}**건\n"
+                f"ERROR **{s.get('total_errors', 0)}**건\n"
+                f"CB 발동 **{s.get('cb_events', 0)}**회"
+            ),
+            "inline": True,
+        })
+
+        # Per-account summary
+        accounts = s.get("accounts", [])
+        if accounts:
+            lines = []
+            for a in accounts:
+                icon = "🟢" if a.get("cb_status") == "healthy" else "🔴" if a.get("cb_status") == "disabled" else "🟡"
+                name = a.get("name", a.get("account_id", "?")[:8])
+                p = a.get("net_profit_usdt", 0)
+                p_sign = "+" if p >= 0 else ""
+                lines.append(f"{icon} **{name}**: {p_sign}{p:.2f} USDT ({a.get('closed_lots', 0)}건)")
+            fields.append({"name": "📋 계정별 요약", "value": "\n".join(lines), "inline": False})
+
+        # Reconciliation
+        if recon.get("total_drifts", 0) > 0:
+            fields.append({
+                "name": "⚠️ 정합성",
+                "value": f"drift **{recon['total_drifts']}**건 (자동해소: {recon.get('total_auto_resolved', 0)})",
+                "inline": True,
+            })
+
+        # Top error modules
+        top_mods = s.get("top_error_modules", [])[:3]
+        if top_mods:
+            mod_lines = ", ".join(f"`{m['module']}`({m['count']})" for m in top_mods)
+            fields.append({"name": "주요 에러 모듈", "value": mod_lines, "inline": True})
+
+        embed = {
+            "title": f"📊 일일 리포트 — {report.report_date}",
+            "color": color,
+            "fields": fields,
+            "footer": {"text": f"기간: {report.period_start:%m/%d %H:%M} ~ {report.period_end:%m/%d %H:%M} KST"},
+        }
+
+        payload = {"embeds": [embed]}
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(webhook_url, json=payload)
+                if resp.status_code in (200, 204):
+                    async with TradingSessionLocal() as session:
+                        report_in_db = await session.get(DailyReport, report.id)
+                        if report_in_db:
+                            report_in_db.discord_sent_at = datetime.now(UTC)
+                            await session.commit()
+                    return True
+                logger.warning("Discord webhook returned %d: %s", resp.status_code, resp.text[:200])
+                return False
+        except Exception:
+            logger.warning("Discord webhook send failed", exc_info=True)
+            return False
+
     async def cleanup_old_data(self) -> None:
         """Delete logs older than 30 days and reports older than 365 days in batches."""
         now = datetime.now(UTC)
@@ -693,18 +799,24 @@ async def run_daily_report_loop(alert_service=None) -> None:
                 async with TradingSessionLocal() as session:
                     existing = await session.execute(select(DailyReport).where(DailyReport.report_date == today_kst))
                     existing_report = existing.scalar_one_or_none()
-                    if existing_report and alert_service:
-                        # Report exists, try sending telegram if not sent
-                        await service.send_telegram_report(existing_report, alert_service)
+                    if existing_report:
+                        # Report exists, try sending if not sent
+                        if alert_service:
+                            await service.send_telegram_report(existing_report, alert_service)
+                        await service.send_discord_report(existing_report)
                     elif not existing_report:
                         # All retries failed — always log, optionally alert
                         logger.error("Daily report generation failed for %s after all retries", today_kst)
                         if alert_service:
                             await alert_service.send_high(f"⚠️ 일일 리포트 생성 실패: {today_kst} (3회 재시도 실패)")
-            elif report and alert_service:
-                sent = await service.send_telegram_report(report, alert_service)
-                if not sent:
-                    logger.warning("Daily report for %s generated but Telegram send failed/skipped", today_kst)
+            elif report:
+                if alert_service:
+                    sent = await service.send_telegram_report(report, alert_service)
+                    if not sent:
+                        logger.warning("Daily report for %s generated but Telegram send failed/skipped", today_kst)
+                discord_sent = await service.send_discord_report(report)
+                if not discord_sent:
+                    logger.warning("Daily report for %s generated but Discord send failed/skipped", today_kst)
 
             # Run cleanup
             await service.cleanup_old_data()

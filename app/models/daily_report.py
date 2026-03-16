@@ -25,3 +25,4 @@ class DailyReport(Base):
     health_score: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
     summary: Mapped[dict] = mapped_column(JSONB, nullable=False)
     telegram_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    discord_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
