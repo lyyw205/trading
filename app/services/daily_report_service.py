@@ -4,14 +4,20 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from datetime import UTC, date, datetime, timedelta, timezone
+from decimal import Decimal
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, extract, func, select, text
 from sqlalchemy.exc import IntegrityError
 
-from app.db.session import TradingSessionLocal
+from app.db.session import TradingSessionLocal, engine_trading
+from app.models.account import TradingAccount
 from app.models.daily_report import DailyReport
+from app.models.lot import Lot
 from app.models.persistent_log import PersistentLog
+from app.models.position import Position
+from app.models.reconciliation_log import ReconciliationLog
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +26,13 @@ KST = timezone(timedelta(hours=9))
 
 # Circuit breaker log pattern
 CB_PATTERN = "Circuit breaker triggered"
+
+
+def _dec(v: Decimal | None) -> float:
+    """Decimal → float for JSON serialization."""
+    if v is None:
+        return 0.0
+    return float(round(v, 4))
 
 
 class DailyReportService:
@@ -66,9 +79,11 @@ class DailyReportService:
                     logger.info("Report for %s already exists, skipping", report_date)
                     return None
 
-                # --- DB aggregate queries (no full log load) ---
+                # ============================================================
+                # Section 1: Error/Log aggregation (existing)
+                # ============================================================
 
-                # 1. Count by level
+                # 1a. Count by level
                 level_stats = await session.execute(
                     select(
                         PersistentLog.level,
@@ -85,7 +100,7 @@ class DailyReportService:
                     elif row.level == "CRITICAL":
                         critical_count = row.cnt
 
-                # CB detection: level-independent count
+                # 1b. CB detection: level-independent count
                 cb_result = await session.execute(
                     select(func.count())
                     .select_from(PersistentLog)
@@ -95,7 +110,7 @@ class DailyReportService:
 
                 criticals_excl_cb = max(critical_count - cb_trips, 0)
 
-                # 2. Top error modules (DB GROUP BY)
+                # 1c. Top error modules (DB GROUP BY)
                 top_modules_result = await session.execute(
                     select(
                         func.coalesce(PersistentLog.module, "unknown").label("mod"),
@@ -108,7 +123,7 @@ class DailyReportService:
                 )
                 top_modules = [(row.mod, row.cnt) for row in top_modules_result.all()]
 
-                # 3. Per-account stats (DB GROUP BY, CB detection level-independent)
+                # 1d. Per-account error stats (DB GROUP BY)
                 acct_stats_result = await session.execute(
                     select(
                         PersistentLog.account_id,
@@ -123,30 +138,311 @@ class DailyReportService:
                     .where(*period_filter)
                     .group_by(PersistentLog.account_id)
                 )
-                account_stats_list = [
-                    {
-                        "account_id": str(row.account_id) if row.account_id else "system",
+                acct_error_map: dict[str, dict] = {}
+                for row in acct_stats_result.all():
+                    key = str(row.account_id) if row.account_id else "system"
+                    acct_error_map[key] = {
                         "errors": row.errors,
                         "criticals": row.criticals,
                         "cb_tripped": row.cb_cnt > 0,
                     }
-                    for row in acct_stats_result.all()
-                ]
 
-                # Health score calculation
+                # ============================================================
+                # Section 2: Hourly error distribution (시간대별)
+                # ============================================================
+                # Extract hour in KST (UTC + 9)
+                kst_hour = extract("hour", PersistentLog.logged_at + text("INTERVAL '9 hours'"))
+                hourly_result = await session.execute(
+                    select(
+                        kst_hour.label("hour_kst"),
+                        func.count().label("cnt"),
+                    )
+                    .where(*period_filter)
+                    .group_by("hour_kst")
+                    .order_by("hour_kst")
+                )
+                hourly_distribution = {int(row.hour_kst): row.cnt for row in hourly_result.all()}
+                # Fill missing hours with 0
+                hourly_errors = [hourly_distribution.get(h, 0) for h in range(24)]
+
+                # ============================================================
+                # Section 3: Trading performance (거래 성과, 계정별)
+                # ============================================================
+                # 3a. Lots closed in period (sell_time within period)
+                lot_period_filter = [
+                    Lot.sell_time >= period_start_utc,
+                    Lot.sell_time < period_end_utc,
+                    Lot.status == "CLOSED",
+                ]
+                closed_lots_result = await session.execute(
+                    select(
+                        Lot.account_id,
+                        func.count().label("closed_count"),
+                        func.sum(Lot.net_profit_usdt).label("total_profit"),
+                        func.sum(Lot.fee_usdt).label("total_fees"),
+                        func.count().filter(Lot.net_profit_usdt > 0).label("win_count"),
+                        func.avg(
+                            extract("epoch", Lot.sell_time) - extract("epoch", Lot.buy_time)
+                        ).label("avg_hold_sec"),
+                    )
+                    .where(*lot_period_filter)
+                    .group_by(Lot.account_id)
+                )
+                trading_perf: dict[str, dict] = {}
+                for row in closed_lots_result.all():
+                    acct_key = str(row.account_id)
+                    closed = row.closed_count or 0
+                    trading_perf[acct_key] = {
+                        "closed_lots": closed,
+                        "net_profit_usdt": _dec(row.total_profit),
+                        "total_fees_usdt": _dec(row.total_fees),
+                        "win_rate": round(row.win_count / closed, 4) if closed > 0 else 0.0,
+                        "avg_hold_minutes": round((row.avg_hold_sec or 0) / 60, 1),
+                    }
+
+                # 3b. Lots opened (bought) in period
+                bought_lots_result = await session.execute(
+                    select(
+                        Lot.account_id,
+                        func.count().label("bought_count"),
+                    )
+                    .where(
+                        Lot.buy_time >= period_start_utc,
+                        Lot.buy_time < period_end_utc,
+                    )
+                    .group_by(Lot.account_id)
+                )
+                for row in bought_lots_result.all():
+                    acct_key = str(row.account_id)
+                    if acct_key not in trading_perf:
+                        trading_perf[acct_key] = {
+                            "closed_lots": 0,
+                            "net_profit_usdt": 0.0,
+                            "total_fees_usdt": 0.0,
+                            "win_rate": 0.0,
+                            "avg_hold_minutes": 0.0,
+                        }
+                    trading_perf[acct_key]["bought_lots"] = row.bought_count
+
+                # Ensure bought_lots exists for all accounts
+                for v in trading_perf.values():
+                    v.setdefault("bought_lots", 0)
+
+                # ============================================================
+                # Section 4: Account status (계정 상태, 스냅샷)
+                # ============================================================
+                accounts_result = await session.execute(
+                    select(
+                        TradingAccount.id,
+                        TradingAccount.name,
+                        TradingAccount.is_active,
+                        TradingAccount.circuit_breaker_failures,
+                        TradingAccount.circuit_breaker_disabled_at,
+                        TradingAccount.auto_recovery_attempts,
+                        TradingAccount.last_auto_recovery_at,
+                        TradingAccount.last_success_at,
+                        TradingAccount.buy_pause_state,
+                        TradingAccount.buy_pause_reason,
+                        TradingAccount.buy_pause_since,
+                        TradingAccount.consecutive_low_balance,
+                        TradingAccount.pending_earnings_usdt,
+                    )
+                )
+                account_status: list[dict] = []
+                for row in accounts_result.all():
+                    acct_key = str(row.id)
+                    # CB status interpretation
+                    if row.circuit_breaker_disabled_at:
+                        if row.last_success_at and row.last_success_at > row.circuit_breaker_disabled_at:
+                            cb_status = "recovered"
+                        else:
+                            cb_status = "disabled"
+                    elif row.circuit_breaker_failures > 0:
+                        cb_status = "degraded"
+                    else:
+                        cb_status = "healthy"
+
+                    account_status.append({
+                        "account_id": acct_key,
+                        "name": row.name,
+                        "is_active": row.is_active,
+                        "cb_status": cb_status,
+                        "cb_failures": row.circuit_breaker_failures,
+                        "cb_disabled_at": row.circuit_breaker_disabled_at.isoformat() if row.circuit_breaker_disabled_at else None,
+                        "auto_recovery_attempts": row.auto_recovery_attempts,
+                        "last_success_at": row.last_success_at.isoformat() if row.last_success_at else None,
+                        "buy_pause_state": row.buy_pause_state,
+                        "buy_pause_reason": row.buy_pause_reason,
+                        "buy_pause_since": row.buy_pause_since.isoformat() if row.buy_pause_since else None,
+                        "consecutive_low_balance": row.consecutive_low_balance,
+                        "pending_earnings_usdt": _dec(row.pending_earnings_usdt),
+                        # Merge error stats
+                        **acct_error_map.get(acct_key, {"errors": 0, "criticals": 0, "cb_tripped": False}),
+                        # Merge trading performance
+                        **trading_perf.get(acct_key, {
+                            "closed_lots": 0, "bought_lots": 0,
+                            "net_profit_usdt": 0.0, "total_fees_usdt": 0.0,
+                            "win_rate": 0.0, "avg_hold_minutes": 0.0,
+                        }),
+                    })
+
+                # ============================================================
+                # Section 5: Portfolio (포트폴리오, 계정별 + 전체)
+                # ============================================================
+                # 5a. Current positions
+                positions_result = await session.execute(
+                    select(
+                        Position.account_id,
+                        Position.symbol,
+                        Position.qty,
+                        Position.cost_basis_usdt,
+                        Position.avg_entry,
+                    )
+                )
+                portfolio_by_account: dict[str, list[dict]] = {}
+                total_cost_basis = Decimal("0")
+                total_open_positions = 0
+                for row in positions_result.all():
+                    if row.qty <= 0:
+                        continue
+                    acct_key = str(row.account_id)
+                    portfolio_by_account.setdefault(acct_key, []).append({
+                        "symbol": row.symbol,
+                        "qty": _dec(row.qty),
+                        "cost_basis_usdt": _dec(row.cost_basis_usdt),
+                        "avg_entry": _dec(row.avg_entry),
+                    })
+                    total_cost_basis += row.cost_basis_usdt
+                    total_open_positions += 1
+
+                # 5b. Open lots count per account
+                open_lots_result = await session.execute(
+                    select(
+                        Lot.account_id,
+                        func.count().label("open_lots"),
+                    )
+                    .where(Lot.status == "OPEN")
+                    .group_by(Lot.account_id)
+                )
+                open_lots_map = {str(row.account_id): row.open_lots for row in open_lots_result.all()}
+
+                portfolio_summary = {
+                    "total_cost_basis_usdt": _dec(total_cost_basis),
+                    "total_open_positions": total_open_positions,
+                    "total_open_lots": sum(open_lots_map.values()),
+                    "per_account": {
+                        acct_key: {
+                            "positions": positions,
+                            "open_lots": open_lots_map.get(acct_key, 0),
+                            "cost_basis_usdt": _dec(sum(Decimal(str(p["cost_basis_usdt"])) for p in positions)),
+                        }
+                        for acct_key, positions in portfolio_by_account.items()
+                    },
+                }
+
+                # ============================================================
+                # Section 6: Reconciliation (데이터 정합성)
+                # ============================================================
+                recon_period_filter = [
+                    ReconciliationLog.checked_at >= period_start_utc,
+                    ReconciliationLog.checked_at < period_end_utc,
+                ]
+                recon_result = await session.execute(
+                    select(
+                        ReconciliationLog.account_id,
+                        func.count().label("total_checks"),
+                        func.count().filter(ReconciliationLog.status == "drift_detected").label("drift_count"),
+                        func.count().filter(ReconciliationLog.status == "error").label("error_count"),
+                        func.count().filter(
+                            ReconciliationLog.status == "drift_detected",
+                            ReconciliationLog.auto_resolved.is_(True),
+                        ).label("auto_resolved"),
+                        func.count().filter(
+                            ReconciliationLog.position_diffs.isnot(None),
+                            ReconciliationLog.status == "drift_detected",
+                        ).label("position_drift"),
+                        func.count().filter(
+                            ReconciliationLog.balance_diff.isnot(None),
+                            ReconciliationLog.status == "drift_detected",
+                        ).label("balance_drift"),
+                        func.count().filter(
+                            ReconciliationLog.fill_gaps.isnot(None),
+                            ReconciliationLog.status == "drift_detected",
+                        ).label("fill_gap"),
+                    )
+                    .where(*recon_period_filter)
+                    .group_by(ReconciliationLog.account_id)
+                )
+                recon_by_account: list[dict] = []
+                total_drifts = 0
+                total_auto_resolved = 0
+                for row in recon_result.all():
+                    total_drifts += row.drift_count
+                    total_auto_resolved += row.auto_resolved
+                    recon_by_account.append({
+                        "account_id": str(row.account_id),
+                        "total_checks": row.total_checks,
+                        "drift_count": row.drift_count,
+                        "error_count": row.error_count,
+                        "auto_resolved": row.auto_resolved,
+                        "manual_needed": row.drift_count - row.auto_resolved,
+                        "drift_types": {
+                            "position": row.position_drift,
+                            "balance": row.balance_drift,
+                            "fill_gap": row.fill_gap,
+                        },
+                    })
+                reconciliation = {
+                    "total_drifts": total_drifts,
+                    "total_auto_resolved": total_auto_resolved,
+                    "total_manual_needed": total_drifts - total_auto_resolved,
+                    "per_account": recon_by_account,
+                }
+
+                # ============================================================
+                # Section 7: Server health (서버 안정성)
+                # ============================================================
+                server_health = await self._collect_server_health(session)
+
+                # ============================================================
+                # Health score calculation (운영 안정성 기반)
+                # ============================================================
                 health_score = 100.0
                 health_score -= min(criticals_excl_cb * 10, 40)
                 health_score -= min(error_count * 2, 30)
                 health_score -= min(cb_trips * 20, 40)
+                # Reconciliation drift penalty (new)
+                health_score -= min(total_drifts * 5, 20)
                 health_score = max(health_score, 0.0)
 
                 # Build summary JSON
                 summary = {
+                    # Errors (기존)
                     "total_errors": error_count,
                     "total_criticals": critical_count,
                     "cb_events": cb_trips,
                     "top_error_modules": [{"module": mod, "count": cnt} for mod, cnt in top_modules],
-                    "accounts": account_stats_list,
+                    # Hourly distribution (신규)
+                    "hourly_errors": hourly_errors,
+                    # Accounts (계정 상태 + 에러 + 거래 성과 통합)
+                    "accounts": account_status,
+                    # Trading totals (전체 거래 요약)
+                    "trading_totals": {
+                        "total_closed": sum(v.get("closed_lots", 0) for v in trading_perf.values()),
+                        "total_bought": sum(v.get("bought_lots", 0) for v in trading_perf.values()),
+                        "total_profit_usdt": _dec(sum(
+                            Decimal(str(v.get("net_profit_usdt", 0))) for v in trading_perf.values()
+                        )),
+                        "total_fees_usdt": _dec(sum(
+                            Decimal(str(v.get("total_fees_usdt", 0))) for v in trading_perf.values()
+                        )),
+                    },
+                    # Portfolio (포트폴리오)
+                    "portfolio": portfolio_summary,
+                    # Reconciliation (정합성)
+                    "reconciliation": reconciliation,
+                    # Server health (서버 안정성)
+                    "server_health": server_health,
                 }
 
                 # Create report
@@ -163,11 +459,12 @@ class DailyReportService:
                 await session.refresh(report)
 
                 logger.info(
-                    "Generated daily report for %s: health=%.0f, errors=%d, criticals=%d",
+                    "Generated daily report for %s: health=%.0f, errors=%d, criticals=%d, closed_lots=%d",
                     report_date,
                     health_score,
                     error_count,
                     critical_count,
+                    summary["trading_totals"]["total_closed"],
                 )
                 return report
         except IntegrityError as exc:
@@ -178,6 +475,71 @@ class DailyReportService:
             logger.error("Unexpected IntegrityError for report %s", report_date, exc_info=True)
             raise
 
+    async def _collect_server_health(self, session) -> dict:
+        """Collect server/DB health metrics at report generation time."""
+        health: dict = {}
+
+        # DB pool stats
+        pool = engine_trading.pool
+        health["db_pool"] = {
+            "pool_size": pool.size(),
+            "checked_in": pool.checkedin(),
+            "checked_out": pool.checkedout(),
+            "overflow": pool.overflow(),
+            "max_overflow": engine_trading.pool._max_overflow,
+        }
+
+        # DB connection test + server info
+        try:
+            db_version = await session.execute(text("SELECT version()"))
+            health["db_version"] = db_version.scalar()
+
+            db_size = await session.execute(text("SELECT pg_database_size(current_database())"))
+            size_bytes = db_size.scalar() or 0
+            health["db_size_mb"] = round(size_bytes / (1024 * 1024), 1)
+
+            # Active connections
+            conn_result = await session.execute(text(
+                "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database()"
+            ))
+            health["db_active_connections"] = conn_result.scalar() or 0
+
+            # Table sizes (top 5)
+            table_sizes_result = await session.execute(text("""
+                SELECT relname, pg_total_relation_size(c.oid) AS total_bytes
+                FROM pg_class c
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname = 'public' AND c.relkind = 'r'
+                ORDER BY total_bytes DESC
+                LIMIT 5
+            """))
+            health["top_tables_mb"] = [
+                {"table": row.relname, "size_mb": round(row.total_bytes / (1024 * 1024), 1)}
+                for row in table_sizes_result.all()
+            ]
+        except Exception:
+            logger.warning("Failed to collect some DB health metrics", exc_info=True)
+
+        # Process uptime & memory (best-effort)
+        try:
+            import psutil
+
+            proc = psutil.Process(os.getpid())
+            mem_info = proc.memory_info()
+            health["process"] = {
+                "pid": proc.pid,
+                "rss_mb": round(mem_info.rss / (1024 * 1024), 1),
+                "cpu_percent": proc.cpu_percent(interval=0.1),
+                "uptime_hours": round((datetime.now(UTC) - datetime.fromtimestamp(proc.create_time(), tz=UTC)).total_seconds() / 3600, 1),
+                "threads": proc.num_threads(),
+            }
+        except ImportError:
+            health["process"] = {"note": "psutil not installed"}
+        except Exception:
+            logger.warning("Failed to collect process metrics", exc_info=True)
+
+        return health
+
     async def send_telegram_report(self, report: DailyReport, alert_service) -> bool:
         """Send report summary to Telegram via AlertService."""
         if report.telegram_sent_at is not None:
@@ -185,15 +547,44 @@ class DailyReportService:
 
         s = report.summary
         top_mods = ", ".join(f"{m['module']}({m['count']})" for m in s.get("top_error_modules", [])[:3])
+        tt = s.get("trading_totals", {})
+        recon = s.get("reconciliation", {})
 
         msg = (
             f"📊 [일일 리포트] {report.report_date}\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
             f"건강 점수: {report.health_score:.0f}/100\n"
-            f"CRITICAL: {s.get('total_criticals', 0)}건 | ERROR: {s.get('total_errors', 0)}건\n"
-            f"CB 발동: {s.get('cb_events', 0)}회\n"
+            f"\n"
+            f"🔴 장애 현황\n"
+            f"  CRITICAL: {s.get('total_criticals', 0)}건 | ERROR: {s.get('total_errors', 0)}건\n"
+            f"  CB 발동: {s.get('cb_events', 0)}회\n"
         )
         if top_mods:
-            msg += f"주요 모듈: {top_mods}\n"
+            msg += f"  주요 모듈: {top_mods}\n"
+
+        msg += (
+            f"\n"
+            f"💰 거래 성과\n"
+            f"  매수: {tt.get('total_bought', 0)}건 | 매도: {tt.get('total_closed', 0)}건\n"
+            f"  실현 손익: {tt.get('total_profit_usdt', 0):+.2f} USDT\n"
+            f"  수수료: {tt.get('total_fees_usdt', 0):.2f} USDT\n"
+        )
+
+        # Per-account summary (compact)
+        accounts = s.get("accounts", [])
+        if accounts:
+            msg += "\n📋 계정별 요약\n"
+            for a in accounts:
+                status_icon = "🟢" if a.get("cb_status") == "healthy" else "🔴" if a.get("cb_status") == "disabled" else "🟡"
+                name = a.get("name", a.get("account_id", "?")[:8])
+                profit = a.get("net_profit_usdt", 0)
+                msg += f"  {status_icon} {name}: {profit:+.2f} USDT ({a.get('closed_lots', 0)}건)\n"
+
+        if recon.get("total_drifts", 0) > 0:
+            msg += (
+                f"\n⚠️ 정합성\n"
+                f"  drift: {recon['total_drifts']}건 (자동해소: {recon.get('total_auto_resolved', 0)})\n"
+            )
 
         from app.services.alert_service import AlertSeverity
 
