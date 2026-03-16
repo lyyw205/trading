@@ -577,9 +577,23 @@ html.theme-transition *::after {
    ———————————————————————————————————————— */
 .asset-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  grid-template-columns: repeat(12, 1fr);
   gap: 0.75rem;
 }
+
+/* Slot assignments — content-optimal widths */
+.asset-card--summary     { grid-column: 1 / 9; }   /* 8/12 — wide portfolio header */
+.asset-card--realized    { grid-column: 9 / 13; }  /* 4/12 — compact realized PnL */
+.asset-card--symbols     { grid-column: 1 / 9; }   /* 8/12 — symbol table */
+.asset-card--sidestack   { grid-column: 9 / 13; grid-row: span 1; display: flex; flex-direction: column; gap: 0.75rem; } /* 4/12 container */
+.asset-card--open-lots   { grid-column: 1 / -1; }  /* full-width */
+
+/* Side-stack inner cards share the column but stack vertically */
+.asset-card--sidestack .asset-card {
+  flex: 1;
+  min-height: 0;
+}
+
 .asset-card {
   background: var(--bg-floating);
   border: 1px solid var(--card-border);
@@ -588,6 +602,15 @@ html.theme-transition *::after {
   transition: border-color 0.15s;
 }
 .asset-card:hover { border-color: var(--primary-light); }
+
+/* The sidestack wrapper is not itself a card */
+.asset-card--sidestack {
+  background: transparent;
+  border: none;
+  padding: 0;
+  border-radius: 0;
+}
+.asset-card--sidestack:hover { border-color: transparent; }
 .asset-label {
   font-size: 0.7rem;
   color: var(--text-muted);
@@ -1970,7 +1993,13 @@ select.form-input {
   .page-header { flex-direction: column; align-items: flex-start; }
   .page-title { font-size: 1.25rem; }
   .accounts-grid { grid-template-columns: 1fr; }
-  .asset-grid { grid-template-columns: 1fr 1fr; }
+  .asset-grid { grid-template-columns: repeat(4, 1fr); }
+  .asset-card--summary   { grid-column: 1 / -1; }
+  .asset-card--realized  { grid-column: 1 / -1; }
+  .asset-card--symbols   { grid-column: 1 / -1; }
+  .asset-card--sidestack { grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap; }
+  .asset-card--sidestack .asset-card { flex: 1 1 160px; }
+  .asset-card--open-lots { grid-column: 1 / -1; }
   .health-grid { grid-template-columns: 1fr 1fr; }
   .status-row { grid-template-columns: 1fr; }
   .protection-logs-row { grid-template-columns: 1fr; }
@@ -1981,6 +2010,13 @@ select.form-input {
 
 @media (max-width: 480px) {
   .asset-grid { grid-template-columns: 1fr; }
+  .asset-card--summary,
+  .asset-card--realized,
+  .asset-card--symbols,
+  .asset-card--sidestack,
+  .asset-card--open-lots { grid-column: 1 / -1; }
+  .asset-card--sidestack { flex-direction: column; }
+  .asset-card--sidestack .asset-card { flex: 1 1 auto; }
   .health-grid { grid-template-columns: 1fr; }
   .filter-tabs { overflow-x: auto; flex-wrap: nowrap; }
 }

@@ -16,10 +16,10 @@
   <div class="section-header">
     <h2 class="section-title">Price Chart</h2>
     <div style="display:flex;align-items:center;gap:0.75rem;">
-      <select id="chart-symbol-select" class="form-input" style="width:auto;padding:0.25rem 0.5rem;font-size:0.8rem;font-weight:600;border-radius:6px;"></select>
+      <select id="chart-symbol-select" class="form-input" style="width:auto;height:28px;padding:0.2rem 1.6rem 0.2rem 0.5rem;font-size:0.72rem;font-weight:600;border-radius:6px;"></select>
       <div class="tf-selector" id="tf-selector">
-        <button class="tf-btn" data-tf="1m">1m</button>
-        <button class="tf-btn active" data-tf="5m">5m</button>
+        <button class="tf-btn active" data-tf="1m">1m</button>
+        <button class="tf-btn" data-tf="5m">5m</button>
         <button class="tf-btn" data-tf="1h">1H</button>
         <button class="tf-btn" data-tf="1d">1D</button>
       </div>
@@ -264,14 +264,14 @@
     <div class="section-header">
       <h2 class="section-title">트레이딩 로그</h2>
       <div style="display:flex;gap:0.5rem;align-items:center;">
-        <select id="log-level-filter" class="form-input" style="width:auto;padding:0.2rem 0.5rem;font-size:0.8rem;" onchange="loadAccountLogs()">
+        <select id="log-level-filter" class="form-input" style="width:auto;height:28px;padding:0.2rem 1.6rem 0.2rem 0.5rem;font-size:0.72rem;font-weight:600;border-radius:6px;" onchange="loadAccountLogs()">
           <option value="">전체 레벨</option>
           <option value="CRITICAL">CRITICAL</option>
           <option value="ERROR">ERROR</option>
           <option value="WARNING">WARNING</option>
           <option value="INFO">INFO</option>
         </select>
-        <button class="btn btn-outline btn-sm" onclick="loadAccountLogs()" style="padding:0.2rem 0.5rem;font-size:0.8rem;">새로고침</button>
+        <button class="btn btn-outline btn-sm" onclick="loadAccountLogs()" style="height:28px;padding:0.2rem 0.5rem;font-size:0.72rem;font-weight:600;border-radius:6px;">새로고침</button>
       </div>
     </div>
     <div id="account-logs-panel" class="log-viewer">
@@ -393,7 +393,19 @@ async function loadAccountLogs() {
 
     let html = '';
     for (const log of logs) {
-      const ts = log.ts || '';
+      let ts = log.ts || '';
+      if (ts) {
+        try {
+          const d = new Date(ts.replace('+00:00', 'Z'));
+          const kst = new Date(d.getTime() + 9 * 3600000);
+          ts = kst.getUTCFullYear() + '-'
+            + String(kst.getUTCMonth() + 1).padStart(2, '0') + '-'
+            + String(kst.getUTCDate()).padStart(2, '0') + ' '
+            + String(kst.getUTCHours()).padStart(2, '0') + ':'
+            + String(kst.getUTCMinutes()).padStart(2, '0') + ':'
+            + String(kst.getUTCSeconds()).padStart(2, '0');
+        } catch (_) {}
+      }
       const lvl = log.level || 'INFO';
       const mod = log.module || '';
       const rawMsg = log.msg || '';

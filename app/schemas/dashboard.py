@@ -45,6 +45,13 @@ class HeldSymbol(BaseModel):
     pnl_pct: float
 
 
+class OpenLotSymbol(BaseModel):
+    symbol: str
+    count: int
+    oldest_buy_time: str  # ISO datetime
+    holding_hours: float
+
+
 class AssetStatus(BaseModel):
     btc_balance: float
     usdt_balance: float
@@ -54,6 +61,11 @@ class AssetStatus(BaseModel):
     reserve_pool_pct: float
     pending_earnings_usdt: float
     total_invested_usdt: float
+    realized_pnl_today: float = 0.0
+    realized_pnl_week: float = 0.0
+    closed_lots_today: int = 0
+    closed_lots_week: int = 0
+    open_lots_by_symbol: list[OpenLotSymbol] = []
 
 
 class ApproveEarningsRequest(BaseModel):

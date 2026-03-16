@@ -25,6 +25,22 @@ function toggleTheme() {
   setTimeout(() => html.classList.remove('theme-transition'), 350);
 }
 
+function _utcToKST(utcSec) {
+  return new Date((utcSec + 9 * 3600) * 1000);
+}
+
+function _fmtKST(utcSec, mode) {
+  const d = _utcToKST(utcSec);
+  const Y = String(d.getUTCFullYear()).slice(2);
+  const M = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const D = String(d.getUTCDate()).padStart(2, '0');
+  const h = String(d.getUTCHours()).padStart(2, '0');
+  const m = String(d.getUTCMinutes()).padStart(2, '0');
+  if (mode === 'time') return h + ':' + m;
+  if (mode === 'tooltip') return Y + '-' + M + '-' + D + ' ' + h + ':' + m;
+  return M + '-' + D;
+}
+
 function getChartTheme() {
   const isLight = getTheme() === 'light';
   return {
@@ -37,7 +53,15 @@ function getChartTheme() {
       horzLines: { color: isLight ? '#F0F1F3' : '#334155' },
     },
     rightPriceScale: { borderColor: isLight ? '#E5E7EB' : '#334155' },
-    timeScale: { borderColor: isLight ? '#E5E7EB' : '#334155', timeVisible: true, secondsVisible: false },
+    timeScale: {
+      borderColor: isLight ? '#E5E7EB' : '#334155',
+      timeVisible: true,
+      secondsVisible: false,
+      tickMarkFormatter: (time) => _fmtKST(time, 'time'),
+    },
+    localization: {
+      timeFormatter: (time) => _fmtKST(time, 'tooltip'),
+    },
   };
 }
 
@@ -194,7 +218,7 @@ async function loadAccountDashboard(accountId) {
 
   // Load remaining sections in parallel
   await Promise.allSettled([
-    loadPriceChart(accountId, 'price-chart', '5m', _dashCurrentSymbol),
+    loadPriceChart(accountId, 'price-chart', '1m', _dashCurrentSymbol),
     loadAssetStatus(accountId),
     loadProtectionStatus(accountId),
   ]);
@@ -209,7 +233,7 @@ let _dashOverlayRAF = null;
 let _dashAccountId = null;
 let _dashContainerId = null;
 let _dashTradeEvents = null;
-let _dashCurrentInterval = '5m';
+let _dashCurrentInterval = '1m';
 let _dashCurrentSymbol = null;
 
 // Interval → seconds mapping for candle bucketing
@@ -221,7 +245,7 @@ async function loadPriceChart(accountId, containerId, interval, symbol) {
 
   _dashAccountId = accountId;
   _dashContainerId = containerId;
-  _dashCurrentInterval = interval || '5m';
+  _dashCurrentInterval = interval || '1m';
   if (symbol) _dashCurrentSymbol = symbol;
 
   // Dispose previous chart
@@ -516,48 +540,110 @@ async function loadAssetStatus(accountId) {
     const resp = await apiFetch('/api/dashboard/' + accountId + '/asset_status');
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
-    // Build held symbols cards
+
     const symbols = data.held_symbols || [];
+    const totalHeldValue = symbols.reduce((s, h) => s + h.value_usdt, 0);
+    const totalPnl = symbols.reduce((s, h) => s + h.pnl_usdt, 0);
+    const portfolioValue = totalHeldValue + (data.reserve_pool_usdt || 0) + (data.usdt_balance || 0);
+    const pnlPct = data.total_invested_usdt > 0 ? (totalPnl / data.total_invested_usdt * 100) : 0;
+    const pnlColor = totalPnl >= 0 ? 'var(--success)' : 'var(--danger, #ef4444)';
+    const pnlSign = totalPnl >= 0 ? '+' : '';
+
+    // --- P1-1: 자산 구성 바 데이터 ---
+    const compositionItems = [];
+    const barColors = ['#f7931a', '#627eea', '#26a17b', '#e84142', '#2775ca', '#8247e5', '#00d1b2', '#ff6b6b'];
+    symbols.forEach((h, i) => {
+      if (h.value_usdt > 0) {
+        compositionItems.push({
+          label: h.symbol.replace('USDT', ''),
+          value: h.value_usdt,
+          color: barColors[i % barColors.length]
+        });
+      }
+    });
+    if ((data.reserve_pool_usdt || 0) > 0) {
+      compositionItems.push({ label: 'Reserve', value: data.reserve_pool_usdt, color: '#6366f1' });
+    }
+    if ((data.usdt_balance || 0) > 0) {
+      compositionItems.push({ label: 'USDT', value: data.usdt_balance, color: '#94a3b8' });
+    }
+    const compTotal = compositionItems.reduce((s, c) => s + c.value, 0);
+
+    // --- P1: 포트폴리오 요약 헤더 ---
+    const summaryHtml = `
+    <div class="asset-card asset-card--summary" style="background: linear-gradient(135deg, var(--bg-floating) 0%, var(--bg-secondary) 100%);">
+      <div style="display:flex;flex-wrap:wrap;gap:1.5rem;align-items:flex-start;justify-content:space-between;">
+        <div style="flex:1;min-width:160px;">
+          <div class="asset-label">포트폴리오 평가금액</div>
+          <div style="font-size:1.5rem;font-weight:700;font-variant-numeric:tabular-nums;margin:0.25rem 0;">
+            ${fmt(portfolioValue, 2)} <span style="font-size:0.9rem;color:var(--text-muted);">USDT</span>
+          </div>
+          <div class="asset-sub">투자원금 ${fmt(data.total_invested_usdt, 2)} USDT</div>
+        </div>
+        <div style="flex:0 0 auto;min-width:140px;text-align:right;">
+          <div class="asset-label">미실현 손익</div>
+          <div style="font-size:1.3rem;font-weight:700;font-variant-numeric:tabular-nums;color:${pnlColor};margin:0.25rem 0;">
+            ${pnlSign}${fmt(totalPnl, 2)} USDT
+          </div>
+          <div style="font-size:0.8rem;color:${pnlColor};font-weight:600;">${pnlSign}${pnlPct.toFixed(2)}%</div>
+          ${data.total_invested_usdt > 0 ? `
+          <div style="margin-top:0.4rem;height:6px;border-radius:3px;background:var(--card-border);overflow:hidden;width:120px;margin-left:auto;">
+            <div style="height:100%;border-radius:3px;background:${pnlColor};width:${Math.min(Math.abs(pnlPct), 100)}%;transition:width 0.3s;"></div>
+          </div>` : ''}
+        </div>
+      </div>
+      ${compTotal > 0 ? `
+      <div style="margin-top:1rem;">
+        <div class="asset-label" style="margin-bottom:0.4rem;">자산 구성</div>
+        <div style="display:flex;height:8px;border-radius:4px;overflow:hidden;background:var(--card-border);">
+          ${compositionItems.map(c => `<div style="width:${(c.value / compTotal * 100).toFixed(1)}%;background:${c.color};transition:width 0.3s;" title="${c.label}: ${fmt(c.value, 2)} USDT (${(c.value / compTotal * 100).toFixed(1)}%)"></div>`).join('')}
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:0.5rem 1rem;margin-top:0.4rem;">
+          ${compositionItems.map(c => `<span style="font-size:0.7rem;color:var(--text-muted);display:flex;align-items:center;gap:0.3rem;"><span style="width:8px;height:8px;border-radius:2px;background:${c.color};display:inline-block;"></span>${c.label} ${(c.value / compTotal * 100).toFixed(1)}%</span>`).join('')}
+        </div>
+      </div>` : ''}
+    </div>`;
+
+    // --- Held Symbols 테이블 ---
     let symbolsHtml = '';
     if (symbols.length > 0) {
-      const totalValue = symbols.reduce((s, h) => s + h.value_usdt, 0);
       symbolsHtml = `
-      <div class="asset-card" style="grid-column: 1 / -1;">
+      <div class="asset-card asset-card--symbols">
         <div class="asset-card-row" style="justify-content:space-between;align-items:center;">
           <div style="display:flex;align-items:center;gap:0.75rem;">
             <div class="asset-icon asset-icon-warning">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.5 8H14a2 2 0 0 1 0 4h-4.5m0-4v8m0-4H14a2 2 0 0 1 0 4H9.5m2-10v2m0 8v2"/></svg>
             </div>
             <div>
-              <div class="asset-label">Held Symbols</div>
-              <div class="asset-value">${fmt(totalValue, 2)} USDT</div>
+              <div class="asset-label">보유 심볼</div>
+              <div class="asset-value">${fmt(totalHeldValue, 2)} USDT</div>
             </div>
           </div>
-          <div class="asset-sub">${symbols.length} symbol${symbols.length > 1 ? 's' : ''}</div>
+          <div class="asset-sub">${symbols.length}개 심볼</div>
         </div>
         <div class="held-symbols-table" style="margin-top:0.75rem;">
           <table style="width:100%;border-collapse:collapse;font-size:0.8rem;">
             <thead>
               <tr style="color:var(--text-muted);text-align:left;border-bottom:1px solid var(--card-border);">
-                <th style="padding:0.4rem 0.5rem;font-weight:600;">Symbol</th>
-                <th style="padding:0.4rem 0.5rem;font-weight:600;text-align:right;">Qty</th>
-                <th style="padding:0.4rem 0.5rem;font-weight:600;text-align:right;">Avg Entry</th>
-                <th style="padding:0.4rem 0.5rem;font-weight:600;text-align:right;">Price</th>
-                <th style="padding:0.4rem 0.5rem;font-weight:600;text-align:right;">Value</th>
-                <th style="padding:0.4rem 0.5rem;font-weight:600;text-align:right;">PnL</th>
+                <th style="padding:0.4rem 0.5rem;font-weight:600;">심볼</th>
+                <th style="padding:0.4rem 0.5rem;font-weight:600;text-align:right;">수량</th>
+                <th style="padding:0.4rem 0.5rem;font-weight:600;text-align:right;">평균단가</th>
+                <th style="padding:0.4rem 0.5rem;font-weight:600;text-align:right;">현재가</th>
+                <th style="padding:0.4rem 0.5rem;font-weight:600;text-align:right;">평가금액</th>
+                <th style="padding:0.4rem 0.5rem;font-weight:600;text-align:right;">손익</th>
               </tr>
             </thead>
             <tbody>
               ${symbols.map(h => {
-                const pnlColor = h.pnl_usdt >= 0 ? 'var(--success)' : 'var(--danger, #ef4444)';
-                const pnlSign = h.pnl_usdt >= 0 ? '+' : '';
+                const hColor = h.pnl_usdt >= 0 ? 'var(--success)' : 'var(--danger, #ef4444)';
+                const hSign = h.pnl_usdt >= 0 ? '+' : '';
                 return `<tr style="border-bottom:1px solid var(--card-border);">
                   <td style="padding:0.4rem 0.5rem;font-weight:600;">${escapeHtml(h.symbol).replace('USDT','')}</td>
                   <td style="padding:0.4rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums;">${fmt(h.qty, 6)}</td>
                   <td style="padding:0.4rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums;">${fmt(h.avg_entry, 2)}</td>
                   <td style="padding:0.4rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums;">${fmt(h.current_price, 2)}</td>
                   <td style="padding:0.4rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums;">${fmt(h.value_usdt, 2)}</td>
-                  <td style="padding:0.4rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums;color:${pnlColor};">${pnlSign}${fmt(h.pnl_usdt, 2)} (${pnlSign}${h.pnl_pct}%)</td>
+                  <td style="padding:0.4rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums;color:${hColor};">${hSign}${fmt(h.pnl_usdt, 2)} (${hSign}${h.pnl_pct}%)</td>
                 </tr>`;
               }).join('')}
             </tbody>
@@ -566,64 +652,126 @@ async function loadAssetStatus(accountId) {
       </div>`;
     } else {
       symbolsHtml = `
-      <div class="asset-card">
+      <div class="asset-card asset-card--symbols">
         <div class="asset-card-row">
           <div class="asset-icon asset-icon-warning">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.5 8H14a2 2 0 0 1 0 4h-4.5m0-4v8m0-4H14a2 2 0 0 1 0 4H9.5m2-10v2m0 8v2"/></svg>
           </div>
           <div>
-            <div class="asset-label">Held Symbols</div>
-            <div class="asset-value">None</div>
+            <div class="asset-label">보유 심볼</div>
+            <div class="asset-value">없음</div>
           </div>
         </div>
       </div>`;
     }
 
     el.innerHTML = `
+      ${summaryHtml}
       ${symbolsHtml}
-      <div class="asset-card">
-        <div class="asset-card-row">
-          <div class="asset-icon asset-icon-info">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      <div class="asset-card--sidestack">
+        <div class="asset-card">
+          <div class="asset-card-row">
+            <div class="asset-icon asset-icon-info">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            </div>
+            <div>
+              <div class="asset-label">Reserve Pool</div>
+              <div class="asset-value">${fmt(data.reserve_pool_usdt, 2)} USDT</div>
+              <div class="asset-sub">${data.reserve_pool_qty != null ? fmt(data.reserve_pool_qty, 6) + ' qty' : ''} · ${data.reserve_pool_pct != null ? data.reserve_pool_pct + '%' : ''}</div>
+            </div>
           </div>
-          <div>
-            <div class="asset-label">Reserve Pool</div>
-            <div class="asset-value">${fmt(data.reserve_pool_usdt, 2)} USDT</div>
-            <div class="asset-sub">${data.reserve_pool_pct != null ? data.reserve_pool_pct + '%' : ''}</div>
+        </div>
+        <div class="asset-card earnings-card ${(data.pending_earnings_usdt || 0) > 0 ? 'has-earnings' : ''}">
+          <div class="asset-card-row">
+            <div class="asset-icon asset-icon-orange">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/></svg>
+            </div>
+            <div>
+              <div class="asset-label">적립금 (Pending)</div>
+              <div class="asset-value">${fmt(data.pending_earnings_usdt || 0, 2)} USDT</div>
+            </div>
+          </div>
+          <button class="btn btn-sm btn-approve" style="margin-top:0.5rem;"
+                  onclick="openEarningsModal('${accountId}')"
+                  ${(data.pending_earnings_usdt || 0) <= 0 ? 'disabled' : ''}>
+            Reserve 추가
+          </button>
+        </div>
+        <div class="asset-card">
+          <div class="asset-card-row">
+            <div class="asset-icon asset-icon-primary">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+            </div>
+            <div>
+              <div class="asset-label">투자원금</div>
+              <div class="asset-value">${fmt(data.total_invested_usdt, 2)} USDT</div>
+            </div>
           </div>
         </div>
       </div>
-      <div class="asset-card earnings-card ${(data.pending_earnings_usdt || 0) > 0 ? 'has-earnings' : ''}">
-        <div class="asset-card-row">
-          <div class="asset-icon asset-icon-orange">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/></svg>
-          </div>
-          <div>
-            <div class="asset-label">적립금 (Pending)</div>
-            <div class="asset-value">${fmt(data.pending_earnings_usdt || 0, 2)} USDT</div>
-          </div>
-        </div>
-        <button class="btn btn-sm btn-approve" style="margin-top:0.5rem;"
-                onclick="openEarningsModal('${accountId}')"
-                ${(data.pending_earnings_usdt || 0) <= 0 ? 'disabled' : ''}>
-          Reserve 추가
-        </button>
-      </div>
-      <div class="asset-card">
-        <div class="asset-card-row">
-          <div class="asset-icon asset-icon-primary">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
-          </div>
-          <div>
-            <div class="asset-label">Total Invested</div>
-            <div class="asset-value">${fmt(data.total_invested_usdt, 2)} USDT</div>
-          </div>
-        </div>
-      </div>
+      ${_renderRealizedPnl(data)}
+      ${_renderOpenLotsBySymbol(data)}
     `;
   } catch (e) {
     el.innerHTML = '<p class="error-text">Failed to load asset status</p>';
   }
+}
+
+function _renderRealizedPnl(data) {
+  const todayColor = (data.realized_pnl_today || 0) >= 0 ? 'var(--success)' : 'var(--danger, #ef4444)';
+  const weekColor = (data.realized_pnl_week || 0) >= 0 ? 'var(--success)' : 'var(--danger, #ef4444)';
+  const todaySign = (data.realized_pnl_today || 0) >= 0 ? '+' : '';
+  const weekSign = (data.realized_pnl_week || 0) >= 0 ? '+' : '';
+  return `
+  <div class="asset-card asset-card--realized">
+    <div class="asset-label" style="margin-bottom:0.5rem;">실현 손익</div>
+    <div style="display:flex;gap:2rem;flex-wrap:wrap;">
+      <div style="flex:1;min-width:140px;">
+        <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:0.2rem;">오늘</div>
+        <div style="font-size:1.1rem;font-weight:700;font-variant-numeric:tabular-nums;color:${todayColor};">
+          ${todaySign}${fmt(data.realized_pnl_today || 0, 2)} USDT
+        </div>
+        <div class="asset-sub">${data.closed_lots_today || 0}건 청산</div>
+      </div>
+      <div style="flex:1;min-width:140px;">
+        <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:0.2rem;">이번 주</div>
+        <div style="font-size:1.1rem;font-weight:700;font-variant-numeric:tabular-nums;color:${weekColor};">
+          ${weekSign}${fmt(data.realized_pnl_week || 0, 2)} USDT
+        </div>
+        <div class="asset-sub">${data.closed_lots_week || 0}건 청산</div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function _formatHoldingDuration(hours) {
+  if (hours < 1) return Math.round(hours * 60) + '분';
+  if (hours < 24) return hours.toFixed(1) + '시간';
+  const days = Math.floor(hours / 24);
+  const rem = Math.round(hours % 24);
+  return days + '일 ' + rem + '시간';
+}
+
+function _renderOpenLotsBySymbol(data) {
+  const lots = data.open_lots_by_symbol || [];
+  if (lots.length === 0) return '';
+  const totalCount = lots.reduce((s, l) => s + l.count, 0);
+  return `
+  <div class="asset-card asset-card--open-lots">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+      <div class="asset-label">심볼별 오픈 Lot</div>
+      <div class="asset-sub">총 ${totalCount}건</div>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:0.5rem;">
+      ${lots.map(l => `
+        <div style="background:var(--bg-secondary);border:1px solid var(--card-border);border-radius:var(--radius);padding:0.5rem 0.75rem;min-width:120px;flex:1;">
+          <div style="font-weight:600;font-size:0.85rem;">${escapeHtml(l.symbol).replace('USDT','')}</div>
+          <div style="font-size:1rem;font-weight:700;font-variant-numeric:tabular-nums;">${l.count}건</div>
+          <div class="asset-sub">보유 ${_formatHoldingDuration(l.holding_hours)}</div>
+        </div>
+      `).join('')}
+    </div>
+  </div>`;
 }
 
 /* ============================================================

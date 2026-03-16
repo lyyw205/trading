@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 from uuid import UUID
 
@@ -25,6 +26,7 @@ from app.schemas.dashboard import (
     BuyPauseInfo,
     DashboardSummary,
     HeldSymbol,
+    OpenLotSymbol,
     PositionInfo,
 )
 from app.schemas.trade import LotResponse, OrderResponse
@@ -399,6 +401,46 @@ async def get_asset_status(
 
     reserve_pct = min(round(reserve_cost / total_invested * 100, 1), 999.9) if total_invested > 1.0 else 0
 
+    # P2: 실현손익 (오늘 / 이번 주)
+    now_utc = datetime.now(UTC)
+    today_start = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_start = today_start - timedelta(days=now_utc.weekday())  # 월요일 00:00 UTC
+
+    realized_today_stmt = select(
+        func.coalesce(func.sum(Lot.net_profit_usdt), 0),
+        func.count(),
+    ).where(Lot.account_id == account.id, Lot.status == "CLOSED", Lot.sell_time >= today_start)
+    r_today = await session.execute(realized_today_stmt)
+    pnl_today, closed_today = r_today.one()
+
+    realized_week_stmt = select(
+        func.coalesce(func.sum(Lot.net_profit_usdt), 0),
+        func.count(),
+    ).where(Lot.account_id == account.id, Lot.status == "CLOSED", Lot.sell_time >= week_start)
+    r_week = await session.execute(realized_week_stmt)
+    pnl_week, closed_week = r_week.one()
+
+    # P2: 심볼별 오픈 lot 수 + 최초 매수 시간
+    open_lots_stmt = (
+        select(Lot.symbol, func.count().label("cnt"), func.min(Lot.buy_time).label("oldest"))
+        .where(Lot.account_id == account.id, Lot.status == "OPEN")
+        .group_by(Lot.symbol)
+        .order_by(func.count().desc())
+    )
+    open_lots_result = await session.execute(open_lots_stmt)
+    open_lots_by_symbol = []
+    for row in open_lots_result.all():
+        oldest_dt = row.oldest
+        hours = (now_utc - oldest_dt).total_seconds() / 3600 if oldest_dt else 0
+        open_lots_by_symbol.append(
+            OpenLotSymbol(
+                symbol=row.symbol,
+                count=row.cnt,
+                oldest_buy_time=oldest_dt.isoformat() if oldest_dt else "",
+                holding_hours=round(hours, 1),
+            )
+        )
+
     return AssetStatus(
         btc_balance=base_qty,
         usdt_balance=round(base_qty * primary_price, 2) if primary_price > 0 else 0,
@@ -408,6 +450,11 @@ async def get_asset_status(
         reserve_pool_pct=reserve_pct,
         pending_earnings_usdt=pending_earnings,
         total_invested_usdt=round(total_invested, 2),
+        realized_pnl_today=round(float(pnl_today), 2),
+        realized_pnl_week=round(float(pnl_week), 2),
+        closed_lots_today=closed_today,
+        closed_lots_week=closed_week,
+        open_lots_by_symbol=open_lots_by_symbol,
     )
 
 
