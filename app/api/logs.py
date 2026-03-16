@@ -50,9 +50,9 @@ _USER_VISIBLE_RE: re.Pattern[str] = re.compile(
             r"Insufficient .+ balance",
             r"notional .+ below minimum",
             # Trading loop lifecycle
-            r"Trading loop started",
+            r"트레이딩 루프가 정상 시작",
             # Scanning activity (periodic heartbeat)
-            r"Scanning \d+ combo",
+            r"스캔 중:",
             # Sell order status changes (user cares if cancelled/expired)
             r"sell order \d+ for lot \d+ (CANCELED|EXPIRED)",
             # Place order failures (user's money is affected)

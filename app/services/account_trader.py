@@ -263,7 +263,7 @@ class AccountTrader:
 
                 total_symbols = sum(len(c.symbols) if c.symbols else 1 for c in combos)
                 logger.info(
-                    "Scanning %d combo(s), %d symbol(s) | balance=%.2f | pause=%s",
+                    "스캔 중: %d개 콤보, %d개 심볼 | 잔고=%.2f | 상태=%s",
                     len(combos),
                     total_symbols,
                     free_balance,
@@ -665,7 +665,7 @@ class AccountTrader:
                     await self._disable_with_circuit_breaker()
                     return
 
-            logger.info("Trading loop started")
+            logger.info("트레이딩 루프가 정상 시작되었습니다")
 
             while self._running:
                 try:

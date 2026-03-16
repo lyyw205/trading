@@ -43,9 +43,9 @@ _TRADE_EVENT_RE = re.compile(
             # Sell order status
             r"sell order .+ (CANCELED|EXPIRED)",
             # Scanning activity
-            r"Scanning",
+            r"스캔 중:",
             # Trading loop lifecycle
-            r"Trading loop started",
+            r"트레이딩 루프가 정상 시작",
         )
     )
 )
