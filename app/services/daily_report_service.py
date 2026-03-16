@@ -181,9 +181,9 @@ class DailyReportService:
                         func.sum(Lot.net_profit_usdt).label("total_profit"),
                         func.sum(Lot.fee_usdt).label("total_fees"),
                         func.count().filter(Lot.net_profit_usdt > 0).label("win_count"),
-                        func.avg(
-                            extract("epoch", Lot.sell_time) - extract("epoch", Lot.buy_time)
-                        ).label("avg_hold_sec"),
+                        func.avg(extract("epoch", Lot.sell_time) - extract("epoch", Lot.buy_time)).label(
+                            "avg_hold_sec"
+                        ),
                     )
                     .where(*lot_period_filter)
                     .group_by(Lot.account_id)
@@ -262,29 +262,39 @@ class DailyReportService:
                     else:
                         cb_status = "healthy"
 
-                    account_status.append({
-                        "account_id": acct_key,
-                        "name": row.name,
-                        "is_active": row.is_active,
-                        "cb_status": cb_status,
-                        "cb_failures": row.circuit_breaker_failures,
-                        "cb_disabled_at": row.circuit_breaker_disabled_at.isoformat() if row.circuit_breaker_disabled_at else None,
-                        "auto_recovery_attempts": row.auto_recovery_attempts,
-                        "last_success_at": row.last_success_at.isoformat() if row.last_success_at else None,
-                        "buy_pause_state": row.buy_pause_state,
-                        "buy_pause_reason": row.buy_pause_reason,
-                        "buy_pause_since": row.buy_pause_since.isoformat() if row.buy_pause_since else None,
-                        "consecutive_low_balance": row.consecutive_low_balance,
-                        "pending_earnings_usdt": _dec(row.pending_earnings_usdt),
-                        # Merge error stats
-                        **acct_error_map.get(acct_key, {"errors": 0, "criticals": 0, "cb_tripped": False}),
-                        # Merge trading performance
-                        **trading_perf.get(acct_key, {
-                            "closed_lots": 0, "bought_lots": 0,
-                            "net_profit_usdt": 0.0, "total_fees_usdt": 0.0,
-                            "win_rate": 0.0, "avg_hold_minutes": 0.0,
-                        }),
-                    })
+                    account_status.append(
+                        {
+                            "account_id": acct_key,
+                            "name": row.name,
+                            "is_active": row.is_active,
+                            "cb_status": cb_status,
+                            "cb_failures": row.circuit_breaker_failures,
+                            "cb_disabled_at": row.circuit_breaker_disabled_at.isoformat()
+                            if row.circuit_breaker_disabled_at
+                            else None,
+                            "auto_recovery_attempts": row.auto_recovery_attempts,
+                            "last_success_at": row.last_success_at.isoformat() if row.last_success_at else None,
+                            "buy_pause_state": row.buy_pause_state,
+                            "buy_pause_reason": row.buy_pause_reason,
+                            "buy_pause_since": row.buy_pause_since.isoformat() if row.buy_pause_since else None,
+                            "consecutive_low_balance": row.consecutive_low_balance,
+                            "pending_earnings_usdt": _dec(row.pending_earnings_usdt),
+                            # Merge error stats
+                            **acct_error_map.get(acct_key, {"errors": 0, "criticals": 0, "cb_tripped": False}),
+                            # Merge trading performance
+                            **trading_perf.get(
+                                acct_key,
+                                {
+                                    "closed_lots": 0,
+                                    "bought_lots": 0,
+                                    "net_profit_usdt": 0.0,
+                                    "total_fees_usdt": 0.0,
+                                    "win_rate": 0.0,
+                                    "avg_hold_minutes": 0.0,
+                                },
+                            ),
+                        }
+                    )
 
                 # ============================================================
                 # Section 5: Portfolio (포트폴리오, 계정별 + 전체)
@@ -306,12 +316,14 @@ class DailyReportService:
                     if row.qty <= 0:
                         continue
                     acct_key = str(row.account_id)
-                    portfolio_by_account.setdefault(acct_key, []).append({
-                        "symbol": row.symbol,
-                        "qty": _dec(row.qty),
-                        "cost_basis_usdt": _dec(row.cost_basis_usdt),
-                        "avg_entry": _dec(row.avg_entry),
-                    })
+                    portfolio_by_account.setdefault(acct_key, []).append(
+                        {
+                            "symbol": row.symbol,
+                            "qty": _dec(row.qty),
+                            "cost_basis_usdt": _dec(row.cost_basis_usdt),
+                            "avg_entry": _dec(row.avg_entry),
+                        }
+                    )
                     total_cost_basis += row.cost_basis_usdt
                     total_open_positions += 1
 
@@ -353,22 +365,30 @@ class DailyReportService:
                         func.count().label("total_checks"),
                         func.count().filter(ReconciliationLog.status == "drift_detected").label("drift_count"),
                         func.count().filter(ReconciliationLog.status == "error").label("error_count"),
-                        func.count().filter(
+                        func.count()
+                        .filter(
                             ReconciliationLog.status == "drift_detected",
                             ReconciliationLog.auto_resolved.is_(True),
-                        ).label("auto_resolved"),
-                        func.count().filter(
+                        )
+                        .label("auto_resolved"),
+                        func.count()
+                        .filter(
                             ReconciliationLog.position_diffs.isnot(None),
                             ReconciliationLog.status == "drift_detected",
-                        ).label("position_drift"),
-                        func.count().filter(
+                        )
+                        .label("position_drift"),
+                        func.count()
+                        .filter(
                             ReconciliationLog.balance_diff.isnot(None),
                             ReconciliationLog.status == "drift_detected",
-                        ).label("balance_drift"),
-                        func.count().filter(
+                        )
+                        .label("balance_drift"),
+                        func.count()
+                        .filter(
                             ReconciliationLog.fill_gaps.isnot(None),
                             ReconciliationLog.status == "drift_detected",
-                        ).label("fill_gap"),
+                        )
+                        .label("fill_gap"),
                     )
                     .where(*recon_period_filter)
                     .group_by(ReconciliationLog.account_id)
@@ -379,19 +399,21 @@ class DailyReportService:
                 for row in recon_result.all():
                     total_drifts += row.drift_count
                     total_auto_resolved += row.auto_resolved
-                    recon_by_account.append({
-                        "account_id": str(row.account_id),
-                        "total_checks": row.total_checks,
-                        "drift_count": row.drift_count,
-                        "error_count": row.error_count,
-                        "auto_resolved": row.auto_resolved,
-                        "manual_needed": row.drift_count - row.auto_resolved,
-                        "drift_types": {
-                            "position": row.position_drift,
-                            "balance": row.balance_drift,
-                            "fill_gap": row.fill_gap,
-                        },
-                    })
+                    recon_by_account.append(
+                        {
+                            "account_id": str(row.account_id),
+                            "total_checks": row.total_checks,
+                            "drift_count": row.drift_count,
+                            "error_count": row.error_count,
+                            "auto_resolved": row.auto_resolved,
+                            "manual_needed": row.drift_count - row.auto_resolved,
+                            "drift_types": {
+                                "position": row.position_drift,
+                                "balance": row.balance_drift,
+                                "fill_gap": row.fill_gap,
+                            },
+                        }
+                    )
                 reconciliation = {
                     "total_drifts": total_drifts,
                     "total_auto_resolved": total_auto_resolved,
@@ -430,12 +452,12 @@ class DailyReportService:
                     "trading_totals": {
                         "total_closed": sum(v.get("closed_lots", 0) for v in trading_perf.values()),
                         "total_bought": sum(v.get("bought_lots", 0) for v in trading_perf.values()),
-                        "total_profit_usdt": _dec(sum(
-                            Decimal(str(v.get("net_profit_usdt", 0))) for v in trading_perf.values()
-                        )),
-                        "total_fees_usdt": _dec(sum(
-                            Decimal(str(v.get("total_fees_usdt", 0))) for v in trading_perf.values()
-                        )),
+                        "total_profit_usdt": _dec(
+                            sum(Decimal(str(v.get("net_profit_usdt", 0))) for v in trading_perf.values())
+                        ),
+                        "total_fees_usdt": _dec(
+                            sum(Decimal(str(v.get("total_fees_usdt", 0))) for v in trading_perf.values())
+                        ),
                     },
                     # Portfolio (포트폴리오)
                     "portfolio": portfolio_summary,
@@ -499,20 +521,22 @@ class DailyReportService:
             health["db_size_mb"] = round(size_bytes / (1024 * 1024), 1)
 
             # Active connections
-            conn_result = await session.execute(text(
-                "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database()"
-            ))
+            conn_result = await session.execute(
+                text("SELECT count(*) FROM pg_stat_activity WHERE datname = current_database()")
+            )
             health["db_active_connections"] = conn_result.scalar() or 0
 
             # Table sizes (top 5)
-            table_sizes_result = await session.execute(text("""
+            table_sizes_result = await session.execute(
+                text("""
                 SELECT relname, pg_total_relation_size(c.oid) AS total_bytes
                 FROM pg_class c
                 JOIN pg_namespace n ON n.oid = c.relnamespace
                 WHERE n.nspname = 'public' AND c.relkind = 'r'
                 ORDER BY total_bytes DESC
                 LIMIT 5
-            """))
+            """)
+            )
             health["top_tables_mb"] = [
                 {"table": row.relname, "size_mb": round(row.total_bytes / (1024 * 1024), 1)}
                 for row in table_sizes_result.all()
@@ -530,7 +554,9 @@ class DailyReportService:
                 "pid": proc.pid,
                 "rss_mb": round(mem_info.rss / (1024 * 1024), 1),
                 "cpu_percent": proc.cpu_percent(interval=0.1),
-                "uptime_hours": round((datetime.now(UTC) - datetime.fromtimestamp(proc.create_time(), tz=UTC)).total_seconds() / 3600, 1),
+                "uptime_hours": round(
+                    (datetime.now(UTC) - datetime.fromtimestamp(proc.create_time(), tz=UTC)).total_seconds() / 3600, 1
+                ),
                 "threads": proc.num_threads(),
             }
         except ImportError:
@@ -575,16 +601,15 @@ class DailyReportService:
         if accounts:
             msg += "\n📋 계정별 요약\n"
             for a in accounts:
-                status_icon = "🟢" if a.get("cb_status") == "healthy" else "🔴" if a.get("cb_status") == "disabled" else "🟡"
+                status_icon = (
+                    "🟢" if a.get("cb_status") == "healthy" else "🔴" if a.get("cb_status") == "disabled" else "🟡"
+                )
                 name = a.get("name", a.get("account_id", "?")[:8])
                 profit = a.get("net_profit_usdt", 0)
                 msg += f"  {status_icon} {name}: {profit:+.2f} USDT ({a.get('closed_lots', 0)}건)\n"
 
         if recon.get("total_drifts", 0) > 0:
-            msg += (
-                f"\n⚠️ 정합성\n"
-                f"  drift: {recon['total_drifts']}건 (자동해소: {recon.get('total_auto_resolved', 0)})\n"
-            )
+            msg += f"\n⚠️ 정합성\n  drift: {recon['total_drifts']}건 (자동해소: {recon.get('total_auto_resolved', 0)})\n"
 
         from app.services.alert_service import AlertSeverity
 
