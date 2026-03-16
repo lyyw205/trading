@@ -658,26 +658,30 @@ class DailyReportService:
         # Trading performance
         profit = tt.get("total_profit_usdt", 0)
         profit_sign = "+" if profit >= 0 else ""
-        fields.append({
-            "name": "💰 거래 성과",
-            "value": (
-                f"매수 **{tt.get('total_bought', 0)}**건 | 매도 **{tt.get('total_closed', 0)}**건\n"
-                f"손익 **{profit_sign}{profit:.2f}** USDT\n"
-                f"수수료 {tt.get('total_fees_usdt', 0):.2f} USDT"
-            ),
-            "inline": True,
-        })
+        fields.append(
+            {
+                "name": "💰 거래 성과",
+                "value": (
+                    f"매수 **{tt.get('total_bought', 0)}**건 | 매도 **{tt.get('total_closed', 0)}**건\n"
+                    f"손익 **{profit_sign}{profit:.2f}** USDT\n"
+                    f"수수료 {tt.get('total_fees_usdt', 0):.2f} USDT"
+                ),
+                "inline": True,
+            }
+        )
 
         # Errors
-        fields.append({
-            "name": "🔴 장애",
-            "value": (
-                f"CRITICAL **{s.get('total_criticals', 0)}**건\n"
-                f"ERROR **{s.get('total_errors', 0)}**건\n"
-                f"CB 발동 **{s.get('cb_events', 0)}**회"
-            ),
-            "inline": True,
-        })
+        fields.append(
+            {
+                "name": "🔴 장애",
+                "value": (
+                    f"CRITICAL **{s.get('total_criticals', 0)}**건\n"
+                    f"ERROR **{s.get('total_errors', 0)}**건\n"
+                    f"CB 발동 **{s.get('cb_events', 0)}**회"
+                ),
+                "inline": True,
+            }
+        )
 
         # Per-account summary
         accounts = s.get("accounts", [])
@@ -693,11 +697,13 @@ class DailyReportService:
 
         # Reconciliation
         if recon.get("total_drifts", 0) > 0:
-            fields.append({
-                "name": "⚠️ 정합성",
-                "value": f"drift **{recon['total_drifts']}**건 (자동해소: {recon.get('total_auto_resolved', 0)})",
-                "inline": True,
-            })
+            fields.append(
+                {
+                    "name": "⚠️ 정합성",
+                    "value": f"drift **{recon['total_drifts']}**건 (자동해소: {recon.get('total_auto_resolved', 0)})",
+                    "inline": True,
+                }
+            )
 
         # Top error modules
         top_mods = s.get("top_error_modules", [])[:3]
