@@ -154,7 +154,8 @@ class AccountTrader:
                     return 60
 
                 # Sync buy-pause state from DB
-                self._buy_pause_state = account.buy_pause_state or BuyPauseState.ACTIVE
+                raw_state = account.buy_pause_state
+                self._buy_pause_state = BuyPauseState(raw_state) if raw_state else BuyPauseState.ACTIVE
                 self._consecutive_low_balance = account.consecutive_low_balance or 0
 
                 # Rate limiter
