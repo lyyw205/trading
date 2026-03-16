@@ -78,16 +78,16 @@ class BacktestClient(ExchangeClient):
 
             if filled:
                 qty = float(order["origQty"])
-                px = float(order["price"])
-                fee = qty * px * self._fee_rate
+                adjusted_price = float(order["price"])
+                fee = qty * adjusted_price * self._fee_rate
                 order["status"] = "FILLED"
                 order["executedQty"] = order["origQty"]
-                order["cummulativeQuoteQty"] = str(qty * px)
+                order["cummulativeQuoteQty"] = str(qty * adjusted_price)
                 order["updateTime"] = self._time_ms()
                 asset = parse_symbol(order["symbol"])[0]
 
                 if order["side"] == "BUY":
-                    cost = qty * px
+                    cost = qty * adjusted_price
                     self._balances["USDT"]["locked"] = max(0.0, self._balances["USDT"]["locked"] - cost)
                     if asset not in self._balances:
                         self._balances[asset] = {"free": 0.0, "locked": 0.0}
@@ -95,7 +95,7 @@ class BacktestClient(ExchangeClient):
                     self._balances[asset]["free"] += qty - fee_qty
                     order["fills"] = [
                         {
-                            "price": str(px),
+                            "price": str(adjusted_price),
                             "qty": str(qty),
                             "commission": str(fee_qty),
                             "commissionAsset": asset,
@@ -105,10 +105,10 @@ class BacktestClient(ExchangeClient):
                     if asset not in self._balances:
                         self._balances[asset] = {"free": 0.0, "locked": 0.0}
                     self._balances[asset]["locked"] = max(0.0, self._balances[asset]["locked"] - qty)
-                    self._balances["USDT"]["free"] += qty * px - fee
+                    self._balances["USDT"]["free"] += qty * adjusted_price - fee
                     order["fills"] = [
                         {
-                            "price": str(px),
+                            "price": str(adjusted_price),
                             "qty": str(qty),
                             "commission": str(fee),
                             "commissionAsset": "USDT",
@@ -124,7 +124,7 @@ class BacktestClient(ExchangeClient):
                         "side": order["side"],
                         "price": order["price"],
                         "qty": order["origQty"],
-                        "quoteQty": str(qty * px),
+                        "quoteQty": str(qty * adjusted_price),
                         "commission": str(fee),
                         "commissionAsset": "USDT",
                         "time": self._time_ms(),
@@ -197,10 +197,10 @@ class BacktestClient(ExchangeClient):
                 o["status"] = "CANCELED"
                 # Return locked funds
                 qty = float(o["origQty"])
-                px = float(o["price"])
+                adjusted_price = float(o["price"])
                 asset = o["symbol"].replace("USDT", "")
                 if o["side"] == "BUY":
-                    cost = qty * px
+                    cost = qty * adjusted_price
                     self._balances["USDT"]["locked"] = max(0.0, self._balances["USDT"]["locked"] - cost)
                     self._balances["USDT"]["free"] += cost
                 else:

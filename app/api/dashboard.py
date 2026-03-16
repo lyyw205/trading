@@ -325,12 +325,12 @@ async def get_price_candles(
                 "volume": float(c.volume) if hasattr(c, "volume") else 0.0,
             }
         else:
-            b = buckets[key]
-            b["high"] = max(b["high"], float(c.high))
-            b["low"] = min(b["low"], float(c.low))
-            b["close"] = float(c.close)
+            bucket = buckets[key]
+            bucket["high"] = max(bucket["high"], float(c.high))
+            bucket["low"] = min(bucket["low"], float(c.low))
+            bucket["close"] = float(c.close)
             if hasattr(c, "volume"):
-                b["volume"] = b.get("volume", 0.0) + float(c.volume)
+                bucket["volume"] = bucket.get("volume", 0.0) + float(c.volume)
 
     return sorted(buckets.values(), key=lambda x: x["ts_ms"])
 

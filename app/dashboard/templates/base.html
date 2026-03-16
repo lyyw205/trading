@@ -8,7 +8,7 @@
   <script>
     // FOUC prevention: apply saved theme before first paint
     (function() {
-      var t = localStorage.getItem('theme');
+      let t = localStorage.getItem('theme');
       if (!t) t = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
       if (t === 'light') document.documentElement.setAttribute('data-theme', 'light');
     })();
@@ -152,31 +152,31 @@
   <script>
     // Sidebar toggle (mobile)
     function toggleSidebar() {
-      var sb = document.getElementById('sidebar');
-      var ov = document.getElementById('sidebar-overlay');
+      const sb = document.getElementById('sidebar');
+      const ov = document.getElementById('sidebar-overlay');
       if (sb) sb.classList.toggle('open');
       if (ov) ov.classList.toggle('show');
     }
     function closeSidebar() {
-      var sb = document.getElementById('sidebar');
-      var ov = document.getElementById('sidebar-overlay');
+      const sb = document.getElementById('sidebar');
+      const ov = document.getElementById('sidebar-overlay');
       if (sb) sb.classList.remove('open');
       if (ov) ov.classList.remove('show');
     }
     // Load user's accounts into sidebar
     (function() {
-      var container = document.getElementById('sidebar-my-accounts');
+      const container = document.getElementById('sidebar-my-accounts');
       if (!container) return;
       fetch('/api/accounts', { credentials: 'same-origin' })
         .then(function(r) { return r.ok ? r.json() : Promise.reject(); })
         .then(function(data) {
-          var accounts = data.accounts || [];
+          const accounts = data.accounts || [];
           if (accounts.length === 0) {
             container.innerHTML = '<span class="sidebar-link sidebar-empty"><span>No accounts</span></span>';
             return;
           }
-          var html = '';
-          var svgIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>';
+          let html = '';
+          const svgIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>';
           accounts.forEach(function(a) {
             html += '<a href="/accounts/' + encodeURIComponent(a.id) + '" class="sidebar-link" data-page="account-detail">' + svgIcon + '<span>' + escapeHtml(a.name || a.id.slice(0,8)) + '</span></a>';
           });
@@ -190,11 +190,11 @@
 
     // Highlight active sidebar link (longest-match to avoid double-highlighting)
     function highlightSidebarLink() {
-      var path = window.location.pathname;
-      var best = null, bestLen = 0;
+      const path = window.location.pathname;
+      let best = null, bestLen = 0;
       document.querySelectorAll('.sidebar-link').forEach(function(link) {
         link.classList.remove('active');
-        var href = link.getAttribute('href');
+        const href = link.getAttribute('href');
         if (!href) return;
         if (path === href) {
           if (href.length > bestLen) { best = link; bestLen = href.length; }

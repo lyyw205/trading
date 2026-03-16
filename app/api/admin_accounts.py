@@ -44,7 +44,7 @@ async def _get_active_accounts_cached(session: AsyncSession) -> list:
 @router.get("/accounts")
 @limiter.limit("60/minute")
 async def admin_list_accounts(
-    request: Request, admin: dict = Depends(require_admin), session: AsyncSession = Depends(get_trading_session)
+    request: Request, _admin: dict = Depends(require_admin), session: AsyncSession = Depends(get_trading_session)
 ):
     accounts = await _get_active_accounts_cached(session)
     engine = request.app.state.trading_engine
@@ -61,7 +61,7 @@ async def admin_list_accounts(
 @router.get("/overview")
 @limiter.limit("60/minute")
 async def admin_overview(
-    request: Request, admin: dict = Depends(require_admin), session: AsyncSession = Depends(get_trading_session)
+    request: Request, _admin: dict = Depends(require_admin), session: AsyncSession = Depends(get_trading_session)
 ):
     engine = request.app.state.trading_engine
     total_users_result = await session.execute(select(sa_func.count(UserProfile.id)))
@@ -79,7 +79,7 @@ async def admin_overview(
 @limiter.limit("60/minute")
 async def admin_performance(
     request: Request,
-    admin: dict = Depends(require_admin),
+    _admin: dict = Depends(require_admin),
     session: AsyncSession = Depends(get_trading_session),
 ):
     """Aggregate KPIs across all accounts."""
@@ -110,11 +110,11 @@ async def admin_performance(
     trade_volume_24h = float(trade_row[1] or 0)
 
     # Circuit breaker
-    cb_tripped = sum(1 for a in all_accounts if a.circuit_breaker_disabled_at is not None)
+    circuit_breaker_tripped_count = sum(1 for a in all_accounts if a.circuit_breaker_disabled_at is not None)
 
     # Buy pause
-    bp_active = sum(1 for a in all_accounts if a.buy_pause_state == "ACTIVE")
-    bp_paused = total_accounts - bp_active
+    buy_pause_active_count = sum(1 for a in all_accounts if a.buy_pause_state == "ACTIVE")
+    bp_paused = total_accounts - buy_pause_active_count
 
     return {
         "total_accounts": total_accounts,
@@ -123,9 +123,9 @@ async def admin_performance(
         "total_invested_usdt": round(total_invested_usdt, 2),
         "trade_volume_24h": round(trade_volume_24h, 2),
         "trade_count_24h": trade_count_24h,
-        "circuit_breaker_tripped": cb_tripped,
+        "circuit_breaker_tripped": circuit_breaker_tripped_count,
         "circuit_breaker_total": total_accounts,
-        "buy_pause_active": bp_active,
+        "buy_pause_active": buy_pause_active_count,
         "buy_pause_paused": bp_paused,
     }
 
@@ -137,7 +137,7 @@ async def admin_performance(
 @limiter.limit("60/minute")
 async def admin_list_positions(
     request: Request,
-    admin: dict = Depends(require_admin),
+    _admin: dict = Depends(require_admin),
     session: AsyncSession = Depends(get_trading_session),
     account_id: UUID | None = Query(default=None),
 ):
@@ -174,7 +174,7 @@ async def admin_list_positions(
 @limiter.limit("60/minute")
 async def admin_list_earnings(
     request: Request,
-    admin: dict = Depends(require_admin),
+    _admin: dict = Depends(require_admin),
     session: AsyncSession = Depends(get_trading_session),
     account_id: UUID | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
@@ -189,7 +189,7 @@ async def admin_list_earnings(
     ).where(TradingAccount.pending_earnings_usdt > 0)
     pending_result = await session.execute(pending_stmt)
     pending_rows = pending_result.all()
-    total_pending = sum(float(r[2]) for r in pending_rows)
+    total_pending = sum(float(pending_row[2]) for pending_row in pending_rows)
 
     # History records
     hist_stmt = (
@@ -211,24 +211,24 @@ async def admin_list_earnings(
         "total_pending_usdt": round(total_pending, 2),
         "pending_accounts": [
             {
-                "account_id": str(r[0]),
-                "account_name": r[1],
-                "pending_usdt": round(float(r[2]), 2),
+                "account_id": str(pending_row[0]),
+                "account_name": pending_row[1],
+                "pending_usdt": round(float(pending_row[2]), 2),
             }
-            for r in pending_rows
+            for pending_row in pending_rows
         ],
         "history": [
             {
-                "id": h.id,
-                "account_id": str(h.account_id),
+                "id": history_entry.id,
+                "account_id": str(history_entry.account_id),
                 "account_name": account_name,
-                "symbol": h.symbol,
-                "btc_qty": float(h.btc_qty),
-                "cost_usdt": round(float(h.cost_usdt), 2),
-                "source": h.source,
-                "created_at": str(h.created_at),
+                "symbol": history_entry.symbol,
+                "btc_qty": float(history_entry.btc_qty),
+                "cost_usdt": round(float(history_entry.cost_usdt), 2),
+                "source": history_entry.source,
+                "created_at": str(history_entry.created_at),
             }
-            for h, account_name in rows
+            for history_entry, account_name in rows
         ],
         "total": total,
         "limit": limit,
@@ -366,7 +366,7 @@ def _get_pool_stats() -> dict:
 @limiter.limit("120/minute")
 async def admin_system_health_light(
     request: Request,
-    admin: dict = Depends(require_admin),
+    _admin: dict = Depends(require_admin),
 ):
     """Lightweight health endpoint for 5-second polling. Zero DB queries."""
     from app.utils.request_metrics import request_metrics
@@ -395,7 +395,7 @@ async def admin_system_health_light(
 @limiter.limit("30/minute")
 async def admin_system_health(
     request: Request,
-    admin: dict = Depends(require_admin),
+    _admin: dict = Depends(require_admin),
     session: AsyncSession = Depends(get_trading_session),
 ):
     """Full system health for 60-second polling. Includes DB queries."""
@@ -413,17 +413,17 @@ async def admin_system_health(
     # --- DB connections ---
     active_connections = None
     try:
-        result = await session.execute(
+        conn_result = await session.execute(
             text("SELECT count(*) FROM pg_stat_activity WHERE state IS NOT NULL AND datname = current_database()")
         )
-        active_connections = result.scalar_one()
+        active_connections = conn_result.scalar_one()
     except Exception as exc:
         _logger.warning("Failed to query pg_stat_activity: %s", exc)
 
     # --- Slow queries (optional) ---
     slow_queries = []
     try:
-        result = await session.execute(
+        slow_query_result = await session.execute(
             text(
                 "SELECT query, calls, round(mean_exec_time::numeric, 1) as avg_ms, "
                 "round(total_exec_time::numeric, 0) as total_ms "
@@ -432,7 +432,7 @@ async def admin_system_health(
         )
         slow_queries = [
             {"query": row[0][:120], "calls": row[1], "avg_ms": float(row[2]), "total_ms": float(row[3])}
-            for row in result.fetchall()
+            for row in slow_query_result.fetchall()
         ]
     except Exception:
         pass
@@ -440,18 +440,20 @@ async def admin_system_health(
     # --- Dead tuples ---
     dead_tuples = []
     try:
-        result = await session.execute(
+        dead_tuple_result = await session.execute(
             text("SELECT relname, n_dead_tup, n_live_tup FROM pg_stat_user_tables ORDER BY n_dead_tup DESC LIMIT 10")
         )
-        dead_tuples = [{"table": row[0], "dead_tuples": row[1], "live_tuples": row[2]} for row in result.fetchall()]
+        dead_tuples = [
+            {"table": row[0], "dead_tuples": row[1], "live_tuples": row[2]} for row in dead_tuple_result.fetchall()
+        ]
     except Exception:
         pass
 
     # --- DB size ---
     db_size_mb = 0
     try:
-        result = await session.execute(text("SELECT pg_database_size(current_database()) / 1024 / 1024"))
-        db_size_mb = result.scalar_one()
+        db_size_result = await session.execute(text("SELECT pg_database_size(current_database()) / 1024 / 1024"))
+        db_size_mb = db_size_result.scalar_one()
     except Exception:
         pass
 
@@ -471,19 +473,19 @@ async def admin_system_health(
     orders_last_hour = 0
     fills_last_hour = 0
     try:
-        result = await session.execute(select(sa_func.count()).where(Order.update_time_ms >= hour_ago_ms))
-        orders_last_hour = result.scalar_one()
-        result = await session.execute(
+        order_count_result = await session.execute(select(sa_func.count()).where(Order.update_time_ms >= hour_ago_ms))
+        orders_last_hour = order_count_result.scalar_one()
+        fill_count_result = await session.execute(
             select(sa_func.count()).where(Order.update_time_ms >= hour_ago_ms, Order.status == "FILLED")
         )
-        fills_last_hour = result.scalar_one()
+        fills_last_hour = fill_count_result.scalar_one()
     except Exception:
         pass
 
     # --- Error trend (last 6 hours, hourly buckets) ---
     error_trend = []
     try:
-        result = await session.execute(
+        error_trend_result = await session.execute(
             text(
                 "SELECT date_trunc('hour', logged_at) AS h, count(*) "
                 "FROM persistent_logs "
@@ -491,7 +493,7 @@ async def admin_system_health(
                 "GROUP BY h ORDER BY h"
             )
         )
-        error_trend = [{"hour": row[0].isoformat(), "count": row[1]} for row in result.fetchall()]
+        error_trend = [{"hour": row[0].isoformat(), "count": row[1]} for row in error_trend_result.fetchall()]
     except Exception:
         pass
 
@@ -508,8 +510,8 @@ async def admin_system_health(
             "SELECT 'price_candles_1d', symbol, count(*) FROM price_candles_1d GROUP BY symbol "
             "ORDER BY tbl, symbol"
         )
-        result = await session.execute(union_sql)
-        candle_stats = [{"table": row[0], "symbol": row[1], "count": row[2]} for row in result.fetchall()]
+        candle_result = await session.execute(union_sql)
+        candle_stats = [{"table": row[0], "symbol": row[1], "count": row[2]} for row in candle_result.fetchall()]
     except Exception:
         pass
 
@@ -547,7 +549,7 @@ async def admin_system_health(
 async def reconcile_account(
     account_id: UUID,
     request: Request,
-    admin: dict = Depends(require_admin),
+    _admin: dict = Depends(require_admin),
     session: AsyncSession = Depends(get_trading_session),
 ):
     """Manual reconciliation trigger for a specific account."""
@@ -555,8 +557,9 @@ async def reconcile_account(
     tc = engine.get_trader_client(account_id)
     if not tc:
         raise HTTPException(status_code=404, detail="Account not running or client not initialized")
+    _trader, exchange_client = tc
 
-    service = ReconciliationService(session, tc[1])
+    service = ReconciliationService(session, exchange_client)
     result = await service.reconcile_account(account_id)
     return result.to_dict()
 
@@ -567,7 +570,7 @@ async def repair_fill_gaps(
     account_id: UUID,
     symbol: str,
     request: Request,
-    admin: dict = Depends(require_admin),
+    _admin: dict = Depends(require_admin),
     session: AsyncSession = Depends(get_trading_session),
 ):
     """Repair fill gaps for a specific account/symbol."""
@@ -575,14 +578,15 @@ async def repair_fill_gaps(
     tc = engine.get_trader_client(account_id)
     if not tc:
         raise HTTPException(status_code=404, detail="Account not running or client not initialized")
+    _trader, exchange_client = tc
 
-    service = ReconciliationService(session, tc[1])
+    service = ReconciliationService(session, exchange_client)
     count = await service.repair_fill_gaps(account_id, symbol.upper())
     await session.commit()
     return {"status": "repaired", "fills_added": count, "symbol": symbol.upper()}
 
 
 @router.get("/metrics")
-async def prometheus_metrics(admin: dict = Depends(require_admin)):
+async def prometheus_metrics(_admin: dict = Depends(require_admin)):
     """Prometheus metrics endpoint."""
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)

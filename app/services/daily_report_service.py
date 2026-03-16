@@ -29,11 +29,11 @@ KST = timezone(timedelta(hours=9))
 CB_PATTERN = "Circuit breaker triggered"
 
 
-def _dec(v: Decimal | None) -> float:
+def _to_float(value: Decimal | None) -> float:
     """Decimal → float for JSON serialization."""
-    if v is None:
+    if value is None:
         return 0.0
-    return float(round(v, 4))
+    return float(round(value, 4))
 
 
 class DailyReportService:
@@ -195,8 +195,8 @@ class DailyReportService:
                     closed = row.closed_count or 0
                     trading_perf[acct_key] = {
                         "closed_lots": closed,
-                        "net_profit_usdt": _dec(row.total_profit),
-                        "total_fees_usdt": _dec(row.total_fees),
+                        "net_profit_usdt": _to_float(row.total_profit),
+                        "total_fees_usdt": _to_float(row.total_fees),
                         "win_rate": round(row.win_count / closed, 4) if closed > 0 else 0.0,
                         "avg_hold_minutes": round((row.avg_hold_sec or 0) / 60, 1),
                     }
@@ -279,7 +279,7 @@ class DailyReportService:
                             "buy_pause_reason": row.buy_pause_reason,
                             "buy_pause_since": row.buy_pause_since.isoformat() if row.buy_pause_since else None,
                             "consecutive_low_balance": row.consecutive_low_balance,
-                            "pending_earnings_usdt": _dec(row.pending_earnings_usdt),
+                            "pending_earnings_usdt": _to_float(row.pending_earnings_usdt),
                             # Merge error stats
                             **acct_error_map.get(acct_key, {"errors": 0, "criticals": 0, "cb_tripped": False}),
                             # Merge trading performance
@@ -320,9 +320,9 @@ class DailyReportService:
                     portfolio_by_account.setdefault(acct_key, []).append(
                         {
                             "symbol": row.symbol,
-                            "qty": _dec(row.qty),
-                            "cost_basis_usdt": _dec(row.cost_basis_usdt),
-                            "avg_entry": _dec(row.avg_entry),
+                            "qty": _to_float(row.qty),
+                            "cost_basis_usdt": _to_float(row.cost_basis_usdt),
+                            "avg_entry": _to_float(row.avg_entry),
                         }
                     )
                     total_cost_basis += row.cost_basis_usdt
@@ -340,14 +340,14 @@ class DailyReportService:
                 open_lots_map = {str(row.account_id): row.open_lots for row in open_lots_result.all()}
 
                 portfolio_summary = {
-                    "total_cost_basis_usdt": _dec(total_cost_basis),
+                    "total_cost_basis_usdt": _to_float(total_cost_basis),
                     "total_open_positions": total_open_positions,
                     "total_open_lots": sum(open_lots_map.values()),
                     "per_account": {
                         acct_key: {
                             "positions": positions,
                             "open_lots": open_lots_map.get(acct_key, 0),
-                            "cost_basis_usdt": _dec(sum(Decimal(str(p["cost_basis_usdt"])) for p in positions)),
+                            "cost_basis_usdt": _to_float(sum(Decimal(str(p["cost_basis_usdt"])) for p in positions)),
                         }
                         for acct_key, positions in portfolio_by_account.items()
                     },
@@ -453,10 +453,10 @@ class DailyReportService:
                     "trading_totals": {
                         "total_closed": sum(v.get("closed_lots", 0) for v in trading_perf.values()),
                         "total_bought": sum(v.get("bought_lots", 0) for v in trading_perf.values()),
-                        "total_profit_usdt": _dec(
+                        "total_profit_usdt": _to_float(
                             sum(Decimal(str(v.get("net_profit_usdt", 0))) for v in trading_perf.values())
                         ),
-                        "total_fees_usdt": _dec(
+                        "total_fees_usdt": _to_float(
                             sum(Decimal(str(v.get("total_fees_usdt", 0))) for v in trading_perf.values())
                         ),
                     },
@@ -572,10 +572,10 @@ class DailyReportService:
         if report.telegram_sent_at is not None:
             return False  # Already sent
 
-        s = report.summary
-        top_mods = ", ".join(f"{m['module']}({m['count']})" for m in s.get("top_error_modules", [])[:3])
-        tt = s.get("trading_totals", {})
-        recon = s.get("reconciliation", {})
+        summary = report.summary
+        top_mods = ", ".join(f"{m['module']}({m['count']})" for m in summary.get("top_error_modules", [])[:3])
+        trading_totals = summary.get("trading_totals", {})
+        recon = summary.get("reconciliation", {})
 
         msg = (
             f"📊 [일일 리포트] {report.report_date}\n"
@@ -583,8 +583,8 @@ class DailyReportService:
             f"건강 점수: {report.health_score:.0f}/100\n"
             f"\n"
             f"🔴 장애 현황\n"
-            f"  CRITICAL: {s.get('total_criticals', 0)}건 | ERROR: {s.get('total_errors', 0)}건\n"
-            f"  CB 발동: {s.get('cb_events', 0)}회\n"
+            f"  CRITICAL: {summary.get('total_criticals', 0)}건 | ERROR: {summary.get('total_errors', 0)}건\n"
+            f"  CB 발동: {summary.get('cb_events', 0)}회\n"
         )
         if top_mods:
             msg += f"  주요 모듈: {top_mods}\n"
@@ -592,22 +592,26 @@ class DailyReportService:
         msg += (
             f"\n"
             f"💰 거래 성과\n"
-            f"  매수: {tt.get('total_bought', 0)}건 | 매도: {tt.get('total_closed', 0)}건\n"
-            f"  실현 손익: {tt.get('total_profit_usdt', 0):+.2f} USDT\n"
-            f"  수수료: {tt.get('total_fees_usdt', 0):.2f} USDT\n"
+            f"  매수: {trading_totals.get('total_bought', 0)}건 | 매도: {trading_totals.get('total_closed', 0)}건\n"
+            f"  실현 손익: {trading_totals.get('total_profit_usdt', 0):+.2f} USDT\n"
+            f"  수수료: {trading_totals.get('total_fees_usdt', 0):.2f} USDT\n"
         )
 
         # Per-account summary (compact)
-        accounts = s.get("accounts", [])
+        accounts = summary.get("accounts", [])
         if accounts:
             msg += "\n📋 계정별 요약\n"
-            for a in accounts:
+            for acct in accounts:
                 status_icon = (
-                    "🟢" if a.get("cb_status") == "healthy" else "🔴" if a.get("cb_status") == "disabled" else "🟡"
+                    "🟢"
+                    if acct.get("cb_status") == "healthy"
+                    else "🔴"
+                    if acct.get("cb_status") == "disabled"
+                    else "🟡"
                 )
-                name = a.get("name", a.get("account_id", "?")[:8])
-                profit = a.get("net_profit_usdt", 0)
-                msg += f"  {status_icon} {name}: {profit:+.2f} USDT ({a.get('closed_lots', 0)}건)\n"
+                name = acct.get("name", acct.get("account_id", "?")[:8])
+                profit = acct.get("net_profit_usdt", 0)
+                msg += f"  {status_icon} {name}: {profit:+.2f} USDT ({acct.get('closed_lots', 0)}건)\n"
 
         if recon.get("total_drifts", 0) > 0:
             msg += f"\n⚠️ 정합성\n  drift: {recon['total_drifts']}건 (자동해소: {recon.get('total_auto_resolved', 0)})\n"
@@ -636,9 +640,9 @@ class DailyReportService:
         if not webhook_url:
             return False
 
-        s = report.summary
-        tt = s.get("trading_totals", {})
-        recon = s.get("reconciliation", {})
+        summary = report.summary
+        trading_totals = summary.get("trading_totals", {})
+        recon = summary.get("reconciliation", {})
         score = float(report.health_score)
 
         # Color: green >= 80, yellow >= 50, red < 50
@@ -656,15 +660,15 @@ class DailyReportService:
         fields.append({"name": "건강 점수", "value": f"**{score:.0f}** / 100", "inline": True})
 
         # Trading performance
-        profit = tt.get("total_profit_usdt", 0)
+        profit = trading_totals.get("total_profit_usdt", 0)
         profit_sign = "+" if profit >= 0 else ""
         fields.append(
             {
                 "name": "💰 거래 성과",
                 "value": (
-                    f"매수 **{tt.get('total_bought', 0)}**건 | 매도 **{tt.get('total_closed', 0)}**건\n"
+                    f"매수 **{trading_totals.get('total_bought', 0)}**건 | 매도 **{trading_totals.get('total_closed', 0)}**건\n"
                     f"손익 **{profit_sign}{profit:.2f}** USDT\n"
-                    f"수수료 {tt.get('total_fees_usdt', 0):.2f} USDT"
+                    f"수수료 {trading_totals.get('total_fees_usdt', 0):.2f} USDT"
                 ),
                 "inline": True,
             }
@@ -675,24 +679,30 @@ class DailyReportService:
             {
                 "name": "🔴 장애",
                 "value": (
-                    f"CRITICAL **{s.get('total_criticals', 0)}**건\n"
-                    f"ERROR **{s.get('total_errors', 0)}**건\n"
-                    f"CB 발동 **{s.get('cb_events', 0)}**회"
+                    f"CRITICAL **{summary.get('total_criticals', 0)}**건\n"
+                    f"ERROR **{summary.get('total_errors', 0)}**건\n"
+                    f"CB 발동 **{summary.get('cb_events', 0)}**회"
                 ),
                 "inline": True,
             }
         )
 
         # Per-account summary
-        accounts = s.get("accounts", [])
+        accounts = summary.get("accounts", [])
         if accounts:
             lines = []
-            for a in accounts:
-                icon = "🟢" if a.get("cb_status") == "healthy" else "🔴" if a.get("cb_status") == "disabled" else "🟡"
-                name = a.get("name", a.get("account_id", "?")[:8])
-                p = a.get("net_profit_usdt", 0)
-                p_sign = "+" if p >= 0 else ""
-                lines.append(f"{icon} **{name}**: {p_sign}{p:.2f} USDT ({a.get('closed_lots', 0)}건)")
+            for acct in accounts:
+                icon = (
+                    "🟢"
+                    if acct.get("cb_status") == "healthy"
+                    else "🔴"
+                    if acct.get("cb_status") == "disabled"
+                    else "🟡"
+                )
+                name = acct.get("name", acct.get("account_id", "?")[:8])
+                profit = acct.get("net_profit_usdt", 0)
+                profit_sign = "+" if profit >= 0 else ""
+                lines.append(f"{icon} **{name}**: {profit_sign}{profit:.2f} USDT ({acct.get('closed_lots', 0)}건)")
             fields.append({"name": "📋 계정별 요약", "value": "\n".join(lines), "inline": False})
 
         # Reconciliation
@@ -706,7 +716,7 @@ class DailyReportService:
             )
 
         # Top error modules
-        top_mods = s.get("top_error_modules", [])[:3]
+        top_mods = summary.get("top_error_modules", [])[:3]
         if top_mods:
             mod_lines = ", ".join(f"`{m['module']}`({m['count']})" for m in top_mods)
             fields.append({"name": "주요 에러 모듈", "value": mod_lines, "inline": True})

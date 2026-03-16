@@ -282,23 +282,17 @@
 </style>
 
 <script>
-function _esc(s) {
-    const d = document.createElement('div');
-    d.textContent = String(s ?? '');
-    return d.innerHTML;
-}
-
 function _profitCls(v) {
     const n = parseFloat(v) || 0;
     return n > 0 ? 'profit-pos' : n < 0 ? 'profit-neg' : 'profit-zero';
 }
 
-function _profitFmt(v) {
+function _formatProfit(v) {
     const n = parseFloat(v) || 0;
     return (n >= 0 ? '+' : '') + n.toFixed(2);
 }
 
-function _pct(v) {
+function _formatPercent(v) {
     return ((parseFloat(v) || 0) * 100).toFixed(1) + '%';
 }
 
@@ -335,22 +329,22 @@ function renderHourlyHeatmap(hourlyErrors) {
 
 function renderAccounts(accounts) {
     if (!accounts || !accounts.length) return '<div class="empty-state">계정 없음</div>';
-    const rows = accounts.map(a => {
-        const name = _esc(a.name || String(a.account_id).slice(0,8));
-        const cbDot = `<span class="status-dot status-${a.cb_status || 'healthy'}"></span>`;
-        const pauseBadge = `<span class="pause-badge pause-${a.buy_pause_state || 'ACTIVE'}">${a.buy_pause_state || 'ACTIVE'}</span>`;
-        const profit = parseFloat(a.net_profit_usdt) || 0;
+    const rows = accounts.map(account => {
+        const name = escapeHtml(account.name || String(account.account_id).slice(0,8));
+        const cbDot = `<span class="status-dot status-${account.cb_status || 'healthy'}"></span>`;
+        const pauseBadge = `<span class="pause-badge pause-${account.buy_pause_state || 'ACTIVE'}">${account.buy_pause_state || 'ACTIVE'}</span>`;
+        const profit = parseFloat(account.net_profit_usdt) || 0;
         return `<tr>
             <td>${cbDot}${name}</td>
-            <td class="num">${a.bought_lots || 0}</td>
-            <td class="num">${a.closed_lots || 0}</td>
-            <td class="num ${_profitCls(profit)}">${_profitFmt(profit)}</td>
-            <td class="num">${_pct(a.win_rate)}</td>
-            <td class="num">${parseFloat(a.total_fees_usdt || 0).toFixed(2)}</td>
-            <td class="num">${parseFloat(a.avg_hold_minutes || 0).toFixed(0)}분</td>
+            <td class="num">${account.bought_lots || 0}</td>
+            <td class="num">${account.closed_lots || 0}</td>
+            <td class="num ${_profitCls(profit)}">${_formatProfit(profit)}</td>
+            <td class="num">${_formatPercent(account.win_rate)}</td>
+            <td class="num">${parseFloat(account.total_fees_usdt || 0).toFixed(2)}</td>
+            <td class="num">${parseFloat(account.avg_hold_minutes || 0).toFixed(0)}분</td>
             <td>${pauseBadge}</td>
-            <td class="num">${a.errors || 0}</td>
-            <td class="num">${a.criticals || 0}</td>
+            <td class="num">${account.errors || 0}</td>
+            <td class="num">${account.criticals || 0}</td>
         </tr>`;
     }).join('');
     return `<div style="overflow-x:auto"><table class="acct-table">
@@ -365,21 +359,21 @@ function renderAccounts(accounts) {
 
 function renderAccountDetail(accounts) {
     if (!accounts || !accounts.length) return '';
-    const rows = accounts.map(a => {
-        const name = _esc(a.name || String(a.account_id).slice(0,8));
-        const cbDot = `<span class="status-dot status-${a.cb_status || 'healthy'}"></span>`;
-        const cbLabel = {healthy:'정상', degraded:'주의', disabled:'중단', recovered:'복구됨'}[a.cb_status] || a.cb_status;
-        const pauseReason = a.buy_pause_reason ? ` (${_esc(a.buy_pause_reason)})` : '';
-        const lastSuccess = a.last_success_at ? new Date(a.last_success_at).toLocaleString('ko-KR', {timeZone:'Asia/Seoul', hour:'2-digit', minute:'2-digit'}) : '-';
+    const rows = accounts.map(account => {
+        const name = escapeHtml(account.name || String(account.account_id).slice(0,8));
+        const cbDot = `<span class="status-dot status-${account.cb_status || 'healthy'}"></span>`;
+        const cbLabel = {healthy:'정상', degraded:'주의', disabled:'중단', recovered:'복구됨'}[account.cb_status] || account.cb_status;
+        const pauseReason = account.buy_pause_reason ? ` (${escapeHtml(account.buy_pause_reason)})` : '';
+        const lastSuccess = account.last_success_at ? new Date(account.last_success_at).toLocaleString('ko-KR', {timeZone:'Asia/Seoul', hour:'2-digit', minute:'2-digit'}) : '-';
         return `<tr>
             <td>${cbDot}${name}</td>
             <td>${cbLabel}</td>
-            <td class="num">${a.cb_failures || 0}</td>
-            <td class="num">${a.auto_recovery_attempts || 0}</td>
+            <td class="num">${account.cb_failures || 0}</td>
+            <td class="num">${account.auto_recovery_attempts || 0}</td>
             <td>${lastSuccess}</td>
-            <td><span class="pause-badge pause-${a.buy_pause_state || 'ACTIVE'}">${a.buy_pause_state || 'ACTIVE'}</span>${pauseReason}</td>
-            <td class="num">${a.consecutive_low_balance || 0}</td>
-            <td class="num">${parseFloat(a.pending_earnings_usdt || 0).toFixed(2)}</td>
+            <td><span class="pause-badge pause-${account.buy_pause_state || 'ACTIVE'}">${account.buy_pause_state || 'ACTIVE'}</span>${pauseReason}</td>
+            <td class="num">${account.consecutive_low_balance || 0}</td>
+            <td class="num">${parseFloat(account.pending_earnings_usdt || 0).toFixed(2)}</td>
         </tr>`;
     }).join('');
     return `<div style="overflow-x:auto"><table class="acct-table">
@@ -409,14 +403,14 @@ function renderPortfolio(portfolio) {
         const positions = data.positions || [];
         const posRows = positions.map(p =>
             `<tr>
-                <td>${_esc(p.symbol)}</td>
+                <td>${escapeHtml(p.symbol)}</td>
                 <td class="num">${parseFloat(p.qty).toFixed(4)}</td>
                 <td class="num">${parseFloat(p.avg_entry).toFixed(2)}</td>
                 <td class="num">${parseFloat(p.cost_basis_usdt).toFixed(2)}</td>
             </tr>`
         ).join('');
         tables += `<div class="detail-section" style="margin-bottom:12px">
-            <h4>${_esc(acctId.slice(0,8))}... (Lots: ${data.open_lots || 0}, 원금: ${parseFloat(data.cost_basis_usdt || 0).toFixed(2)} USDT)</h4>
+            <h4>${escapeHtml(acctId.slice(0,8))}... (Lots: ${data.open_lots || 0}, 원금: ${parseFloat(data.cost_basis_usdt || 0).toFixed(2)} USDT)</h4>
             <table class="acct-table">
                 <thead><tr><th>심볼</th><th class="num">수량</th><th class="num">평균단가</th><th class="num">원금(USDT)</th></tr></thead>
                 <tbody>${posRows}</tbody>
@@ -438,17 +432,17 @@ function renderReconciliation(recon) {
     const perAcct = recon.per_account || [];
     if (!perAcct.length || recon.total_drifts === 0) return summary;
 
-    const rows = perAcct.filter(a => a.drift_count > 0).map(a => {
-        const dt = a.drift_types || {};
+    const rows = perAcct.filter(account => account.drift_count > 0).map(account => {
+        const dt = account.drift_types || {};
         return `<tr>
-            <td>${_esc(String(a.account_id).slice(0,8))}...</td>
-            <td class="num">${a.total_checks || 0}</td>
-            <td class="num">${a.drift_count || 0}</td>
+            <td>${escapeHtml(String(account.account_id).slice(0,8))}...</td>
+            <td class="num">${account.total_checks || 0}</td>
+            <td class="num">${account.drift_count || 0}</td>
             <td class="num">${dt.position || 0}</td>
             <td class="num">${dt.balance || 0}</td>
             <td class="num">${dt.fill_gap || 0}</td>
-            <td class="num">${a.auto_resolved || 0}</td>
-            <td class="num ${a.manual_needed > 0 ? 'profit-neg' : ''}">${a.manual_needed || 0}</td>
+            <td class="num">${account.auto_resolved || 0}</td>
+            <td class="num ${account.manual_needed > 0 ? 'profit-neg' : ''}">${account.manual_needed || 0}</td>
         </tr>`;
     }).join('');
     if (!rows) return summary;
@@ -503,7 +497,7 @@ function renderServerHealth(sh) {
     if (tables.length) {
         html += `<div class="server-card">
             <h5>테이블 크기 Top 5</h5>
-            ${tables.map(t => `<div class="kv"><span class="k">${_esc(t.table)}</span><span class="v">${t.size_mb} MB</span></div>`).join('')}
+            ${tables.map(tbl => `<div class="kv"><span class="k">${escapeHtml(tbl.table)}</span><span class="v">${tbl.size_mb} MB</span></div>`).join('')}
         </div>`;
     }
 
@@ -523,22 +517,22 @@ async function loadReports() {
             return;
         }
 
-        container.innerHTML = reports.map((r, idx) => {
-            const s = r.summary || {};
-            const score = parseFloat(r.health_score) || 0;
+        container.innerHTML = reports.map((report, idx) => {
+            const summary = report.summary || {};
+            const score = parseFloat(report.health_score) || 0;
             const cls = score >= 80 ? 'health-good' : score >= 50 ? 'health-warn' : 'health-bad';
-            const tt = s.trading_totals || {};
-            const totalProfit = parseFloat(tt.total_profit_usdt) || 0;
+            const tradingTotals = summary.trading_totals || {};
+            const totalProfit = parseFloat(tradingTotals.total_profit_usdt) || 0;
             const cardId = `report-${idx}`;
 
             return `<div class="report-card" id="${cardId}">
                 <div class="report-header" onclick="this.nextElementSibling.classList.toggle('open')">
-                    <span class="report-date">${r.report_date}</span>
+                    <span class="report-date">${report.report_date}</span>
                     <div class="report-stats">
-                        <span>CRIT:${s.total_criticals || 0} ERR:${s.total_errors || 0} CB:${s.cb_events || 0}</span>
-                        <span class="${_profitCls(totalProfit)}">${_profitFmt(totalProfit)} USDT</span>
-                        <span>매수:${tt.total_bought || 0} 매도:${tt.total_closed || 0}</span>
-                        ${r.telegram_sent_at ? '<span class="telegram-status">전송됨</span>' : ''}
+                        <span>CRIT:${summary.total_criticals || 0} ERR:${summary.total_errors || 0} CB:${summary.cb_events || 0}</span>
+                        <span class="${_profitCls(totalProfit)}">${_formatProfit(totalProfit)} USDT</span>
+                        <span>매수:${tradingTotals.total_bought || 0} 매도:${tradingTotals.total_closed || 0}</span>
+                        ${report.telegram_sent_at ? '<span class="telegram-status">전송됨</span>' : ''}
                     </div>
                     <span class="health-badge ${cls}">${score.toFixed(0)}</span>
                 </div>
@@ -553,38 +547,38 @@ async function loadReports() {
                     </div>
 
                     <div class="section-panel active" data-panel="trading">
-                        ${renderAccounts(s.accounts)}
+                        ${renderAccounts(summary.accounts)}
                     </div>
 
                     <div class="section-panel" data-panel="status">
-                        ${renderAccountDetail(s.accounts)}
+                        ${renderAccountDetail(summary.accounts)}
                     </div>
 
                     <div class="section-panel" data-panel="portfolio">
-                        ${renderPortfolio(s.portfolio)}
+                        ${renderPortfolio(summary.portfolio)}
                     </div>
 
                     <div class="section-panel" data-panel="errors">
                         <div class="detail-grid">
                             <div class="detail-section">
                                 <h4>주요 에러 모듈</h4>
-                                <ul>${(s.top_error_modules || []).map(m =>
-                                    `<li><span>${_esc(m.module)}</span><span class="count">${parseInt(m.count) || 0}</span></li>`
+                                <ul>${(summary.top_error_modules || []).map(m =>
+                                    `<li><span>${escapeHtml(m.module)}</span><span class="count">${parseInt(m.count) || 0}</span></li>`
                                 ).join('') || '<li>없음</li>'}</ul>
                             </div>
                             <div class="detail-section">
                                 <h4>시간대별 에러 분포 (KST)</h4>
-                                ${renderHourlyHeatmap(s.hourly_errors)}
+                                ${renderHourlyHeatmap(summary.hourly_errors)}
                             </div>
                         </div>
                     </div>
 
                     <div class="section-panel" data-panel="recon">
-                        ${renderReconciliation(s.reconciliation)}
+                        ${renderReconciliation(summary.reconciliation)}
                     </div>
 
                     <div class="section-panel" data-panel="server">
-                        ${renderServerHealth(s.server_health)}
+                        ${renderServerHealth(summary.server_health)}
                     </div>
                 </div>
             </div>`;

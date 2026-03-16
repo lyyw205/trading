@@ -23,30 +23,30 @@ async def list_accounts(
     request: Request, user: dict = Depends(get_current_user), session: AsyncSession = Depends(get_trading_session)
 ):
     encryption: EncryptionManager = request.app.state.encryption
-    svc = AccountService(session, encryption)
+    account_service = AccountService(session, encryption)
     if user.get("role") == "admin":
-        accounts = await svc.get_all_accounts_with_owner()
+        accounts = await account_service.get_all_accounts_with_owner()
         responses = []
-        for a in accounts:
-            resp = AccountResponse.model_validate(a)
-            resp.circuit_breaker_tripped = a.circuit_breaker_disabled_at is not None
-            resp.owner_email = a.owner.email if a.owner else None
+        for account in accounts:
+            resp = AccountResponse.model_validate(account)
+            resp.circuit_breaker_tripped = account.circuit_breaker_disabled_at is not None
+            resp.owner_email = account.owner.email if account.owner else None
             # Collect unique symbols from all combos
             symbols: set[str] = set()
-            for combo in a.trading_combos:
+            for combo in account.trading_combos:
                 symbols.update(combo.symbols or [])
             resp.combo_symbols = sorted(symbols)
             responses.append(resp)
         return AccountListResponse(accounts=responses)
     else:
-        accounts = await svc.get_accounts_by_owner(UUID(user["id"]))
+        accounts = await account_service.get_accounts_by_owner(UUID(user["id"]))
         responses = []
-        for a in accounts:
-            resp = AccountResponse.model_validate(a)
-            resp.circuit_breaker_tripped = a.circuit_breaker_disabled_at is not None
+        for account in accounts:
+            resp = AccountResponse.model_validate(account)
+            resp.circuit_breaker_tripped = account.circuit_breaker_disabled_at is not None
             # Collect unique symbols from all combos
             symbols: set[str] = set()
-            for combo in a.trading_combos:
+            for combo in account.trading_combos:
                 symbols.update(combo.symbols or [])
             resp.combo_symbols = sorted(symbols)
             responses.append(resp)
@@ -62,7 +62,7 @@ async def create_account(
     session: AsyncSession = Depends(get_trading_session),
 ):
     encryption: EncryptionManager = request.app.state.encryption
-    svc = AccountService(session, encryption)
+    account_service = AccountService(session, encryption)
     # Admin can assign account to another user
     if user.get("role") == "admin" and body.owner_id:
         from app.models.user import UserProfile
@@ -74,7 +74,7 @@ async def create_account(
     else:
         effective_owner_id = UUID(user["id"])
 
-    account = await svc.create_account(
+    account = await account_service.create_account(
         owner_id=effective_owner_id,
         name=body.name,
         api_key=body.api_key,
@@ -213,8 +213,8 @@ async def reset_circuit_breaker(
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
     encryption: EncryptionManager = request.app.state.encryption
-    svc = AccountService(session, encryption)
-    await svc.reset_circuit_breaker(account_id)
+    account_service = AccountService(session, encryption)
+    await account_service.reset_circuit_breaker(account_id)
     await session.commit()
     # Restart trader
     engine = request.app.state.trading_engine

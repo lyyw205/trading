@@ -30,15 +30,15 @@ function _utcToKST(utcSec) {
 }
 
 function _fmtKST(utcSec, mode) {
-  const d = _utcToKST(utcSec);
-  const Y = String(d.getUTCFullYear()).slice(2);
-  const M = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const D = String(d.getUTCDate()).padStart(2, '0');
-  const h = String(d.getUTCHours()).padStart(2, '0');
-  const m = String(d.getUTCMinutes()).padStart(2, '0');
-  if (mode === 'time') return h + ':' + m;
-  if (mode === 'tooltip') return Y + '-' + M + '-' + D + ' ' + h + ':' + m;
-  return M + '-' + D;
+  const kstDate = _utcToKST(utcSec);
+  const yearStr = String(kstDate.getUTCFullYear()).slice(2);
+  const monthStr = String(kstDate.getUTCMonth() + 1).padStart(2, '0');
+  const dayStr = String(kstDate.getUTCDate()).padStart(2, '0');
+  const hourStr = String(kstDate.getUTCHours()).padStart(2, '0');
+  const minuteStr = String(kstDate.getUTCMinutes()).padStart(2, '0');
+  if (mode === 'time') return hourStr + ':' + minuteStr;
+  if (mode === 'tooltip') return yearStr + '-' + monthStr + '-' + dayStr + ' ' + hourStr + ':' + minuteStr;
+  return monthStr + '-' + dayStr;
 }
 
 function getChartTheme() {
@@ -95,12 +95,12 @@ function getCsrfToken() {
   const meta = document.querySelector('meta[name="csrf-token"]');
   if (meta && meta.content) return meta.content;
   const cookies = document.cookie.split(';');
-  for (const c of cookies) {
-    const idx = c.indexOf('=');
+  for (const cookie of cookies) {
+    const idx = cookie.indexOf('=');
     if (idx === -1) continue;
-    const k = c.substring(0, idx).trim();
-    const v = c.substring(idx + 1).trim();
-    if (k === 'csrftoken') return v;
+    const cookieName = cookie.substring(0, idx).trim();
+    const cookieValue = cookie.substring(idx + 1).trim();
+    if (cookieName === 'csrftoken') return cookieValue;
   }
   return '';
 }
@@ -237,7 +237,7 @@ let _dashCurrentInterval = '1m';
 let _dashCurrentSymbol = null;
 
 // Interval → seconds mapping for candle bucketing
-const _intervalSec = { '1m': 60, '5m': 300, '1h': 3600, '1d': 86400 };
+const INTERVAL_SEC = { '1m': 60, '5m': 300, '1h': 3600, '1d': 86400 };
 
 async function loadPriceChart(accountId, containerId, interval, symbol) {
   const container = document.getElementById(containerId);
@@ -284,9 +284,9 @@ async function loadPriceChart(accountId, containerId, interval, symbol) {
     if (resp.ok) {
       const candles = await resp.json();
       // Convert ts_ms → time (unix seconds)
-      const mapped = candles.map(c => ({
-        time: Math.floor(c.ts_ms / 1000),
-        open: c.open, high: c.high, low: c.low, close: c.close,
+      const mapped = candles.map(candle => ({
+        time: Math.floor(candle.ts_ms / 1000),
+        open: candle.open, high: candle.high, low: candle.low, close: candle.close,
       }));
       _dashCandleSeries.setData(mapped);
       _dashChart.timeScale().fitContent();
@@ -311,7 +311,7 @@ async function loadPriceChart(accountId, containerId, interval, symbol) {
   _dashTradeGroups = {};
   if (_dashTradeEvents && _dashCandleMap) {
     const sortedTimes = Object.keys(_dashCandleMap).map(Number).sort((a, b) => a - b);
-    const intSec = _intervalSec[_dashCurrentInterval] || 300;
+    const intSec = INTERVAL_SEC[_dashCurrentInterval] || 300;
 
     function snapToCandle(t) {
       if (_dashCandleMap[t]) return t;
@@ -325,9 +325,9 @@ async function loadPriceChart(accountId, containerId, interval, symbol) {
       if (lo < sortedTimes.length) candidates.push(sortedTimes[lo]);
       if (lo > 0) candidates.push(sortedTimes[lo - 1]);
       let best = candidates[0], bestDist = Math.abs(t - best);
-      for (const c of candidates) {
-        const d = Math.abs(t - c);
-        if (d < bestDist) { best = c; bestDist = d; }
+      for (const candidateTime of candidates) {
+        const distance = Math.abs(t - candidateTime);
+        if (distance < bestDist) { best = candidateTime; bestDist = distance; }
       }
       return best;
     }
@@ -409,26 +409,26 @@ function _attachDashTooltip(label, trades) {
     if (_dashTtHideTimer) { clearTimeout(_dashTtHideTimer); _dashTtHideTimer = null; }
     const tooltip = _getDashTooltip();
     let html = '';
-    trades.forEach((t, i) => {
-      const d = new Date(t.ts_ms);
-      const dateStr = d.toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' });
-      const timeStr = d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
-      const sideLabel = t.side === 'buy' ? 'BUY' : 'SELL';
+    trades.forEach((trade, i) => {
+      const tradeDate = new Date(trade.ts_ms);
+      const dateStr = tradeDate.toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' });
+      const timeStr = tradeDate.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
+      const sideLabel = trade.side === 'buy' ? 'BUY' : 'SELL';
       if (i > 0) html += '<div style="border-top:1px solid var(--border); margin:4px 0;"></div>';
-      html += `<div class="tt-head"><span class="tt-title ${t.side}">${sideLabel}</span><span class="tt-time ${t.side}">${dateStr} ${timeStr}</span></div>`;
+      html += `<div class="tt-head"><span class="tt-title ${trade.side}">${sideLabel}</span><span class="tt-time ${trade.side}">${dateStr} ${timeStr}</span></div>`;
       html += '<div class="tt-body">';
-      html += `<div class="tt-row"><span class="tt-key">Price</span><span class="tt-val">${t.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>`;
+      html += `<div class="tt-row"><span class="tt-key">Price</span><span class="tt-val">${trade.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>`;
       html += '</div>';
     });
     tooltip.innerHTML = html;
     tooltip.style.display = 'block';
     const lRect = label.getBoundingClientRect();
-    const tW = tooltip.offsetWidth || 140;
-    const tH = tooltip.offsetHeight || 80;
+    const tooltipWidth = tooltip.offsetWidth || 140;
+    const tooltipHeight = tooltip.offsetHeight || 80;
     let left = lRect.right + 6;
-    if (left + tW > window.innerWidth - 10) left = lRect.left - tW - 6;
+    if (left + tooltipWidth > window.innerWidth - 10) left = lRect.left - tooltipWidth - 6;
     let top = lRect.top - 8;
-    if (top + tH > window.innerHeight - 10) top = window.innerHeight - tH - 10;
+    if (top + tooltipHeight > window.innerHeight - 10) top = window.innerHeight - tooltipHeight - 10;
     if (top < 4) top = 4;
     tooltip.style.left = `${left}px`;
     tooltip.style.top = `${top}px`;
@@ -471,7 +471,7 @@ function _renderDashTradeOverlay() {
 
     // Buy group (below candle)
     if (buys.length) {
-      const avgPrice = buys.reduce((s, t) => s + t.price, 0) / buys.length;
+      const avgPrice = buys.reduce((sum, trade) => sum + trade.price, 0) / buys.length;
       const dotY = _dashCandleSeries.priceToCoordinate(avgPrice);
       if (dotY !== null && dotY >= 0 && dotY <= rect.height) {
         const lowY = _dashCandleSeries.priceToCoordinate(candle ? candle.low : avgPrice);
@@ -501,7 +501,7 @@ function _renderDashTradeOverlay() {
 
     // Sell group (above candle)
     if (sells.length) {
-      const avgPrice = sells.reduce((s, t) => s + t.price, 0) / sells.length;
+      const avgPrice = sells.reduce((sum, trade) => sum + trade.price, 0) / sells.length;
       const dotY = _dashCandleSeries.priceToCoordinate(avgPrice);
       if (dotY !== null && dotY >= 0 && dotY <= rect.height) {
         const highY = _dashCandleSeries.priceToCoordinate(candle ? candle.high : avgPrice);
@@ -539,33 +539,33 @@ async function loadAssetStatus(accountId) {
   try {
     const resp = await apiFetch('/api/dashboard/' + accountId + '/asset_status');
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const data = await resp.json();
+    const assetData = await resp.json();
 
-    const symbols = data.held_symbols || [];
-    const totalHeldValue = symbols.reduce((s, h) => s + h.value_usdt, 0);
-    const totalPnl = symbols.reduce((s, h) => s + h.pnl_usdt, 0);
-    const portfolioValue = totalHeldValue + (data.reserve_pool_usdt || 0) + (data.usdt_balance || 0);
-    const pnlPct = data.total_invested_usdt > 0 ? (totalPnl / data.total_invested_usdt * 100) : 0;
+    const symbols = assetData.held_symbols || [];
+    const totalHeldValue = symbols.reduce((sum, holding) => sum + holding.value_usdt, 0);
+    const totalPnl = symbols.reduce((sum, holding) => sum + holding.pnl_usdt, 0);
+    const portfolioValue = totalHeldValue + (assetData.reserve_pool_usdt || 0) + (assetData.usdt_balance || 0);
+    const pnlPct = assetData.total_invested_usdt > 0 ? (totalPnl / assetData.total_invested_usdt * 100) : 0;
     const pnlColor = totalPnl >= 0 ? 'var(--success)' : 'var(--danger, #ef4444)';
     const pnlSign = totalPnl >= 0 ? '+' : '';
 
     // --- P1-1: 자산 구성 바 데이터 ---
     const compositionItems = [];
     const barColors = ['#f7931a', '#627eea', '#26a17b', '#e84142', '#2775ca', '#8247e5', '#00d1b2', '#ff6b6b'];
-    symbols.forEach((h, i) => {
-      if (h.value_usdt > 0) {
+    symbols.forEach((holding, i) => {
+      if (holding.value_usdt > 0) {
         compositionItems.push({
-          label: h.symbol.replace('USDT', ''),
-          value: h.value_usdt,
+          label: holding.symbol.replace('USDT', ''),
+          value: holding.value_usdt,
           color: barColors[i % barColors.length]
         });
       }
     });
-    if ((data.reserve_pool_usdt || 0) > 0) {
-      compositionItems.push({ label: 'Reserve', value: data.reserve_pool_usdt, color: '#6366f1' });
+    if ((assetData.reserve_pool_usdt || 0) > 0) {
+      compositionItems.push({ label: 'Reserve', value: assetData.reserve_pool_usdt, color: '#6366f1' });
     }
-    if ((data.usdt_balance || 0) > 0) {
-      compositionItems.push({ label: 'USDT', value: data.usdt_balance, color: '#94a3b8' });
+    if ((assetData.usdt_balance || 0) > 0) {
+      compositionItems.push({ label: 'USDT', value: assetData.usdt_balance, color: '#94a3b8' });
     }
     const compTotal = compositionItems.reduce((s, c) => s + c.value, 0);
 
@@ -578,7 +578,7 @@ async function loadAssetStatus(accountId) {
           <div style="font-size:1.5rem;font-weight:700;font-variant-numeric:tabular-nums;margin:0.25rem 0;">
             ${fmt(portfolioValue, 2)} <span style="font-size:0.9rem;color:var(--text-muted);">USDT</span>
           </div>
-          <div class="asset-sub">투자원금 ${fmt(data.total_invested_usdt, 2)} USDT</div>
+          <div class="asset-sub">투자원금 ${fmt(assetData.total_invested_usdt, 2)} USDT</div>
         </div>
         <div style="flex:0 0 auto;min-width:140px;text-align:right;">
           <div class="asset-label">미실현 손익</div>
@@ -586,7 +586,7 @@ async function loadAssetStatus(accountId) {
             ${pnlSign}${fmt(totalPnl, 2)} USDT
           </div>
           <div style="font-size:0.8rem;color:${pnlColor};font-weight:600;">${pnlSign}${pnlPct.toFixed(2)}%</div>
-          ${data.total_invested_usdt > 0 ? `
+          ${assetData.total_invested_usdt > 0 ? `
           <div style="margin-top:0.4rem;height:6px;border-radius:3px;background:var(--card-border);overflow:hidden;width:120px;margin-left:auto;">
             <div style="height:100%;border-radius:3px;background:${pnlColor};width:${Math.min(Math.abs(pnlPct), 100)}%;transition:width 0.3s;"></div>
           </div>` : ''}
@@ -634,16 +634,16 @@ async function loadAssetStatus(accountId) {
               </tr>
             </thead>
             <tbody>
-              ${symbols.map(h => {
-                const hColor = h.pnl_usdt >= 0 ? 'var(--success)' : 'var(--danger, #ef4444)';
-                const hSign = h.pnl_usdt >= 0 ? '+' : '';
+              ${symbols.map(holding => {
+                const holdingPnlColor = holding.pnl_usdt >= 0 ? 'var(--success)' : 'var(--danger, #ef4444)';
+                const holdingPnlSign = holding.pnl_usdt >= 0 ? '+' : '';
                 return `<tr style="border-bottom:1px solid var(--card-border);">
-                  <td style="padding:0.4rem 0.5rem;font-weight:600;">${escapeHtml(h.symbol).replace('USDT','')}</td>
-                  <td style="padding:0.4rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums;">${fmt(h.qty, 6)}</td>
-                  <td style="padding:0.4rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums;">${fmt(h.avg_entry, 2)}</td>
-                  <td style="padding:0.4rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums;">${fmt(h.current_price, 2)}</td>
-                  <td style="padding:0.4rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums;">${fmt(h.value_usdt, 2)}</td>
-                  <td style="padding:0.4rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums;color:${hColor};">${hSign}${fmt(h.pnl_usdt, 2)} (${hSign}${h.pnl_pct}%)</td>
+                  <td style="padding:0.4rem 0.5rem;font-weight:600;">${escapeHtml(holding.symbol).replace('USDT','')}</td>
+                  <td style="padding:0.4rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums;">${fmt(holding.qty, 6)}</td>
+                  <td style="padding:0.4rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums;">${fmt(holding.avg_entry, 2)}</td>
+                  <td style="padding:0.4rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums;">${fmt(holding.current_price, 2)}</td>
+                  <td style="padding:0.4rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums;">${fmt(holding.value_usdt, 2)}</td>
+                  <td style="padding:0.4rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums;color:${holdingPnlColor};">${holdingPnlSign}${fmt(holding.pnl_usdt, 2)} (${holdingPnlSign}${holding.pnl_pct}%)</td>
                 </tr>`;
               }).join('')}
             </tbody>
@@ -676,24 +676,24 @@ async function loadAssetStatus(accountId) {
             </div>
             <div>
               <div class="asset-label">Reserve Pool</div>
-              <div class="asset-value">${fmt(data.reserve_pool_usdt, 2)} USDT</div>
-              <div class="asset-sub">${data.reserve_pool_qty != null ? fmt(data.reserve_pool_qty, 6) + ' qty' : ''} · ${data.reserve_pool_pct != null ? data.reserve_pool_pct + '%' : ''}</div>
+              <div class="asset-value">${fmt(assetData.reserve_pool_usdt, 2)} USDT</div>
+              <div class="asset-sub">${assetData.reserve_pool_qty != null ? fmt(assetData.reserve_pool_qty, 6) + ' qty' : ''} · ${assetData.reserve_pool_pct != null ? assetData.reserve_pool_pct + '%' : ''}</div>
             </div>
           </div>
         </div>
-        <div class="asset-card earnings-card ${(data.pending_earnings_usdt || 0) > 0 ? 'has-earnings' : ''}">
+        <div class="asset-card earnings-card ${(assetData.pending_earnings_usdt || 0) > 0 ? 'has-earnings' : ''}">
           <div class="asset-card-row">
             <div class="asset-icon asset-icon-orange">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/></svg>
             </div>
             <div>
               <div class="asset-label">적립금 (Pending)</div>
-              <div class="asset-value">${fmt(data.pending_earnings_usdt || 0, 2)} USDT</div>
+              <div class="asset-value">${fmt(assetData.pending_earnings_usdt || 0, 2)} USDT</div>
             </div>
           </div>
           <button class="btn btn-sm btn-approve" style="margin-top:0.5rem;"
                   onclick="openEarningsModal('${accountId}')"
-                  ${(data.pending_earnings_usdt || 0) <= 0 ? 'disabled' : ''}>
+                  ${(assetData.pending_earnings_usdt || 0) <= 0 ? 'disabled' : ''}>
             Reserve 추가
           </button>
         </div>
@@ -704,13 +704,13 @@ async function loadAssetStatus(accountId) {
             </div>
             <div>
               <div class="asset-label">투자원금</div>
-              <div class="asset-value">${fmt(data.total_invested_usdt, 2)} USDT</div>
+              <div class="asset-value">${fmt(assetData.total_invested_usdt, 2)} USDT</div>
             </div>
           </div>
         </div>
       </div>
-      ${_renderRealizedPnl(data)}
-      ${_renderOpenLotsBySymbol(data)}
+      ${_renderRealizedPnl(assetData)}
+      ${_renderOpenLotsBySymbol(assetData)}
     `;
   } catch (e) {
     el.innerHTML = '<p class="error-text">Failed to load asset status</p>';
@@ -880,7 +880,7 @@ async function submitEarningsApproval() {
 let _allLots = [];
 let _currentLotFilter = 'all';
 let _lotsPage = 0;
-const _LOTS_PER_PAGE = 30;
+const LOTS_PER_PAGE = 30;
 
 async function loadLots(accountId) {
   try {
@@ -919,10 +919,10 @@ function _renderLots(filter) {
     return;
   }
 
-  const totalPages = Math.ceil(filtered.length / _LOTS_PER_PAGE);
+  const totalPages = Math.ceil(filtered.length / LOTS_PER_PAGE);
   if (_lotsPage >= totalPages) _lotsPage = totalPages - 1;
-  const start = _lotsPage * _LOTS_PER_PAGE;
-  const page = filtered.slice(start, start + _LOTS_PER_PAGE);
+  const start = _lotsPage * LOTS_PER_PAGE;
+  const page = filtered.slice(start, start + LOTS_PER_PAGE);
 
   tbody.innerHTML = page.map((lot, i) => {
     const pnl = lot.pnl_pct;
@@ -947,7 +947,7 @@ function _renderLotsPagination(total, totalPages) {
   if (!container) return;
   if (totalPages <= 1) { container.innerHTML = ''; return; }
   let html = '<div class="pagination">';
-  html += `<span class="pagination-info">${total}건 중 ${_lotsPage * _LOTS_PER_PAGE + 1}-${Math.min((_lotsPage + 1) * _LOTS_PER_PAGE, total)}건</span>`;
+  html += `<span class="pagination-info">${total}건 중 ${_lotsPage * LOTS_PER_PAGE + 1}-${Math.min((_lotsPage + 1) * LOTS_PER_PAGE, total)}건</span>`;
   html += `<button class="pagination-btn" onclick="lotsGoPage(0)" ${_lotsPage === 0 ? 'disabled' : ''}>&laquo;</button>`;
   html += `<button class="pagination-btn" onclick="lotsGoPage(${_lotsPage - 1})" ${_lotsPage === 0 ? 'disabled' : ''}>&lsaquo;</button>`;
   // Show max 5 page buttons around current page
@@ -1190,8 +1190,8 @@ function _buildComboLotFilterTabs() {
    Combo Wizard — 5-Step Navigation
    ============================================================ */
 let _comboWizardStep = 1;
-const _WIZARD_STEP_COUNT = 5;
-const _WIZARD_CHECK_SVG = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5L6.5 11.5L12.5 5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const WIZARD_STEP_COUNT = 5;
+const WIZARD_CHECK_SVG = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5L6.5 11.5L12.5 5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
 function _comboWizardUpdateUI(direction) {
   const stepper = document.getElementById('combo-wizard-stepper');
@@ -1207,7 +1207,7 @@ function _comboWizardUpdateUI(direction) {
       circle.innerHTML = s;
     } else if (s < _comboWizardStep) {
       el.classList.add('completed');
-      circle.innerHTML = _WIZARD_CHECK_SVG;
+      circle.innerHTML = WIZARD_CHECK_SVG;
     } else {
       circle.innerHTML = s;
     }
@@ -1232,15 +1232,15 @@ function _comboWizardUpdateUI(direction) {
   const nextBtn = document.querySelector('.btn-wizard-next');
   const saveBtn = document.querySelector('.btn-wizard-save');
   prevBtn.style.display = _comboWizardStep === 1 ? 'none' : '';
-  nextBtn.style.display = _comboWizardStep === _WIZARD_STEP_COUNT ? 'none' : '';
-  saveBtn.style.display = _comboWizardStep === _WIZARD_STEP_COUNT ? '' : 'none';
+  nextBtn.style.display = _comboWizardStep === WIZARD_STEP_COUNT ? 'none' : '';
+  saveBtn.style.display = _comboWizardStep === WIZARD_STEP_COUNT ? '' : 'none';
 
   // Edit-mode: hide logic selects in steps 2 & 4, show reapply in step 5
   if (isEdit) {
     document.getElementById('combo-buy-logic-group').style.display = 'none';
     document.getElementById('combo-sell-logic-group').style.display = 'none';
     document.getElementById('combo-reapply-group').style.display =
-      _comboWizardStep === _WIZARD_STEP_COUNT ? '' : 'none';
+      _comboWizardStep === WIZARD_STEP_COUNT ? '' : 'none';
   }
 }
 
@@ -1254,7 +1254,7 @@ function _validateWizardStep(step) {
 
 function comboWizardNext() {
   if (!_validateWizardStep(_comboWizardStep)) return;
-  if (_comboWizardStep < _WIZARD_STEP_COUNT) {
+  if (_comboWizardStep < WIZARD_STEP_COUNT) {
     _comboWizardStep++;
     _comboWizardUpdateUI('forward');
   }
@@ -1324,7 +1324,7 @@ function renderComboSymbolTags() {
   ).join('');
 }
 
-function showCreateComboModal() {
+function openCreateComboModal() {
   document.getElementById('combo-modal-title').textContent = 'New Combo';
   document.getElementById('combo-edit-id').value = '';
   document.getElementById('combo-name').value = '';
@@ -1706,13 +1706,13 @@ function openBuyPlanCalc() {
   if (usdtEl) {
     const parsed = parseFloat(usdtEl.textContent);
     if (!isNaN(parsed) && parsed > 0) {
-      document.getElementById('bp-initialUsdt').value = parsed.toFixed(2);
+      document.getElementById('bp-initial-usdt').value = parsed.toFixed(2);
     }
   }
   // plan_x_pct 값 동기화
   const xPctInput = document.querySelector('[data-param="plan_x_pct"]');
   if (xPctInput && xPctInput.value) {
-    document.getElementById('bp-xPct').value = xPctInput.value;
+    document.getElementById('bp-x-pct').value = xPctInput.value;
   }
   modal.style.display = 'flex';
   runBuyPlanCalc();
@@ -1767,8 +1767,8 @@ function runBuyPlanCalc() {
   const warn = document.getElementById('bp-warn');
   warn.style.display = 'none';
   const result = calcBuyPlan(
-    Number(document.getElementById('bp-initialUsdt').value),
-    Number(document.getElementById('bp-xPct').value),
+    Number(document.getElementById('bp-initial-usdt').value),
+    Number(document.getElementById('bp-x-pct').value),
     Number(document.getElementById('bp-minOrder').value),
     Number(document.getElementById('bp-preview').value),
   );
@@ -1782,11 +1782,11 @@ function runBuyPlanCalc() {
   `;
   if (result.reason) { warn.textContent = '중단 사유: ' + result.reason; warn.style.display = 'block'; }
 
-  document.getElementById('bp-firstFive').innerHTML = result.firstFive.map(r =>
+  document.getElementById('bp-first-five').innerHTML = result.firstFive.map(r =>
     `<tr><td>${r.round}</td><td>${fmt(r.pct, 2)}%</td><td>${fmt(r.usdt, 2)}</td><td>${fmt(r.remain, 2)}</td></tr>`
   ).join('') || '<tr><td colspan="4">-</td></tr>';
 
-  document.getElementById('bp-afterFive').innerHTML = result.after5.map(r =>
+  document.getElementById('bp-after-five').innerHTML = result.after5.map(r =>
     `<tr><td>${r.round}</td><td>${fmt(r.pct, 2)}%</td><td>${fmt(r.usdt, 2)}</td></tr>`
   ).join('') || '<tr><td colspan="3">-</td></tr>';
 }

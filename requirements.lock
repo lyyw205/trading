@@ -95,6 +95,8 @@ pandas==3.0.1
     # via -r requirements.txt
 prometheus-client==0.24.1
     # via -r requirements.txt
+psutil==6.1.1
+    # via -r requirements.txt
 propcache==0.4.1
     # via
     #   aiohttp

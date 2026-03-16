@@ -403,7 +403,7 @@ async function loadAlerts() {
       const isCrit = lvl === 'CRITICAL';
       const acct = log.account_id || 'system';
       const acctLabel = acct === 'system' ? '시스템' : (acct.length > 12 ? acct.slice(0, 8) + '...' : acct);
-      const mod = _esc(log.module || '');
+      const mod = escapeHtml(log.module || '');
       const rawMsg = log.msg || '';
       const korean = _translateMsg(rawMsg);
       const msg = korean || rawMsg;
@@ -419,11 +419,11 @@ async function loadAlerts() {
         <div class="alert-card-body">
           <div class="alert-card-header">
             <span class="alert-card-level ${lvl}">${lvl}</span>
-            <span class="alert-card-account" onclick="filterByAccount('${_esc(acct)}')">${_esc(acctLabel)}</span>
+            <span class="alert-card-account" onclick="filterByAccount('${escapeHtml(acct)}')">${escapeHtml(acctLabel)}</span>
             <span class="alert-card-module">${mod}</span>
             <span class="alert-card-time">${timeAgo}</span>
           </div>
-          <div class="alert-card-msg"${korean ? ' title="' + _esc(rawMsg) + '"' : ''}>${_esc(msg)}</div>
+          <div class="alert-card-msg"${korean ? ' title="' + escapeHtml(rawMsg) + '"' : ''}>${escapeHtml(msg)}</div>
         </div>
       </div>`;
     }).join('');
@@ -435,8 +435,8 @@ async function loadAlerts() {
 function _formatKST(tsStr) {
   if (!tsStr) return '';
   try {
-    const d = new Date(tsStr.replace(' ', 'T'));
-    return d.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+    const date = new Date(tsStr.replace(' ', 'T'));
+    return date.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
   } catch (_) { return tsStr; }
 }
 
@@ -493,15 +493,15 @@ async function loadLogs() {
       const lvl = log.level || 'INFO';
       const acct = log.account_id || 'system';
       const acctShort = acct.length > 12 ? acct.slice(0, 8) + '...' : acct;
-      const mod = _esc(log.module || '');
+      const mod = escapeHtml(log.module || '');
       const rawMsg = log.msg || '';
       const korean = _translateMsg(rawMsg);
-      const displayMsg = korean ? _esc(korean) : _esc(rawMsg);
-      const tooltip = korean ? ' title="' + _esc(rawMsg) + '"' : '';
+      const displayMsg = korean ? escapeHtml(korean) : escapeHtml(rawMsg);
+      const tooltip = korean ? ' title="' + escapeHtml(rawMsg) + '"' : '';
       html += '<div class="log-row">'
         + '<span class="log-row-ts">' + ts + '</span>'
         + '<span class="log-row-level log-row-level-' + lvl + '">' + lvl + '</span>'
-        + '<span class="log-row-account" title="' + _esc(acct) + '" onclick="filterByAccount(\'' + _esc(acct) + '\')">' + _esc(acctShort) + '</span>'
+        + '<span class="log-row-account" title="' + escapeHtml(acct) + '" onclick="filterByAccount(\'' + escapeHtml(acct) + '\')">' + escapeHtml(acctShort) + '</span>'
         + '<span class="log-row-module" title="' + mod + '">' + mod + '</span>'
         + '<span class="log-row-msg"' + tooltip + '>' + displayMsg + '</span>'
         + '</div>';
@@ -535,12 +535,6 @@ function clearFilters() {
   document.getElementById('filter-level').value = '';
   document.getElementById('filter-search').value = '';
   loadLogs();
-}
-
-function _esc(str) {
-  const d = document.createElement('div');
-  d.textContent = str;
-  return d.innerHTML;
 }
 
 async function populateAccountFilter() {
@@ -591,12 +585,12 @@ function renderGuide() {
   let html = '';
   for (const mod of LOG_GUIDE) {
     let entries = mod.entries;
-    if (sevFilter) entries = entries.filter(e => e.severity === sevFilter);
-    if (searchQ) entries = entries.filter(e =>
-      e.pattern.toLowerCase().includes(searchQ) ||
-      e.description.toLowerCase().includes(searchQ) ||
-      e.cause.toLowerCase().includes(searchQ) ||
-      e.resolution.toLowerCase().includes(searchQ)
+    if (sevFilter) entries = entries.filter(entry => entry.severity === sevFilter);
+    if (searchQ) entries = entries.filter(entry =>
+      entry.pattern.toLowerCase().includes(searchQ) ||
+      entry.description.toLowerCase().includes(searchQ) ||
+      entry.cause.toLowerCase().includes(searchQ) ||
+      entry.resolution.toLowerCase().includes(searchQ)
     );
     if (!entries.length) continue;
 
@@ -604,8 +598,8 @@ function renderGuide() {
     html += '<div class="guide-module">';
     html += '<div class="guide-module-header" onclick="toggleGuideModule(\'' + modId + '\')" id="' + modId + '-hdr">';
     html += '<span class="chevron">&#9654;</span>';
-    html += '<span>' + _esc(mod.module) + '</span>';
-    html += '<span style="color:var(--text-muted);font-weight:400;font-size:0.8rem;margin-left:0.5rem;">' + _esc(mod.desc) + '</span>';
+    html += '<span>' + escapeHtml(mod.module) + '</span>';
+    html += '<span style="color:var(--text-muted);font-weight:400;font-size:0.8rem;margin-left:0.5rem;">' + escapeHtml(mod.desc) + '</span>';
     html += '<span style="margin-left:auto;font-size:0.75rem;color:var(--text-muted);">' + entries.length + '</span>';
     html += '</div>';
     html += '<div class="guide-module-body" id="' + modId + '-body">';
@@ -620,13 +614,13 @@ function renderGuide() {
       html += '<span class="chevron">&#9654;</span>';
       html += '<span class="guide-level-badge guide-level-' + e.level + '">' + e.level + '</span>';
       html += '<span class="guide-severity guide-severity-' + e.severity + '">' + sevLabel + '</span>';
-      html += '<span class="guide-entry-pattern">' + _esc(e.description) + '</span>';
+      html += '<span class="guide-entry-pattern">' + escapeHtml(e.description) + '</span>';
       html += '</div>';
       html += '<div class="guide-entry-detail" id="' + eid + '-detail">';
       html += '<dl>';
-      html += '<dt>로그 패턴</dt><dd><code>' + _esc(e.pattern) + '</code></dd>';
-      html += '<dt>원인</dt><dd>' + _esc(e.cause) + '</dd>';
-      html += '<dt>해결 방법</dt><dd style="white-space:pre-line;">' + _esc(e.resolution) + '</dd>';
+      html += '<dt>로그 패턴</dt><dd><code>' + escapeHtml(e.pattern) + '</code></dd>';
+      html += '<dt>원인</dt><dd>' + escapeHtml(e.cause) + '</dd>';
+      html += '<dt>해결 방법</dt><dd style="white-space:pre-line;">' + escapeHtml(e.resolution) + '</dd>';
       html += '</dl>';
       html += '</div>';
       html += '</div>';

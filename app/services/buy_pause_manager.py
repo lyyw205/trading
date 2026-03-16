@@ -38,7 +38,7 @@ class BuyPauseManager:
         self._session = session
 
     @staticmethod
-    def should_attempt_buy(state: str, balance_ok: bool, throttle_cycle: int) -> tuple[bool, int]:
+    def should_attempt_buy(state: str, is_balance_sufficient: bool, throttle_cycle: int) -> tuple[bool, int]:
         """
         매수 시도 여부 판정.
         Returns (should_buy, updated_throttle_cycle).
@@ -50,49 +50,49 @@ class BuyPauseManager:
             throttle_cycle += 1
             return throttle_cycle % THROTTLE_EVERY_N == 0, throttle_cycle
         # ACTIVE: 잔고가 있어야 시도
-        return balance_ok, 0  # ACTIVE 복귀 시 카운터 리셋
+        return is_balance_sufficient, 0  # ACTIVE 복귀 시 카운터 리셋
 
     async def update_state(
         self,
         current_state: str,
         consecutive_low: int,
-        balance_ok: bool,
-        sell_occurred: bool,
+        is_balance_sufficient: bool,
+        did_sell_occur: bool,
     ) -> tuple[str, int]:
         """
         상태 전이 판정 + DB 업데이트.
         Returns (new_state, new_consecutive_low).
         """
-        new_state = current_state
-        new_consecutive = consecutive_low
+        new_pause_state = current_state
+        new_low_balance_count = consecutive_low
 
-        if balance_ok:
+        if is_balance_sufficient:
             # 잔고 회복 → 즉시 ACTIVE
-            new_state = BuyPauseState.ACTIVE
-            new_consecutive = 0
-        elif sell_occurred and current_state == BuyPauseState.PAUSED:
+            new_pause_state = BuyPauseState.ACTIVE
+            new_low_balance_count = 0
+        elif did_sell_occur and current_state == BuyPauseState.PAUSED:
             # 매도 발생했지만 잔고는 여전히 부족 → PAUSED 유지, 카운터만 증가
-            new_consecutive = consecutive_low + 1
+            new_low_balance_count = consecutive_low + 1
             logger.info(
                 "Sell occurred but balance still low, staying PAUSED (count=%d)",
-                new_consecutive,
+                new_low_balance_count,
             )
         else:
             # 잔고 부족
-            new_consecutive = consecutive_low + 1
-            if new_consecutive >= 3:
-                new_state = BuyPauseState.PAUSED
-            elif new_consecutive >= 1:
-                new_state = BuyPauseState.THROTTLED
+            new_low_balance_count = consecutive_low + 1
+            if new_low_balance_count >= 3:
+                new_pause_state = BuyPauseState.PAUSED
+            elif new_low_balance_count >= 1:
+                new_pause_state = BuyPauseState.THROTTLED
 
         # 상태가 바뀌었으면 DB 업데이트
-        if new_state != current_state or new_consecutive != consecutive_low:
+        if new_pause_state != current_state or new_low_balance_count != consecutive_low:
             values: dict = {
-                "buy_pause_state": new_state,
-                "consecutive_low_balance": new_consecutive,
+                "buy_pause_state": new_pause_state,
+                "consecutive_low_balance": new_low_balance_count,
             }
 
-            if new_state == BuyPauseState.ACTIVE:
+            if new_pause_state == BuyPauseState.ACTIVE:
                 values["buy_pause_reason"] = None
                 values["buy_pause_since"] = None
                 if current_state != BuyPauseState.ACTIVE:
@@ -102,17 +102,17 @@ class BuyPauseManager:
                 if current_state == BuyPauseState.ACTIVE:
                     values["buy_pause_since"] = datetime.now(UTC)
 
-                if new_state != current_state:
+                if new_pause_state != current_state:
                     logger.warning(
                         "Buy pause → %s (consecutive=%d)",
-                        new_state,
-                        new_consecutive,
+                        new_pause_state,
+                        new_low_balance_count,
                     )
 
             stmt = update(TradingAccount).where(TradingAccount.id == self._account_id).values(**values)
             await self._session.execute(stmt)
 
-        return new_state, new_consecutive
+        return new_pause_state, new_low_balance_count
 
     async def force_pause(self, reason: str = "TRANSIENT_ERRORS") -> None:
         """에러 발생 시 즉시 매수 일시정지."""

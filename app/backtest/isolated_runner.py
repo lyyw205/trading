@@ -499,9 +499,9 @@ class IsolatedBacktestRunner:
             if val > peak:
                 peak = val
             if peak > 0:
-                dd = (peak - val) / peak * 100
-                if dd > max_drawdown_pct:
-                    max_drawdown_pct = dd
+                drawdown_pct = (peak - val) / peak * 100
+                if drawdown_pct > max_drawdown_pct:
+                    max_drawdown_pct = drawdown_pct
 
         # Symbol quantity change (pure accumulation, price-neutral)
         # BEFORE: initial USDT → BTC at first price

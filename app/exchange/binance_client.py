@@ -55,13 +55,13 @@ class BinanceClient(ExchangeClient):
         tick_size = 0.0
         min_notional = 0.0
 
-        for f in info["filters"]:
-            if f["filterType"] == "LOT_SIZE":
-                step_size = float(f["stepSize"])
-            elif f["filterType"] == "PRICE_FILTER":
-                tick_size = float(f["tickSize"])
-            elif f["filterType"] in ("MIN_NOTIONAL", "NOTIONAL"):
-                min_notional = float(f.get("minNotional", f.get("notional", 0.0)))
+        for filter_entry in info["filters"]:
+            if filter_entry["filterType"] == "LOT_SIZE":
+                step_size = float(filter_entry["stepSize"])
+            elif filter_entry["filterType"] == "PRICE_FILTER":
+                tick_size = float(filter_entry["tickSize"])
+            elif filter_entry["filterType"] in ("MIN_NOTIONAL", "NOTIONAL"):
+                min_notional = float(filter_entry.get("minNotional", filter_entry.get("notional", 0.0)))
 
         filters = SymbolFilters(
             step_size=step_size,
@@ -111,11 +111,11 @@ class BinanceClient(ExchangeClient):
         client_oid: str | None = None,
     ) -> dict:
         qty = self._sync_adjust_qty(qty_base, symbol)
-        px = self._sync_adjust_price(price, symbol)
+        adjusted_price = self._sync_adjust_price(price, symbol)
         kwargs: dict = {
             "symbol": symbol,
             "quantity": f"{qty:.8f}",
-            "price": f"{px:.8f}",
+            "price": f"{adjusted_price:.8f}",
             "timeInForce": "GTC",
         }
         if client_oid:
@@ -129,13 +129,13 @@ class BinanceClient(ExchangeClient):
         symbol: str,
         client_oid: str | None = None,
     ) -> dict:
-        px = self._sync_adjust_price(price, symbol)
-        qty = quote_usdt / px
+        adjusted_price = self._sync_adjust_price(price, symbol)
+        qty = quote_usdt / adjusted_price
         qty = self._sync_adjust_qty(qty, symbol)
         kwargs: dict = {
             "symbol": symbol,
             "quantity": f"{qty:.8f}",
-            "price": f"{px:.8f}",
+            "price": f"{adjusted_price:.8f}",
             "timeInForce": "GTC",
         }
         if client_oid:

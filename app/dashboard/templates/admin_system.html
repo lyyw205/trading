@@ -365,24 +365,24 @@
     <div class="gauge-row" id="server-gauges">
       <!-- CPU -->
       <div class="gauge-item">
-        <div class="gauge-label-row"><span class="gauge-label">CPU 사용률</span><span class="gauge-value" id="g-cpu">—</span></div>
-        <div class="gauge-track"><div class="gauge-fill" id="gf-cpu" style="width:0%"></div></div>
+        <div class="gauge-label-row"><span class="gauge-label">CPU 사용률</span><span class="gauge-value" id="gauge-cpu">—</span></div>
+        <div class="gauge-track"><div class="gauge-fill" id="gauge-fill-cpu" style="width:0%"></div></div>
       </div>
       <!-- Memory -->
       <div class="gauge-item">
-        <div class="gauge-label-row"><span class="gauge-label">메모리 사용률</span><span class="gauge-value" id="g-mem">—</span></div>
-        <div class="gauge-track"><div class="gauge-fill" id="gf-mem" style="width:0%"></div></div>
+        <div class="gauge-label-row"><span class="gauge-label">메모리 사용률</span><span class="gauge-value" id="gauge-mem">—</span></div>
+        <div class="gauge-track"><div class="gauge-fill" id="gauge-fill-mem" style="width:0%"></div></div>
       </div>
       <!-- Disk -->
       <div class="gauge-item">
-        <div class="gauge-label-row"><span class="gauge-label">디스크 사용률</span><span class="gauge-value" id="g-disk">—</span></div>
-        <div class="gauge-track"><div class="gauge-fill" id="gf-disk" style="width:0%"></div></div>
+        <div class="gauge-label-row"><span class="gauge-label">디스크 사용률</span><span class="gauge-value" id="gauge-disk">—</span></div>
+        <div class="gauge-track"><div class="gauge-fill" id="gauge-fill-disk" style="width:0%"></div></div>
       </div>
     </div>
     <div class="stat-row">
-      <div class="stat-cell"><div class="stat-cell-label">RSS</div><div class="stat-cell-value" id="s-rss">—</div></div>
-      <div class="stat-cell"><div class="stat-cell-label">스레드</div><div class="stat-cell-value" id="s-threads">—</div></div>
-      <div class="stat-cell"><div class="stat-cell-label">업타임</div><div class="stat-cell-value" id="s-uptime">—</div></div>
+      <div class="stat-cell"><div class="stat-cell-label">RSS</div><div class="stat-cell-value" id="stat-rss">—</div></div>
+      <div class="stat-cell"><div class="stat-cell-label">스레드</div><div class="stat-cell-value" id="stat-threads">—</div></div>
+      <div class="stat-cell"><div class="stat-cell-label">업타임</div><div class="stat-cell-value" id="stat-uptime">—</div></div>
     </div>
   </section>
 
@@ -453,11 +453,11 @@
 
   <!-- Pool pills -->
   <div class="pool-pills" id="db-pool-pills">
-    <div class="pool-pill"><span class="pool-pill-label">풀 크기</span><span class="pool-pill-value" id="pp-size">—</span></div>
-    <div class="pool-pill"><span class="pool-pill-label">대기 중</span><span class="pool-pill-value" id="pp-in">—</span></div>
-    <div class="pool-pill"><span class="pool-pill-label">사용 중</span><span class="pool-pill-value" id="pp-out">—</span></div>
-    <div class="pool-pill"><span class="pool-pill-label">오버플로</span><span class="pool-pill-value" id="pp-overflow">—</span></div>
-    <div class="pool-pill"><span class="pool-pill-label">활성 연결</span><span class="pool-pill-value" id="pp-active">—</span></div>
+    <div class="pool-pill"><span class="pool-pill-label">풀 크기</span><span class="pool-pill-value" id="pool-size">—</span></div>
+    <div class="pool-pill"><span class="pool-pill-label">대기 중</span><span class="pool-pill-value" id="pool-in">—</span></div>
+    <div class="pool-pill"><span class="pool-pill-label">사용 중</span><span class="pool-pill-value" id="pool-out">—</span></div>
+    <div class="pool-pill"><span class="pool-pill-label">오버플로</span><span class="pool-pill-value" id="pool-overflow">—</span></div>
+    <div class="pool-pill"><span class="pool-pill-label">활성 연결</span><span class="pool-pill-value" id="pool-active">—</span></div>
   </div>
 
   <!-- Slow queries -->
@@ -531,8 +531,8 @@ let _lastLightTs = null;
 let _lastHeavyTs = null;
 let _lastUpdateSec = null;
 let _secTicker = null;
-let _connError = false;
-let _hidden = false;
+let _hasConnectionError = false;
+let _isPageHidden = false;
 
 const LIGHT_INTERVAL  = 5_000;
 const HEAVY_INTERVAL  = 60_000;
@@ -595,7 +595,7 @@ function setText(id, value) {
 }
 
 function setConnError(hasError) {
-  _connError = hasError;
+  _hasConnectionError = hasError;
   const badge = document.getElementById('conn-error-badge');
   const dot   = document.getElementById('refresh-dot');
   if (badge) badge.classList.toggle('visible', hasError);
@@ -621,43 +621,43 @@ async function fetchLight() {
   try {
     const resp = await apiFetch('/api/admin/system-health/light');
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const d = await resp.json();
-    _lastLightTs = d.ts;
+    const data = await resp.json();
+    _lastLightTs = data.ts;
     markUpdated();
-    renderLight(d);
+    renderLight(data);
   } catch (e) {
     setConnError(true);
   }
 }
 
-function renderLight(d) {
-  const srv  = d.server       || {};
-  const pool = d.db_pool      || {};
-  const api  = d.api_overview || {};
-  const eng  = d.engine       || {};
-  const ws   = d.websocket    || {};
+function renderLight(data) {
+  const serverStats  = data.server       || {};
+  const dbPool       = data.db_pool      || {};
+  const apiOverview  = data.api_overview || {};
+  const engineStatus = data.engine       || {};
+  const wsStatus     = data.websocket    || {};
 
   // KPI — CPU
-  const cpu = srv.cpu_percent != null ? srv.cpu_percent.toFixed(1) + '%' : '—';
+  const cpu = serverStats.cpu_percent != null ? serverStats.cpu_percent.toFixed(1) + '%' : '—';
   setKpi('kpi-cpu', cpu);
-  const cpuCls = gaugeClass(srv.cpu_percent || 0);
+  const cpuCls = gaugeClass(serverStats.cpu_percent || 0);
   const cpuEl = document.getElementById('kpi-cpu');
   if (cpuEl) cpuEl.style.color = cpuCls === 'danger' ? 'var(--danger)' : cpuCls === 'warn' ? 'var(--warning)' : '';
 
   // KPI — Memory
-  const mem = srv.memory_percent != null ? srv.memory_percent.toFixed(1) + '%' : '—';
+  const mem = serverStats.memory_percent != null ? serverStats.memory_percent.toFixed(1) + '%' : '—';
   setKpi('kpi-mem', mem);
 
   // KPI — DB pool
-  const poolOut  = pool.checked_out  != null ? pool.checked_out  : '—';
-  const poolSize = pool.pool_size     != null ? pool.pool_size     : '—';
+  const poolOut  = dbPool.checked_out  != null ? dbPool.checked_out  : '—';
+  const poolSize = dbPool.pool_size     != null ? dbPool.pool_size     : '—';
   setKpi('kpi-pool', poolOut + ' / ' + poolSize);
 
   // KPI — Active accounts
-  setKpi('kpi-accounts', eng.active_accounts != null ? eng.active_accounts : '—');
+  setKpi('kpi-accounts', engineStatus.active_accounts != null ? engineStatus.active_accounts : '—');
 
   // KPI — WebSocket
-  const wsHealthy = ws.healthy;
+  const wsHealthy = wsStatus.healthy;
   const wsEl = document.getElementById('kpi-ws');
   if (wsEl) {
     const wsText = wsHealthy === true ? '정상' : wsHealthy === false ? '불량' : '—';
@@ -667,39 +667,39 @@ function renderLight(d) {
     }
     wsEl.style.color = wsHealthy === false ? 'var(--danger)' : wsHealthy === true ? 'var(--success)' : '';
   }
-  setText('kpi-ws-desc', ws.subscriptions != null ? ws.subscriptions + ' 구독' : '—');
+  setText('kpi-ws-desc', wsStatus.subscriptions != null ? wsStatus.subscriptions + ' 구독' : '—');
   const wsIcon = document.getElementById('kpi-ws-icon');
   if (wsIcon) wsIcon.className = 'kpi-icon ' + (wsHealthy === false ? 'kpi-icon-danger' : 'kpi-icon-success');
 
   // KPI — API error rate
-  const errRate = api.error_rate != null ? (api.error_rate * 100).toFixed(2) + '%' : '—';
+  const errRate = apiOverview.error_rate != null ? (apiOverview.error_rate * 100).toFixed(2) + '%' : '—';
   setKpi('kpi-errrate', errRate);
   const errEl = document.getElementById('kpi-errrate');
-  if (errEl) errEl.style.color = (api.error_rate || 0) > 0.05 ? 'var(--danger)' : '';
-  setText('kpi-errrate-desc', api.total_requests != null ? '총 ' + api.total_requests.toLocaleString() + '건' : '');
+  if (errEl) errEl.style.color = (apiOverview.error_rate || 0) > 0.05 ? 'var(--danger)' : '';
+  setText('kpi-errrate-desc', apiOverview.total_requests != null ? '총 ' + apiOverview.total_requests.toLocaleString() + '건' : '');
 
   // Server gauges
-  setGauge('gf-cpu',  'g-cpu',  srv.cpu_percent    || 0, (srv.cpu_percent    || 0).toFixed(1) + '%');
-  setGauge('gf-mem',  'g-mem',  srv.memory_percent || 0, (srv.memory_percent || 0).toFixed(1) + '%');
-  setGauge('gf-disk', 'g-disk', srv.disk_usage_percent || 0, (srv.disk_usage_percent || 0).toFixed(1) + '%');
+  setGauge('gauge-fill-cpu',  'gauge-cpu',  serverStats.cpu_percent    || 0, (serverStats.cpu_percent    || 0).toFixed(1) + '%');
+  setGauge('gauge-fill-mem',  'gauge-mem',  serverStats.memory_percent || 0, (serverStats.memory_percent || 0).toFixed(1) + '%');
+  setGauge('gauge-fill-disk', 'gauge-disk', serverStats.disk_usage_percent || 0, (serverStats.disk_usage_percent || 0).toFixed(1) + '%');
 
-  setText('s-rss',     srv.memory_rss_mb != null ? srv.memory_rss_mb.toFixed(0) + ' MB' : '—');
-  setText('s-threads', srv.threads != null ? srv.threads : '—');
-  const upHours = srv.uptime_hours;
+  setText('stat-rss',     serverStats.memory_rss_mb != null ? serverStats.memory_rss_mb.toFixed(0) + ' MB' : '—');
+  setText('stat-threads', serverStats.threads != null ? serverStats.threads : '—');
+  const upHours = serverStats.uptime_hours;
   if (upHours != null) {
-    const h = Math.floor(upHours);
-    const m = Math.round((upHours - h) * 60);
-    setText('s-uptime', h + 'h ' + m + 'm');
-    setText('server-uptime-badge', '업타임: ' + h + 'h ' + m + 'm');
+    const uptimeH = Math.floor(upHours);
+    const uptimeM = Math.round((upHours - uptimeH) * 60);
+    setText('stat-uptime', uptimeH + 'h ' + uptimeM + 'm');
+    setText('server-uptime-badge', '업타임: ' + uptimeH + 'h ' + uptimeM + 'm');
   }
 
   // API overview badge
-  if (api.avg_response_ms != null) {
-    setText('api-overview-badge', '평균 응답: ' + api.avg_response_ms.toFixed(0) + 'ms');
+  if (apiOverview.avg_response_ms != null) {
+    setText('api-overview-badge', '평균 응답: ' + apiOverview.avg_response_ms.toFixed(0) + 'ms');
   }
 
   // Alerts
-  renderAlerts(d.alerts || []);
+  renderAlerts(data.alerts || []);
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -709,36 +709,36 @@ async function fetchHeavy() {
   try {
     const resp = await apiFetch('/api/admin/system-health');
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const d = await resp.json();
-    _lastHeavyTs = d.ts;
-    renderHeavy(d);
+    const data = await resp.json();
+    _lastHeavyTs = data.ts;
+    renderHeavy(data);
   } catch (e) {
     // keep old data, light endpoint handles conn error display
   }
 }
 
-function renderHeavy(d) {
-  const db      = d.database        || {};
-  const api     = d.api_metrics     || {};
-  const trading = d.trading_activity || {};
-  const pool    = db.connection_pool || {};
+function renderHeavy(data) {
+  const db             = data.database         || {};
+  const apiMetrics     = data.api_metrics      || {};
+  const tradingActivity = data.trading_activity || {};
+  const pool           = db.connection_pool    || {};
 
   // DB pool pills
-  const ppOut = pool.checked_out || 0;
-  const ppSize = pool.pool_size  || 0;
-  setText('pp-size',     ppSize);
-  setText('pp-in',       pool.checked_in  != null ? pool.checked_in  : '—');
-  const ppOutEl = document.getElementById('pp-out');
-  if (ppOutEl) {
-    ppOutEl.textContent = ppOut;
-    ppOutEl.className = 'pool-pill-value' + (ppOut > ppSize * 0.8 ? ' warn' : '');
+  const poolCheckedOut = pool.checked_out || 0;
+  const poolSize       = pool.pool_size   || 0;
+  setText('pool-size',     poolSize);
+  setText('pool-in',       pool.checked_in  != null ? pool.checked_in  : '—');
+  const poolOutEl = document.getElementById('pool-out');
+  if (poolOutEl) {
+    poolOutEl.textContent = poolCheckedOut;
+    poolOutEl.className = 'pool-pill-value' + (poolCheckedOut > poolSize * 0.8 ? ' warn' : '');
   }
-  const ppOvEl = document.getElementById('pp-overflow');
-  if (ppOvEl) {
-    ppOvEl.textContent = pool.overflow != null ? pool.overflow : '—';
-    ppOvEl.className = 'pool-pill-value' + ((pool.overflow || 0) > 0 ? ' warn' : '');
+  const poolOverflowEl = document.getElementById('pool-overflow');
+  if (poolOverflowEl) {
+    poolOverflowEl.textContent = pool.overflow != null ? pool.overflow : '—';
+    poolOverflowEl.className = 'pool-pill-value' + ((pool.overflow || 0) > 0 ? ' warn' : '');
   }
-  setText('pp-active', db.active_connections != null ? db.active_connections : '—');
+  setText('pool-active', db.active_connections != null ? db.active_connections : '—');
   setText('db-size-badge', db.db_size_mb != null ? 'DB 크기: ' + db.db_size_mb + ' MB' : '');
 
   // Slow queries
@@ -748,21 +748,21 @@ function renderHeavy(d) {
   renderDeadTuples(db.dead_tuples || []);
 
   // API endpoints
-  const overview = api.overview || {};
+  const overview = apiMetrics.overview || {};
   if (overview.avg_response_ms != null) {
     setText('api-overview-badge', '평균 응답: ' + overview.avg_response_ms.toFixed(0) + 'ms · 총 ' + (overview.total_requests || 0).toLocaleString() + '건');
   }
-  renderEndpoints(api.top_endpoints || []);
+  renderEndpoints(apiMetrics.top_endpoints || []);
 
   // Trading activity
-  setText('act-orders', trading.orders_last_hour != null ? trading.orders_last_hour.toLocaleString() : '—');
-  setText('act-fills',  trading.fills_last_hour  != null ? trading.fills_last_hour.toLocaleString()  : '—');
+  setText('act-orders', tradingActivity.orders_last_hour != null ? tradingActivity.orders_last_hour.toLocaleString() : '—');
+  setText('act-fills',  tradingActivity.fills_last_hour  != null ? tradingActivity.fills_last_hour.toLocaleString()  : '—');
 
   // Error trend
-  renderErrorTrend(trading.error_trend || []);
+  renderErrorTrend(tradingActivity.error_trend || []);
 
   // Candles
-  renderCandles(d.candles || []);
+  renderCandles(data.candles || []);
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -793,13 +793,13 @@ function renderEndpoints(endpoints) {
     tbody.innerHTML = '<tr><td colspan="4" class="table-empty" style="padding:1.5rem 0;text-align:center;color:var(--text-faint);">데이터 없음</td></tr>';
     return;
   }
-  tbody.innerHTML = endpoints.map(ep => {
-    const errPct = (ep.error_rate || 0) * 100;
+  tbody.innerHTML = endpoints.map(endpoint => {
+    const errPct = (endpoint.error_rate || 0) * 100;
     const errCls = errPct > 5 ? 'err-rate-hi' : errPct > 1 ? 'err-rate-md' : '';
     return `<tr>
-      <td>${escapeHtml(ep.endpoint || '—')}</td>
-      <td class="num">${(ep.calls || 0).toLocaleString()}</td>
-      <td class="num">${ep.avg_ms != null ? ep.avg_ms.toFixed(0) : '—'}</td>
+      <td>${escapeHtml(endpoint.endpoint || '—')}</td>
+      <td class="num">${(endpoint.calls || 0).toLocaleString()}</td>
+      <td class="num">${endpoint.avg_ms != null ? endpoint.avg_ms.toFixed(0) : '—'}</td>
       <td class="num ${errCls}">${errPct.toFixed(2)}%</td>
     </tr>`;
   }).join('');
@@ -827,13 +827,13 @@ function renderDeadTuples(tuples) {
     tbody.innerHTML = '<tr><td colspan="4" class="table-empty">데이터 없음</td></tr>';
     return;
   }
-  tbody.innerHTML = tuples.map(t => {
-    const ratio = t.live_tuples > 0 ? ((t.dead_tuples / t.live_tuples) * 100).toFixed(1) + '%' : '—';
-    const isDanger = t.dead_tuples > 10_000;
+  tbody.innerHTML = tuples.map(tableStats => {
+    const ratio = tableStats.live_tuples > 0 ? ((tableStats.dead_tuples / tableStats.live_tuples) * 100).toFixed(1) + '%' : '—';
+    const isDanger = tableStats.dead_tuples > 10_000;
     return `<tr>
-      <td style="font-weight:500;">${escapeHtml(t.table)}</td>
-      <td style="text-align:right;font-family:var(--font-mono);${isDanger ? 'color:var(--danger);font-weight:700;' : ''}">${t.dead_tuples.toLocaleString()}</td>
-      <td style="text-align:right;font-family:var(--font-mono);">${t.live_tuples.toLocaleString()}</td>
+      <td style="font-weight:500;">${escapeHtml(tableStats.table)}</td>
+      <td style="text-align:right;font-family:var(--font-mono);${isDanger ? 'color:var(--danger);font-weight:700;' : ''}">${tableStats.dead_tuples.toLocaleString()}</td>
+      <td style="text-align:right;font-family:var(--font-mono);">${tableStats.live_tuples.toLocaleString()}</td>
       <td style="text-align:right;font-family:var(--font-mono);${isDanger ? 'color:var(--danger);font-weight:700;' : ''}">${ratio}</td>
     </tr>`;
   }).join('');
@@ -846,11 +846,11 @@ function renderErrorTrend(trend) {
     chart.innerHTML = '<div style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--text-faint);font-size:0.78rem;">데이터 없음</div>';
     return;
   }
-  const maxCount = Math.max(...trend.map(b => b.count || 0), 1);
-  chart.innerHTML = trend.map(b => {
-    const count = b.count || 0;
+  const maxCount = Math.max(...trend.map(bucket => bucket.count || 0), 1);
+  chart.innerHTML = trend.map(bucket => {
+    const count = bucket.count || 0;
     const heightPct = (count / maxCount) * 100;
-    const hour = b.hour ? new Date(b.hour) : null;
+    const hour = bucket.hour ? new Date(bucket.hour) : null;
     const labelHour = hour ? ((hour.getUTCHours() + 9) % 24) + '시' : '?';
     return `<div class="trend-bar-col">
       <span class="trend-bar-count">${count > 0 ? count : ''}</span>
@@ -906,10 +906,10 @@ function manualRefresh() {
 /* Page Visibility API */
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
-    _hidden = true;
+    _isPageHidden = true;
     stopPolling();
   } else {
-    _hidden = false;
+    _isPageHidden = false;
     startPolling();
   }
 });

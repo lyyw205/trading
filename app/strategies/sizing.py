@@ -71,6 +71,6 @@ def calc_scaled_plan_amount(
     """
     if round_num <= 0:
         round_num = 1
-    x = x_pct / 100.0
-    k = min(round_num, 5)
-    return balance * (k * x)
+    base_fraction = x_pct / 100.0
+    capped_round = min(round_num, 5)
+    return balance * (capped_round * base_fraction)

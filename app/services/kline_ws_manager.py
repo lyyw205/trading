@@ -230,33 +230,33 @@ class KlineWsManager:
                 if event_type != "kline":
                     continue
 
-                k = data.get("k", {})
-                symbol_upper = k.get("s", "").upper()
+                kline_data = data.get("k", {})
+                symbol_upper = kline_data.get("s", "").upper()
                 symbol_lower = symbol_upper.lower()
 
                 # Update latest price on every event
                 try:
-                    close_price = float(k.get("c", 0))
+                    close_price = float(kline_data.get("c", 0))
                     if close_price > 0:
                         self._latest_prices[symbol_lower] = close_price
                         self._latest_prices[symbol_upper] = close_price
                 except (ValueError, TypeError):
                     pass
 
-                # Store only closed candles (k.x == true)
-                is_closed = k.get("x", False)
+                # Store only closed candles (kline_data.x == true)
+                is_closed = kline_data.get("x", False)
                 if not is_closed:
                     continue
 
                 try:
-                    ts_ms = int(k["t"])
-                    open_ = float(k["o"])
-                    high = float(k["h"])
-                    low = float(k["l"])
-                    close = float(k["c"])
-                    volume = float(k["v"])
-                    quote_volume = float(k["q"])
-                    trade_count = int(k["n"])
+                    ts_ms = int(kline_data["t"])
+                    open_ = float(kline_data["o"])
+                    high = float(kline_data["h"])
+                    low = float(kline_data["l"])
+                    close = float(kline_data["c"])
+                    volume = float(kline_data["v"])
+                    quote_volume = float(kline_data["q"])
+                    trade_count = int(kline_data["n"])
 
                     # Fire-and-forget: don't block WS loop on DB commit
                     task = asyncio.create_task(

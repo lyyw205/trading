@@ -74,7 +74,7 @@
 <section class="dashboard-section">
   <div class="section-header">
     <h2 class="section-title">Trading Combos</h2>
-    <button class="btn btn-primary btn-sm" onclick="showCreateComboModal()">+ New Combo</button>
+    <button class="btn btn-primary btn-sm" onclick="openCreateComboModal()">+ New Combo</button>
   </div>
   <div id="combos-panel">
     <div class="loading-spinner">Loading...</div>
@@ -220,11 +220,11 @@
       <div class="tune-grid">
         <div class="form-group">
           <label class="form-label">보유 USDT</label>
-          <input id="bp-initialUsdt" type="number" step="0.01" min="0" value="2000" class="form-input">
+          <input id="bp-initial-usdt" type="number" step="0.01" min="0" value="2000" class="form-input">
         </div>
         <div class="form-group">
           <label class="form-label">x (%)</label>
-          <input id="bp-xPct" type="number" step="0.01" min="0.01" max="19.99" value="0.5" class="form-input">
+          <input id="bp-x-pct" type="number" step="0.01" min="0.01" max="19.99" value="0.5" class="form-input">
         </div>
         <div class="form-group">
           <label class="form-label">최소 주문금액 USDT</label>
@@ -244,14 +244,14 @@
         <h4 style="margin:0 0 4px;font-size:0.9rem;">1~5회 예상 매수</h4>
         <table class="data-table" style="font-size:0.8rem;">
           <thead><tr><th>회차</th><th>매수%</th><th>금액</th><th>잔고</th></tr></thead>
-          <tbody id="bp-firstFive"></tbody>
+          <tbody id="bp-first-five"></tbody>
         </table>
       </div>
       <div>
         <h4 style="margin:0 0 4px;font-size:0.9rem;">6회 이후 예상 (A 근사 유지)</h4>
         <table class="data-table" style="font-size:0.8rem;">
           <thead><tr><th>회차</th><th>예상%</th><th>금액</th></tr></thead>
-          <tbody id="bp-afterFive"></tbody>
+          <tbody id="bp-after-five"></tbody>
         </table>
       </div>
     </div>

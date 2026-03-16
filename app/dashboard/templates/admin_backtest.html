@@ -349,7 +349,6 @@ let _btCombos = [];
 let _btComboEditIndex = -1;
 let _btWizardStep = 1;
 const _BT_WIZARD_STEPS = 4;
-const _BT_CHECK_SVG = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5L6.5 11.5L12.5 5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
 // ============================================================
 //  Stepper Navigation
@@ -632,7 +631,7 @@ function _btWizardUpdateUI(direction) {
       circle.innerHTML = s;
     } else if (s < _btWizardStep) {
       el.classList.add('completed');
-      circle.innerHTML = _BT_CHECK_SVG;
+      circle.innerHTML = WIZARD_CHECK_SVG;
     } else {
       circle.innerHTML = s;
     }

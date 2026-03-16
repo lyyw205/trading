@@ -99,19 +99,19 @@ async function loadTrades(opts) {
       return;
     }
 
-    tbody.innerHTML = _tradesData.map(t => {
-      const time = t.updated_at ? new Date(t.updated_at).toLocaleString() : '-';
-      const sideClass = t.side === 'BUY' ? 'pnl-positive' : (t.side === 'SELL' ? 'pnl-negative' : '');
-      const label = _accountsMap[t.account_id] || String(t.account_id).slice(0, 8);
+    tbody.innerHTML = _tradesData.map(trade => {
+      const time = trade.updated_at ? new Date(trade.updated_at).toLocaleString() : '-';
+      const sideClass = trade.side === 'BUY' ? 'pnl-positive' : (trade.side === 'SELL' ? 'pnl-negative' : '');
+      const label = _accountsMap[trade.account_id] || String(trade.account_id).slice(0, 8);
       return `<tr>
         <td>${escapeHtml(time)}</td>
-        <td><a href="/accounts/${encodeURIComponent(t.account_id)}">${escapeHtml(label)}</a></td>
-        <td>${escapeHtml(t.symbol || '')}</td>
-        <td class="${sideClass}">${escapeHtml(t.side || '-')}</td>
-        <td>${t.price != null ? fmt(t.price, 2) : '-'}</td>
-        <td>${t.executed_qty != null ? fmt(t.executed_qty, 6) : '-'}</td>
-        <td>${t.cum_quote_qty != null ? fmt(t.cum_quote_qty, 2) : '-'}</td>
-        <td><span class="status-badge ${t.status === 'FILLED' ? 'badge-success' : 'badge-neutral'}">${escapeHtml(t.status || '-')}</span></td>
+        <td><a href="/accounts/${encodeURIComponent(trade.account_id)}">${escapeHtml(label)}</a></td>
+        <td>${escapeHtml(trade.symbol || '')}</td>
+        <td class="${sideClass}">${escapeHtml(trade.side || '-')}</td>
+        <td>${trade.price != null ? fmt(trade.price, 2) : '-'}</td>
+        <td>${trade.executed_qty != null ? fmt(trade.executed_qty, 6) : '-'}</td>
+        <td>${trade.cum_quote_qty != null ? fmt(trade.cum_quote_qty, 2) : '-'}</td>
+        <td><span class="status-badge ${trade.status === 'FILLED' ? 'badge-success' : 'badge-neutral'}">${escapeHtml(trade.status || '-')}</span></td>
       </tr>`;
     }).join('');
 
@@ -136,15 +136,15 @@ function changeTradesPage(delta) {
 function exportTradesCSV() {
   if (!_tradesData.length) { showToast('No trades to export', 'error'); return; }
   const headers = ['Time', 'Account', 'Symbol', 'Side', 'Price', 'Qty', 'Quote Amount', 'Status'];
-  const rows = _tradesData.map(t => [
-    t.updated_at || '',
-    _accountsMap[t.account_id] || t.account_id,
-    t.symbol || '',
-    t.side || '',
-    t.price || '',
-    t.executed_qty || '',
-    t.cum_quote_qty || '',
-    t.status || '',
+  const rows = _tradesData.map(trade => [
+    trade.updated_at || '',
+    _accountsMap[trade.account_id] || trade.account_id,
+    trade.symbol || '',
+    trade.side || '',
+    trade.price || '',
+    trade.executed_qty || '',
+    trade.cum_quote_qty || '',
+    trade.status || '',
   ]);
   const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv' });

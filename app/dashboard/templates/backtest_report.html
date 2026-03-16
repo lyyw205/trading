@@ -177,7 +177,7 @@ async function loadBacktestReport(runId) {
 
 function renderSummary(report) {
   const cfg = report.config;
-  const s = report.summary;
+  const summary = report.summary;
 
   const infoEl = document.getElementById('bt-report-info');
   if (infoEl) {
@@ -189,13 +189,13 @@ function renderSummary(report) {
     infoEl.textContent = cfg.symbol + ' | ' + stratLabel + ' | ' + startD + ' ~ ' + endD;
   }
 
-  if (!s) {
+  if (!summary) {
     document.getElementById('bt-summary').innerHTML = '<p class="error-text">No summary data</p>';
     return;
   }
 
-  const pnlClass = s.pnl_pct >= 0 ? 'pnl-positive' : 'pnl-negative';
-  const ddClass = s.max_drawdown_pct < 0 ? 'pnl-negative' : '';
+  const pnlClass = summary.pnl_pct >= 0 ? 'pnl-positive' : 'pnl-negative';
+  const ddClass = summary.max_drawdown_pct < 0 ? 'pnl-negative' : '';
 
   document.getElementById('bt-summary').innerHTML = `
     <div class="health-card">
@@ -204,39 +204,39 @@ function renderSummary(report) {
     </div>
     <div class="health-card">
       <div class="health-card-label">Final Value</div>
-      <div class="health-card-value">${fmt(s.final_value_usdt, 2)} USDT</div>
+      <div class="health-card-value">${fmt(summary.final_value_usdt, 2)} USDT</div>
     </div>
     <div class="health-card">
       <div class="health-card-label">PnL</div>
-      <div class="health-card-value ${pnlClass}">${s.pnl_usdt >= 0 ? '+' : ''}${fmt(s.pnl_usdt, 2)} USDT</div>
-      <div class="asset-sub ${pnlClass}">${s.pnl_pct >= 0 ? '+' : ''}${fmt(s.pnl_pct, 2)}%</div>
+      <div class="health-card-value ${pnlClass}">${summary.pnl_usdt >= 0 ? '+' : ''}${fmt(summary.pnl_usdt, 2)} USDT</div>
+      <div class="asset-sub ${pnlClass}">${summary.pnl_pct >= 0 ? '+' : ''}${fmt(summary.pnl_pct, 2)}%</div>
     </div>
     <div class="health-card">
       <div class="health-card-label">Total Trades</div>
-      <div class="health-card-value">${s.total_trades}</div>
-      <div class="asset-sub">${s.buy_trades || 0}B / ${s.sell_trades || 0}S</div>
+      <div class="health-card-value">${summary.total_trades}</div>
+      <div class="asset-sub">${summary.buy_trades || 0}B / ${summary.sell_trades || 0}S</div>
     </div>
     <div class="health-card">
       <div class="health-card-label">Win Rate</div>
-      <div class="health-card-value">${fmt(s.win_rate, 1)}%</div>
-      <div class="asset-sub">${s.winning_trades}W / ${s.losing_trades}L</div>
+      <div class="health-card-value">${fmt(summary.win_rate, 1)}%</div>
+      <div class="asset-sub">${summary.winning_trades}W / ${summary.losing_trades}L</div>
     </div>
     <div class="health-card">
       <div class="health-card-label">Max Drawdown</div>
-      <div class="health-card-value ${ddClass}">${fmt(s.max_drawdown_pct, 2)}%</div>
+      <div class="health-card-value ${ddClass}">${fmt(summary.max_drawdown_pct, 2)}%</div>
     </div>
     <div class="health-card">
       <div class="health-card-label">Profit Factor</div>
-      <div class="health-card-value">${s.profit_factor >= 999 ? '∞ (No Loss)' : fmt(s.profit_factor, 2)}</div>
+      <div class="health-card-value">${summary.profit_factor >= 999 ? '∞ (No Loss)' : fmt(summary.profit_factor, 2)}</div>
     </div>
     <div class="health-card">
       <div class="health-card-label">${cfg.symbol.replace('USDT','')} Qty Change</div>
-      <div class="health-card-value ${(s.qty_change_pct ?? 0) >= 0 ? 'pnl-positive' : 'pnl-negative'}">${s.qty_change_pct != null ? ((s.qty_change_pct >= 0 ? '+' : '') + fmt(s.qty_change_pct, 2) + '%') : '-'}</div>
-      <div class="asset-sub">${s.qty_before != null ? fmt(s.qty_before, 6) : '-'} → ${s.qty_after != null ? fmt(s.qty_after, 6) : '-'}</div>
+      <div class="health-card-value ${(summary.qty_change_pct ?? 0) >= 0 ? 'pnl-positive' : 'pnl-negative'}">${summary.qty_change_pct != null ? ((summary.qty_change_pct >= 0 ? '+' : '') + fmt(summary.qty_change_pct, 2) + '%') : '-'}</div>
+      <div class="asset-sub">${summary.qty_before != null ? fmt(summary.qty_before, 6) : '-'} → ${summary.qty_after != null ? fmt(summary.qty_after, 6) : '-'}</div>
     </div>
     <div class="health-card">
       <div class="health-card-label">Max Open Lots</div>
-      <div class="health-card-value">${s.max_open_lots ?? 0}</div>
+      <div class="health-card-value">${summary.max_open_lots ?? 0}</div>
     </div>
   `;
 }
@@ -275,9 +275,9 @@ function renderStrategyParams(report) {
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg>'],
   ];
 
-  function fmtVal(v) {
-    if (typeof v === 'boolean') return v ? '예' : '아니오';
-    return String(v);
+  function fmtVal(paramValue) {
+    if (typeof paramValue === 'boolean') return paramValue ? '예' : '아니오';
+    return String(paramValue);
   }
 
   function renderCategoryCard(cat, keys, color, iconSvg, allParams) {
@@ -480,8 +480,8 @@ function renderPriceChart(report, tfMinutes) {
   if (!window._btPriceResizeHandler) {
     window._btPriceResizeHandler = () => {
       if (_priceChart) {
-        const c = document.getElementById('bt-price-chart');
-        if (c) _priceChart.applyOptions({ width: c.clientWidth });
+        const chartEl = document.getElementById('bt-price-chart');
+        if (chartEl) _priceChart.applyOptions({ width: chartEl.clientWidth });
         scheduleOverlay();
       }
     };
@@ -675,8 +675,8 @@ function renderEquityCurve(report) {
 
   if (!window._btEquityResizeHandler) {
     window._btEquityResizeHandler = () => {
-      const c = document.getElementById('bt-equity-chart');
-      if (c && chart) chart.applyOptions({ width: c.clientWidth });
+      const equityChartEl = document.getElementById('bt-equity-chart');
+      if (equityChartEl && chart) chart.applyOptions({ width: equityChartEl.clientWidth });
     };
     window.addEventListener('resize', window._btEquityResizeHandler);
   }
@@ -733,16 +733,16 @@ function _renderTradePage() {
   const end = Math.min(start + TRADE_PAGE_SIZE, total);
   const page = _tradeLogData.slice(start, end);
 
-  tbody.innerHTML = page.map((t, i) => {
-    const time = t.ts_ms ? new Date(t.ts_ms).toLocaleString() : '-';
-    const sideClass = t.side === 'BUY' ? 'pnl-positive' : 'pnl-negative';
+  tbody.innerHTML = page.map((trade, i) => {
+    const time = trade.ts_ms ? new Date(trade.ts_ms).toLocaleString() : '-';
+    const sideClass = trade.side === 'BUY' ? 'pnl-positive' : 'pnl-negative';
     return `<tr>
       <td>${start + i + 1}</td>
       <td>${escapeHtml(time)}</td>
-      <td class="${sideClass}">${escapeHtml(t.side || '-')}</td>
-      <td>${fmt(parseFloat(t.price || 0), 2)}</td>
-      <td>${fmt(parseFloat(t.qty || 0), 6)}</td>
-      <td>${fmt(parseFloat(t.quote_qty || 0), 2)}</td>
+      <td class="${sideClass}">${escapeHtml(trade.side || '-')}</td>
+      <td>${fmt(parseFloat(trade.price || 0), 2)}</td>
+      <td>${fmt(parseFloat(trade.qty || 0), 6)}</td>
+      <td>${fmt(parseFloat(trade.quote_qty || 0), 2)}</td>
     </tr>`;
   }).join('');
 

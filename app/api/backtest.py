@@ -207,13 +207,13 @@ async def get_backtest_report(
                             "volume": row.get("volume", 0.0),
                         }
                     else:
-                        b = aggregated[key]
-                        if row["high"] > b["high"]:
-                            b["high"] = row["high"]
-                        if row["low"] < b["low"]:
-                            b["low"] = row["low"]
-                        b["close"] = row["close"]
-                        b["volume"] = b["volume"] + row.get("volume", 0.0)
+                        bucket = aggregated[key]
+                        if row["high"] > bucket["high"]:
+                            bucket["high"] = row["high"]
+                        if row["low"] < bucket["low"]:
+                            bucket["low"] = row["low"]
+                        bucket["close"] = row["close"]
+                        bucket["volume"] = bucket["volume"] + row.get("volume", 0.0)
                 return sorted(aggregated.values(), key=lambda x: x["time"]), bucket_interval
             return rows, 60
         return [], 60

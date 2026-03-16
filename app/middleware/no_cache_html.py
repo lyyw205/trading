@@ -13,12 +13,12 @@ class NoCacheHTMLMiddleware:
         async def send_wrapper(message):
             if message["type"] == "http.response.start":
                 raw_headers = message.get("headers", [])
-                ct = b""
+                content_type = b""
                 for k, v in raw_headers:
                     if k == b"content-type":
-                        ct = v
+                        content_type = v
                         break
-                if b"text/html" in ct:
+                if b"text/html" in content_type:
                     extra = [
                         (b"cache-control", b"no-cache, no-store, must-revalidate"),
                         (b"pragma", b"no-cache"),

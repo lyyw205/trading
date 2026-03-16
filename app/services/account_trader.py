@@ -106,8 +106,8 @@ class AccountTrader:
             # Register client for pre-passed combo symbols (avoids redundant DB query)
             all_symbols = {account.symbol}
             all_symbols.update(s.upper() for s in self._initial_symbols)
-            for sym in all_symbols:
-                self._price_collector.register_client(sym, self._client)
+            for symbol in all_symbols:
+                self._price_collector.register_client(symbol, self._client)
 
     def _get_or_create_buy(self, combo_id: UUID, symbol: str, name: str) -> BaseBuyLogic:
         key = (combo_id, symbol)
@@ -169,15 +169,15 @@ class AccountTrader:
                 # Price fetching moved to per-symbol in combo loop
 
                 # --- Balance pre-check (account-level, single API call) ---
-                balance_ok = True
+                is_balance_sufficient = True
                 free_balance = 0.0
                 try:
                     free_balance = await self._client.get_free_balance(account.quote_asset)
-                    balance_ok = free_balance >= MIN_TRADE_USDT
+                    is_balance_sufficient = free_balance >= MIN_TRADE_USDT
                 except Exception as e:
                     logger.warning("Balance check failed: %s, skipping buy evaluation", e)
                     # 잔고 API 실패 → 상태 변경 없이 이번 사이클 매수 스킵
-                    balance_ok = False
+                    is_balance_sufficient = False
 
                 # Run active strategies
                 lot_repo = LotRepository(session)
@@ -248,7 +248,7 @@ class AccountTrader:
                 # Buy-pause 가드: 사이클당 1회 판정 (combo x symbol 루프 밖)
                 should_buy, self._throttle_cycle = BuyPauseManager.should_attempt_buy(
                     self._buy_pause_state,
-                    balance_ok,
+                    is_balance_sufficient,
                     self._throttle_cycle,
                 )
 
@@ -284,7 +284,7 @@ class AccountTrader:
                             combo,
                             symbol,
                             free_balance,
-                            balance_ok,
+                            is_balance_sufficient,
                             should_buy,
                             repos,
                             session,
@@ -301,25 +301,25 @@ class AccountTrader:
                     )
                 )
                 open_lots_after = (await session.execute(open_lots_after_stmt)).scalar_one()
-                sell_occurred = open_lots_after < open_lots_count_before
+                did_sell_occur = open_lots_after < open_lots_count_before
                 self._has_open_positions = open_lots_after > 0
 
                 # 매도 발생 + PAUSED → 잔고 재체크
-                if sell_occurred and self._buy_pause_state == BuyPauseState.PAUSED:
+                if did_sell_occur and self._buy_pause_state == BuyPauseState.PAUSED:
                     try:
                         fresh_balance = await self._client.get_free_balance(account.quote_asset)
-                        balance_ok = fresh_balance >= MIN_TRADE_USDT
-                        if balance_ok:
+                        is_balance_sufficient = fresh_balance >= MIN_TRADE_USDT
+                        if is_balance_sufficient:
                             logger.info("Sell detected + balance recovered → will resume")
                     except Exception:
-                        pass  # 재체크 실패 시 기존 balance_ok 유지
+                        pass  # 재체크 실패 시 기존 is_balance_sufficient 유지
 
                 # --- Buy pause state transition ---
                 new_state, new_count = await pause_mgr.update_state(
                     self._buy_pause_state,
                     self._consecutive_low_balance,
-                    balance_ok,
-                    sell_occurred,
+                    is_balance_sufficient,
+                    did_sell_occur,
                 )
                 self._buy_pause_state = new_state
                 self._consecutive_low_balance = new_count
@@ -346,7 +346,7 @@ class AccountTrader:
         combo: TradingCombo,
         symbol: str,
         free_balance: float,
-        balance_ok: bool,
+        is_balance_sufficient: bool,
         should_buy: bool,
         repos: RepositoryBundle,
         session,
@@ -393,7 +393,7 @@ class AccountTrader:
             current_price=cur_price,
             params=buy_params,
             client_order_prefix=prefix,
-            free_balance=free_balance if balance_ok else 0.0,
+            free_balance=free_balance if is_balance_sufficient else 0.0,
             open_lots=open_lots,
         )
 
@@ -410,7 +410,7 @@ class AccountTrader:
             current_price=cur_price,
             params=sell_params,
             client_order_prefix=prefix,
-            free_balance=free_balance if balance_ok else 0.0,
+            free_balance=free_balance if is_balance_sufficient else 0.0,
             open_lots=open_lots,
         )
         await sell_logic.tick(sell_ctx, combo_state, self._client, account_state, repos, open_lots)
@@ -436,18 +436,18 @@ class AccountTrader:
         synced_oids: set[int] = set()
 
         # Step 1: Sync open orders per symbol from exchange (parallel fetch)
-        async def _fetch_open_orders(sym: str):
+        async def _fetch_open_orders(symbol: str):
             await self._rate_limiter.acquire(weight=3)
-            return sym, await self._client.get_open_orders(sym)
+            return symbol, await self._client.get_open_orders(symbol)
 
         open_order_results = await asyncio.gather(
-            *[_fetch_open_orders(sym) for sym in symbols],
+            *[_fetch_open_orders(symbol) for symbol in symbols],
             return_exceptions=True,
         )
         all_open_orders: list[dict] = []
-        for sym, result in zip(symbols, open_order_results, strict=False):
+        for symbol, result in zip(symbols, open_order_results, strict=False):
             if isinstance(result, Exception):
-                logger.warning("Open orders sync failed for %s: %s", sym, result)
+                logger.warning("Open orders sync failed for %s: %s", symbol, result)
                 continue
             _, ex_open = result
             for o in ex_open:
@@ -470,9 +470,9 @@ class AccountTrader:
             order_symbol_map = {row[0]: row[1] for row in order_sym_result.all()}
 
             async def _fetch_order_data(oid: int):
-                sym = order_symbol_map.get(oid, account.symbol)
+                symbol = order_symbol_map.get(oid, account.symbol)
                 await self._rate_limiter.acquire(weight=1)
-                return oid, await self._client.get_order(oid, sym)
+                return oid, await self._client.get_order(oid, symbol)
 
             # API calls in parallel, DB writes sequential (AsyncSession is not concurrency-safe)
             results = await asyncio.gather(
@@ -503,22 +503,22 @@ class AccountTrader:
             logger.warning("MAX(trade_id) lookup failed, falling back to full fetch")
             last_trade_ids = {}
 
-        async def _fetch_trades(sym: str):
+        async def _fetch_trades(symbol: str):
             await self._rate_limiter.acquire(weight=5)
-            last_id = last_trade_ids.get(sym)
+            last_id = last_trade_ids.get(symbol)
             if last_id is not None:
-                return sym, await self._client.get_my_trades_from_id(sym, from_id=last_id + 1)
-            return sym, await self._client.get_my_trades(sym)
+                return symbol, await self._client.get_my_trades_from_id(symbol, from_id=last_id + 1)
+            return symbol, await self._client.get_my_trades(symbol)
 
         trade_results = await asyncio.gather(
-            *[_fetch_trades(sym) for sym in symbols],
+            *[_fetch_trades(symbol) for symbol in symbols],
             return_exceptions=True,
         )
 
         symbols_with_new_fills: set[str] = set()
-        for sym, result in zip(symbols, trade_results, strict=False):
+        for symbol, result in zip(symbols, trade_results, strict=False):
             if isinstance(result, Exception):
-                logger.warning("Fills sync failed for %s: %s", sym, result)
+                logger.warning("Fills sync failed for %s: %s", symbol, result)
                 continue
             _, trades = result
             try:
@@ -535,12 +535,12 @@ class AccountTrader:
                     await order_repo.insert_fills_batch(self.account_id, fill_rows)
 
                 if trades:
-                    symbols_with_new_fills.add(sym)
+                    symbols_with_new_fills.add(symbol)
 
                 # Parallel fetch for unseen order IDs (API parallel, DB sequential)
                 if unseen_oids:
 
-                    async def _fetch_fill_order_data(fill_oid: int, fill_sym: str = sym):
+                    async def _fetch_fill_order_data(fill_oid: int, fill_sym: str = symbol):
                         await self._rate_limiter.acquire(weight=1)
                         return fill_oid, await self._client.get_order(fill_oid, fill_sym)
 
@@ -558,11 +558,11 @@ class AccountTrader:
                         except Exception as e:
                             logger.warning("Fill order %s upsert failed: %s", fill_oid, e)
             except Exception as e:
-                logger.warning("Fills processing failed for %s: %s", sym, e)
+                logger.warning("Fills processing failed for %s: %s", symbol, e)
 
         # 4-6: Conditional recompute — only for symbols with new fills
-        for sym in symbols_with_new_fills:
-            await position_repo.recompute_from_fills(self.account_id, sym)
+        for symbol in symbols_with_new_fills:
+            await position_repo.recompute_from_fills(self.account_id, symbol)
 
     _ORPHAN_TP_RE = re.compile(r"^CMT_[0-9a-f]{8}_[0-9a-f]{8}__TP_(\d+)$")
 

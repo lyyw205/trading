@@ -36,14 +36,14 @@ async def admin_list_users(
     rows = result.all()
     return [
         {
-            "id": str(u.id),
-            "email": u.email,
-            "role": u.role,
-            "is_active": u.is_active,
-            "created_at": str(u.created_at),
-            "account_count": cnt,
+            "id": str(user_profile.id),
+            "email": user_profile.email,
+            "role": user_profile.role,
+            "is_active": user_profile.is_active,
+            "created_at": str(user_profile.created_at),
+            "account_count": account_count,
         }
-        for u, cnt in rows
+        for user_profile, account_count in rows
     ]
 
 

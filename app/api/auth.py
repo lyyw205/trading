@@ -14,22 +14,22 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 async def login(login_req: LoginRequest, request: Request):
     """이메일+비밀번호 로그인"""
     auth_service = request.app.state.auth_service
-    session_mgr = request.app.state.session_manager
+    session_manager = request.app.state.session_manager
 
     user = await auth_service.authenticate(login_req.email, login_req.password)
     if not user:
         raise HTTPException(status_code=401, detail="이메일 또는 비밀번호가 올바르지 않습니다.")
 
-    cookie_value = session_mgr.create_session_cookie(user_id=user["id"], role=user["role"])
+    cookie_value = session_manager.create_session_cookie(user_id=user["id"], role=user["role"])
 
     response = LoginResponse(success=True, user=UserResponse(**user))
     json_resp = JSONResponse(content=response.model_dump())
 
     is_secure = not request.app.state.settings_debug
     json_resp.set_cookie(
-        key=session_mgr.cookie_name,
+        key=session_manager.cookie_name,
         value=cookie_value,
-        max_age=session_mgr.max_age,
+        max_age=session_manager.max_age,
         httponly=True,
         secure=is_secure,
         samesite="lax",
@@ -41,11 +41,11 @@ async def login(login_req: LoginRequest, request: Request):
 @limiter.limit("10/minute")
 async def logout(request: Request):
     """Clear session cookie"""
-    session_mgr = request.app.state.session_manager
+    session_manager = request.app.state.session_manager
     is_secure = not request.app.state.settings_debug
     response = RedirectResponse(url="/login", status_code=302)
     response.delete_cookie(
-        key=session_mgr.cookie_name,
+        key=session_manager.cookie_name,
         path="/",
         httponly=True,
         secure=is_secure,

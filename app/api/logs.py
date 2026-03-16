@@ -91,8 +91,8 @@ async def get_all_logs(
     if module:
         results = [e for e in results if e.get("module") == module]
     if search:
-        q = search.lower()
-        results = [e for e in results if q in (e.get("msg") or "").lower()]
+        search_lower = search.lower()
+        results = [e for e in results if search_lower in (e.get("msg") or "").lower()]
     return results
 
 

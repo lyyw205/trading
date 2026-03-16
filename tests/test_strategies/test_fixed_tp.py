@@ -168,7 +168,7 @@ async def test_filled_sell_closes_lot():
     db_order.order_id = 99999
     db_order.status = "FILLED"
     db_order.executed_qty = Decimal("0.001")
-    db_order.cumulative_quote_qty = Decimal("51.65")
+    db_order.cum_quote_qty = Decimal("51.65")
     db_order.update_time_ms = 2000000
     repos.order.get_order = AsyncMock(return_value=db_order)
 
@@ -250,7 +250,7 @@ async def test_profit_added_to_pending_earnings():
     db_order.order_id = 99999
     db_order.status = "FILLED"
     db_order.executed_qty = Decimal("0.001")
-    db_order.cumulative_quote_qty = Decimal("51.65")
+    db_order.cum_quote_qty = Decimal("51.65")
     db_order.update_time_ms = 2000000
     repos.order.get_order = AsyncMock(return_value=db_order)
 
@@ -279,7 +279,7 @@ async def test_negative_profit_not_added():
     db_order.order_id = 99999
     db_order.status = "FILLED"
     db_order.executed_qty = Decimal("0.001")
-    db_order.cumulative_quote_qty = Decimal("51.65")
+    db_order.cum_quote_qty = Decimal("51.65")
     db_order.update_time_ms = 2000000
     repos.order.get_order = AsyncMock(return_value=db_order)
 

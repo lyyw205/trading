@@ -145,7 +145,7 @@ class FixedTpSell(BaseSellLogic):
                     "orderId": db_order.order_id,
                     "status": db_order.status,
                     "executedQty": str(db_order.executed_qty or 0),
-                    "cummulativeQuoteQty": str(db_order.cumulative_quote_qty or 0),
+                    "cummulativeQuoteQty": str(db_order.cum_quote_qty or 0),
                     "updateTime": db_order.update_time_ms or 0,
                 }
             else:
