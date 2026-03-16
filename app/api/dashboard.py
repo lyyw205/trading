@@ -255,6 +255,14 @@ async def get_trades(
     return [OrderResponse.model_validate(o) for o in result.scalars().all()]
 
 
+def _candle_to_dict(c) -> dict:
+    """ORM 캔들 → dict 변환."""
+    d = {"ts_ms": c.ts_ms, "open": float(c.open), "high": float(c.high), "low": float(c.low), "close": float(c.close)}
+    if hasattr(c, "volume"):
+        d["volume"] = float(c.volume)
+    return d
+
+
 @router.get("/{account_id}/price_candles")
 @limiter.limit("120/minute")
 async def get_price_candles(
@@ -275,58 +283,54 @@ async def get_price_candles(
         default_spans = {"1m": 6 * 3600_000, "5m": 24 * 3600_000, "1h": 7 * 86400_000, "1d": 90 * 86400_000}
         from_ms = to_ms - default_spans.get(interval, 24 * 3600_000)
 
-    candles = await get_candles(target_symbol, from_ms, to_ms, session, interval=interval)
+    # 1m은 그대로 테이블 조회
+    if interval == "1m":
+        candles = await get_candles(target_symbol, from_ms, to_ms, session, interval="1m")
+        return [_candle_to_dict(c) for c in candles]
 
-    # Fallback: if no candles in default range, fetch whatever exists (last 500)
-    if not candles:
-        from app.models.price_candle import PriceCandle1d, PriceCandle1h, PriceCandle1m, PriceCandle5m
+    # 5m/1h/1d: 기존 집계 테이블 + 최근 1m 실시간 집계 병합
+    # - 기존 테이블: CandleAggregator가 배치로 집계한 과거 데이터
+    # - 1m 실시간 집계: 아직 배치 집계되지 않은 최근 데이터를 read-time에 계산
+    #
+    # TODO: 유저 100명+ 동시 접속 시 부하가 발생하면 아래 방안 검토:
+    # 1) 심볼+타임프레임별 인메모리 캐시 (TTL 5분)
+    # 2) CandleAggregator 주기를 6시간 → 5분으로 단축 (DB 저장량 증가)
+    # 3) API 응답에 Cache-Control 헤더 추가 (브라우저 캐시)
 
-        _models = {"1m": PriceCandle1m, "5m": PriceCandle5m, "1h": PriceCandle1h, "1d": PriceCandle1d}
-        model = _models.get(interval, PriceCandle1m)
-        fallback_stmt = select(model).where(model.symbol == target_symbol).order_by(model.ts_ms.desc()).limit(500)
-        fallback_result = await session.execute(fallback_stmt)
-        candles = list(reversed(fallback_result.scalars().all()))
+    bucket_ms = {"5m": 300_000, "1h": 3_600_000, "1d": 86_400_000}[interval]
+    buckets: dict[int, dict] = {}
 
-    # Fallback: if higher-TF table is empty, aggregate from 1m on the fly
-    if not candles and interval != "1m":
-        raw = await get_candles(target_symbol, from_ms, to_ms, session, interval="1m")
-        if raw:
-            bucket_sec = {"5m": 300, "1h": 3600, "1d": 86400}[interval]
-            bucket_ms = bucket_sec * 1000
-            buckets: dict[int, dict] = {}
-            for c in raw:
-                key = (c.ts_ms // bucket_ms) * bucket_ms
-                if key not in buckets:
-                    buckets[key] = {
-                        "ts_ms": key,
-                        "open": float(c.open),
-                        "high": float(c.high),
-                        "low": float(c.low),
-                        "close": float(c.close),
-                        "volume": float(c.volume) if hasattr(c, "volume") else 0.0,
-                    }
-                else:
-                    b = buckets[key]
-                    b["high"] = max(b["high"], float(c.high))
-                    b["low"] = min(b["low"], float(c.low))
-                    b["close"] = float(c.close)
-                    if hasattr(c, "volume"):
-                        b["volume"] = b.get("volume", 0.0) + float(c.volume)
-            return sorted(buckets.values(), key=lambda x: x["ts_ms"])
+    # Step 1: 기존 집계 테이블에서 조회
+    pre_agg = await get_candles(target_symbol, from_ms, to_ms, session, interval=interval)
+    for c in pre_agg:
+        buckets[c.ts_ms] = _candle_to_dict(c)
 
-    result = []
-    for c in candles:
-        d = {
-            "ts_ms": c.ts_ms,
-            "open": float(c.open),
-            "high": float(c.high),
-            "low": float(c.low),
-            "close": float(c.close),
-        }
-        if hasattr(c, "volume"):
-            d["volume"] = float(c.volume)
-        result.append(d)
-    return result
+    # Step 2: 1m 데이터에서 실시간 집계 (아직 배치 집계 안 된 구간 포함)
+    pre_agg_keys = {c.ts_ms for c in pre_agg}
+    raw_1m = await get_candles(target_symbol, from_ms, to_ms, session, interval="1m")
+    for c in raw_1m:
+        key = (c.ts_ms // bucket_ms) * bucket_ms
+        # 기존 집계 데이터가 있는 버킷은 건너뜀 (이미 정확)
+        if key in pre_agg_keys:
+            continue
+        if key not in buckets:
+            buckets[key] = {
+                "ts_ms": key,
+                "open": float(c.open),
+                "high": float(c.high),
+                "low": float(c.low),
+                "close": float(c.close),
+                "volume": float(c.volume) if hasattr(c, "volume") else 0.0,
+            }
+        else:
+            b = buckets[key]
+            b["high"] = max(b["high"], float(c.high))
+            b["low"] = min(b["low"], float(c.low))
+            b["close"] = float(c.close)
+            if hasattr(c, "volume"):
+                b["volume"] = b.get("volume", 0.0) + float(c.volume)
+
+    return sorted(buckets.values(), key=lambda x: x["ts_ms"])
 
 
 @router.get("/{account_id}/asset_status", response_model=AssetStatus)
