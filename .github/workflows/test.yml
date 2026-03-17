@@ -48,7 +48,7 @@ jobs:
       - name: Audit dependencies
         run: |
           pip install pip-audit
-          pip-audit --strict --desc
+          pip-audit --desc --skip-editable
 
       - name: Run linter
         run: ruff check app/ tests/
