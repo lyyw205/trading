@@ -703,7 +703,20 @@ class AccountTrader:
                         await asyncio.sleep(120)
                         continue
                     elif err_type == ErrorType.BALANCE:
-                        logger.warning("Balance-related error (no CB count): %s", e)
+                        logger.warning("Balance-related error → feeding back to BuyPauseManager: %s", e)
+                        # 잔고 부족을 BuyPauseManager에 피드백 (THROTTLED → PAUSED 전환)
+                        self._consecutive_low_balance += 1
+                        if self._buy_pause_mgr:
+                            new_state, new_count = self._buy_pause_mgr.update_state(
+                                current_state=self._buy_pause_state,
+                                is_balance_sufficient=False,
+                                did_sell_occur=False,
+                                consecutive_low_balance=self._consecutive_low_balance,
+                            )
+                            if new_state != self._buy_pause_state:
+                                logger.info("BuyPause: %s → %s (balance error)", self._buy_pause_state, new_state)
+                                self._buy_pause_state = new_state
+                                self._consecutive_low_balance = new_count
                         await asyncio.sleep(30)
                         continue
                     else:

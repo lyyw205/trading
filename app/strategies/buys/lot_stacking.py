@@ -451,6 +451,10 @@ class LotStackingBuy(BaseBuyLogic):
             )
         except Exception as exc:
             logger.error("lot_stacking_buy: place LOT buy failed: %s", exc)
+            from app.utils.error_classification import ErrorType, classify_error
+
+            if classify_error(exc) == ErrorType.BALANCE:
+                raise  # BuyPauseManager 피드백을 위해 account_trader로 전파
             return
 
         await repos.order.upsert_order(ctx.account_id, order_resp)
