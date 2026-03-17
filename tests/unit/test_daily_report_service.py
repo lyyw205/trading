@@ -214,8 +214,18 @@ def _make_report(
     discord_sent_at=None,
     summary: dict | None = None,
 ) -> MagicMock:
-    report = MagicMock(spec=["id", "report_date", "health_score", "summary", "telegram_sent_at", "discord_sent_at",
-                              "period_start", "period_end"])
+    report = MagicMock(
+        spec=[
+            "id",
+            "report_date",
+            "health_score",
+            "summary",
+            "telegram_sent_at",
+            "discord_sent_at",
+            "period_start",
+            "period_end",
+        ]
+    )
     report.id = uuid.uuid4()
     report.report_date = report_date
     report.health_score = health_score
