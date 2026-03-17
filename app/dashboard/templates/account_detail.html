@@ -359,6 +359,7 @@
 .log-level-DEBUG { color:var(--text-muted); }
 .log-module { color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .log-msg { color:var(--text-primary); word-break:break-word; }
+.log-original { display:block; color:var(--text-muted); font-size:0.75rem; margin-top:2px; font-family:monospace; }
 .log-empty { text-align:center; color:var(--text-muted); padding:2rem; }
 </style>
 {% endblock %}
@@ -396,7 +397,7 @@ const _userLogTranslations = [
 
 function _translateUserLog(msg) {
   for (const t of _userLogTranslations) {
-    if (t.regex.test(msg)) return t.korean;
+    if (t.regex.test(msg)) return { korean: t.korean, original: msg };
   }
   return null;
 }
@@ -436,9 +437,11 @@ async function loadAccountLogs() {
       const lvl = log.level || 'INFO';
       const mod = log.module || '';
       const rawMsg = log.msg || '';
-      const korean = _translateUserLog(rawMsg);
-      const displayMsg = korean ? escapeHtml(korean) : escapeHtml(rawMsg);
-      const tooltip = korean ? ' title="' + escapeHtml(rawMsg) + '"' : '';
+      const translated = _translateUserLog(rawMsg);
+      const displayMsg = translated
+        ? escapeHtml(translated.korean) + ' <span class="log-original">' + escapeHtml(translated.original) + '</span>'
+        : escapeHtml(rawMsg);
+      const tooltip = translated ? ' title="' + escapeHtml(translated.original) + '"' : '';
       html += '<div class="log-entry">'
         + '<span class="log-ts">' + ts + '</span>'
         + '<span class="log-level log-level-' + lvl + '">' + lvl + '</span>'
