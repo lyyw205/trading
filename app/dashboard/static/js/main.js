@@ -892,6 +892,62 @@ function switchLotStatus(status) {
   document.getElementById('lots-closed-view').style.display = status === 'CLOSED' ? '' : 'none';
 }
 
+/**
+ * Shared pagination renderer with ellipsis support.
+ * @param {object} opts
+ * @param {string}   opts.containerId  - ID of the container element
+ * @param {number}   opts.total        - total item count
+ * @param {number}   opts.totalPages   - total page count
+ * @param {number}   opts.currentPage  - zero-based current page index
+ * @param {number}   opts.perPage      - items per page
+ * @param {string}   opts.goPageFn     - name of the global go-page function
+ */
+function _renderPagination({ containerId, total, totalPages, currentPage, perPage, goPageFn }) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  if (totalPages <= 1) { container.innerHTML = ''; return; }
+
+  const start = currentPage * perPage + 1;
+  const end = Math.min((currentPage + 1) * perPage, total);
+  const isFirst = currentPage === 0;
+  const isLast = currentPage >= totalPages - 1;
+
+  // Build page number list with ellipsis
+  const pages = [];
+  if (totalPages <= 7) {
+    for (let i = 0; i < totalPages; i++) pages.push(i);
+  } else {
+    pages.push(0);
+    if (currentPage > 3) pages.push('...');
+    for (let i = Math.max(1, currentPage - 2); i <= Math.min(totalPages - 2, currentPage + 2); i++) {
+      pages.push(i);
+    }
+    if (currentPage < totalPages - 4) pages.push('...');
+    pages.push(totalPages - 1);
+  }
+
+  let html = '<div class="pagination">';
+  html += `<span class="pagination-info">${total}건 중 ${start}–${end}건</span>`;
+
+  // Prev arrow
+  html += `<button class="pagination-nav" onclick="${goPageFn}(${currentPage - 1})" ${isFirst ? 'disabled' : ''} aria-label="이전">&#8249;</button>`;
+
+  // Page buttons
+  for (const p of pages) {
+    if (p === '...') {
+      html += `<span class="pagination-btn pagination-ellipsis">…</span>`;
+    } else {
+      html += `<button class="pagination-btn${p === currentPage ? ' active' : ''}" onclick="${goPageFn}(${p})" aria-label="${p + 1}페이지"${p === currentPage ? ' aria-current="page"' : ''}>${p + 1}</button>`;
+    }
+  }
+
+  // Next arrow
+  html += `<button class="pagination-nav" onclick="${goPageFn}(${currentPage + 1})" ${isLast ? 'disabled' : ''} aria-label="다음">&#8250;</button>`;
+  html += '</div>';
+
+  container.innerHTML = html;
+}
+
 async function loadLots(accountId) {
   try {
     const resp = await apiFetch('/api/dashboard/' + accountId + '/lots');
@@ -953,23 +1009,14 @@ function _renderLots(filter) {
 }
 
 function _renderLotsPagination(total, totalPages) {
-  const container = document.getElementById('lots-pagination');
-  if (!container) return;
-  if (totalPages <= 1) { container.innerHTML = ''; return; }
-  let html = '<div class="pagination">';
-  html += `<span class="pagination-info">${total}건 중 ${_lotsPage * LOTS_PER_PAGE + 1}-${Math.min((_lotsPage + 1) * LOTS_PER_PAGE, total)}건</span>`;
-  html += `<button class="pagination-btn" onclick="lotsGoPage(0)" ${_lotsPage === 0 ? 'disabled' : ''}>&laquo;</button>`;
-  html += `<button class="pagination-btn" onclick="lotsGoPage(${_lotsPage - 1})" ${_lotsPage === 0 ? 'disabled' : ''}>&lsaquo;</button>`;
-  // Show max 5 page buttons around current page
-  const startP = Math.max(0, _lotsPage - 2);
-  const endP = Math.min(totalPages, startP + 5);
-  for (let p = startP; p < endP; p++) {
-    html += `<button class="pagination-btn${p === _lotsPage ? ' active' : ''}" onclick="lotsGoPage(${p})">${p + 1}</button>`;
-  }
-  html += `<button class="pagination-btn" onclick="lotsGoPage(${_lotsPage + 1})" ${_lotsPage >= totalPages - 1 ? 'disabled' : ''}>&rsaquo;</button>`;
-  html += `<button class="pagination-btn" onclick="lotsGoPage(${totalPages - 1})" ${_lotsPage >= totalPages - 1 ? 'disabled' : ''}>&raquo;</button>`;
-  html += '</div>';
-  container.innerHTML = html;
+  _renderPagination({
+    containerId: 'lots-pagination',
+    total,
+    totalPages,
+    currentPage: _lotsPage,
+    perPage: LOTS_PER_PAGE,
+    goPageFn: 'lotsGoPage',
+  });
 }
 
 /* ============================================================
@@ -1046,22 +1093,14 @@ function _renderClosedLots() {
 }
 
 function _renderClosedLotsPagination(total, totalPages) {
-  const container = document.getElementById('closed-lots-pagination');
-  if (!container) return;
-  if (totalPages <= 1) { container.innerHTML = ''; return; }
-  let html = '<div class="pagination">';
-  html += `<span class="pagination-info">${total}건 중 ${_closedLotsPage * CLOSED_LOTS_PER_PAGE + 1}-${Math.min((_closedLotsPage + 1) * CLOSED_LOTS_PER_PAGE, total)}건</span>`;
-  html += `<button class="pagination-btn" onclick="closedLotsGoPage(0)" ${_closedLotsPage === 0 ? 'disabled' : ''}>&laquo;</button>`;
-  html += `<button class="pagination-btn" onclick="closedLotsGoPage(${_closedLotsPage - 1})" ${_closedLotsPage === 0 ? 'disabled' : ''}>&lsaquo;</button>`;
-  const startP = Math.max(0, _closedLotsPage - 2);
-  const endP = Math.min(totalPages, startP + 5);
-  for (let p = startP; p < endP; p++) {
-    html += `<button class="pagination-btn${p === _closedLotsPage ? ' active' : ''}" onclick="closedLotsGoPage(${p})">${p + 1}</button>`;
-  }
-  html += `<button class="pagination-btn" onclick="closedLotsGoPage(${_closedLotsPage + 1})" ${_closedLotsPage >= totalPages - 1 ? 'disabled' : ''}>&rsaquo;</button>`;
-  html += `<button class="pagination-btn" onclick="closedLotsGoPage(${totalPages - 1})" ${_closedLotsPage >= totalPages - 1 ? 'disabled' : ''}>&raquo;</button>`;
-  html += '</div>';
-  container.innerHTML = html;
+  _renderPagination({
+    containerId: 'closed-lots-pagination',
+    total,
+    totalPages,
+    currentPage: _closedLotsPage,
+    perPage: CLOSED_LOTS_PER_PAGE,
+    goPageFn: 'closedLotsGoPage',
+  });
 }
 
 /* ============================================================
