@@ -39,7 +39,7 @@ jobs:
             ${{ env.IMAGE_NAME }}:latest
 
       - name: Scan image for vulnerabilities
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.31.0
         with:
           image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
           format: table
