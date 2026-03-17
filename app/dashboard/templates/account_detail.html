@@ -40,60 +40,59 @@
   </div>
 </section>
 
-<!-- Section 3: LOT Table -->
+<!-- Section 3: Lots (unified) -->
 <section class="dashboard-section">
   <div class="section-header">
-    <h2 class="section-title">Open Lots</h2>
-    <div class="filter-tabs" id="lot-filter-tabs">
-      <button class="filter-tab active" data-filter="all" onclick="filterLots('all')">All</button>
+    <h2 class="section-title">Lots</h2>
+    <div class="filter-tabs" id="lot-status-tabs">
+      <button class="filter-tab active" data-status="OPEN" onclick="switchLotStatus('OPEN')">Open</button>
+      <button class="filter-tab" data-status="CLOSED" onclick="switchLotStatus('CLOSED')">Filled</button>
     </div>
   </div>
-  <div class="table-wrapper">
-    <table class="data-table" id="lots-table">
-      <thead>
-        <tr>
-          <th>#</th>
-          <th>Strategy</th>
-          <th>Buy Price</th>
-          <th>Qty</th>
-          <th>Cost</th>
-          <th>Sell Price</th>
-          <th>P&amp;L%</th>
-          <th>Sell Order Status</th>
-        </tr>
-      </thead>
-      <tbody id="lots-tbody">
-        <tr><td colspan="8" class="table-empty">Loading...</td></tr>
-      </tbody>
-    </table>
-    <div id="lots-pagination"></div>
+  <div id="lots-open-view">
+    <div class="filter-tabs" id="lot-filter-tabs" style="margin-bottom:0.5rem;"></div>
+    <div class="table-wrapper">
+      <table class="data-table" id="lots-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Strategy</th>
+            <th>Buy Price</th>
+            <th>Qty</th>
+            <th>Cost</th>
+            <th>Sell Price</th>
+            <th>P&amp;L%</th>
+            <th>Sell Order Status</th>
+          </tr>
+        </thead>
+        <tbody id="lots-tbody">
+          <tr><td colspan="8" class="table-empty">Loading...</td></tr>
+        </tbody>
+      </table>
+      <div id="lots-pagination"></div>
+    </div>
   </div>
-</section>
-
-<!-- Closed Lots Table -->
-<section class="dashboard-section">
-  <div class="section-header">
-    <h2 class="section-title">거래 완료</h2>
-  </div>
-  <div class="table-wrapper">
-    <table class="data-table" id="closed-lots-table">
-      <thead>
-        <tr>
-          <th>#</th>
-          <th>Strategy</th>
-          <th>Buy Price</th>
-          <th>Qty</th>
-          <th>Cost</th>
-          <th>Sell Price</th>
-          <th>Profit</th>
-          <th>Sell Time</th>
-        </tr>
-      </thead>
-      <tbody id="closed-lots-tbody">
-        <tr><td colspan="8" class="table-empty">Loading...</td></tr>
-      </tbody>
-    </table>
-    <div id="closed-lots-pagination"></div>
+  <div id="lots-closed-view" style="display:none;">
+    <div class="table-wrapper">
+      <table class="data-table" id="closed-lots-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Strategy</th>
+            <th>Buy Price</th>
+            <th>Qty</th>
+            <th>Cost</th>
+            <th>Sell Price</th>
+            <th>Profit</th>
+            <th>Sell Time</th>
+          </tr>
+        </thead>
+        <tbody id="closed-lots-tbody">
+          <tr><td colspan="8" class="table-empty">Loading...</td></tr>
+        </tbody>
+      </table>
+      <div id="closed-lots-pagination"></div>
+    </div>
   </div>
 </section>
 

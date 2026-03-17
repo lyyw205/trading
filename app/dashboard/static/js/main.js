@@ -884,6 +884,14 @@ let _currentLotFilter = 'all';
 let _lotsPage = 0;
 const LOTS_PER_PAGE = 30;
 
+function switchLotStatus(status) {
+  document.querySelectorAll('#lot-status-tabs .filter-tab').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.status === status);
+  });
+  document.getElementById('lots-open-view').style.display = status === 'OPEN' ? '' : 'none';
+  document.getElementById('lots-closed-view').style.display = status === 'CLOSED' ? '' : 'none';
+}
+
 async function loadLots(accountId) {
   try {
     const resp = await apiFetch('/api/dashboard/' + accountId + '/lots');
