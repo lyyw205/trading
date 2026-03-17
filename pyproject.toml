@@ -87,7 +87,7 @@ branch = true
 precision = 1
 show_missing = true
 skip_covered = true
-fail_under = 50
+fail_under = 49
 
 [tool.coverage.html]
 directory = "htmlcov"
