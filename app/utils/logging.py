@@ -1,14 +1,11 @@
 from __future__ import annotations
 
 import collections
-import contextvars
 import json
 import logging
 from datetime import UTC, datetime
 
-current_account_id: contextvars.ContextVar[str] = contextvars.ContextVar("account_id", default="system")
-current_request_id: contextvars.ContextVar[str] = contextvars.ContextVar("request_id", default="-")
-current_cycle_id: contextvars.ContextVar[str] = contextvars.ContextVar("cycle_id", default="-")
+from app.utils.context import current_account_id, current_cycle_id, current_request_id  # noqa: F401
 
 
 class LogBuffer:

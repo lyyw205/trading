@@ -24,6 +24,9 @@ async def admin_client_with_engine(admin_client, mock_engine):
     """admin_client with trading_engine injected into app state."""
     app.state.trading_engine = mock_engine
     yield admin_client
+    # Teardown: remove trading_engine from app state to prevent test pollution
+    if hasattr(app.state, "trading_engine"):
+        del app.state.trading_engine
 
 
 # ---------------------------------------------------------------------------
@@ -31,6 +34,7 @@ async def admin_client_with_engine(admin_client, mock_engine):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_admin_accounts_requires_auth(app_client):
     """GET /api/admin/accounts without a session cookie must be rejected."""
@@ -43,6 +47,7 @@ async def test_admin_accounts_requires_auth(app_client):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_admin_accounts_returns_list(admin_client_with_engine):
     """GET /api/admin/accounts with admin auth must return 200 and a list."""
@@ -57,6 +62,7 @@ async def test_admin_accounts_returns_list(admin_client_with_engine):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_admin_overview_returns_stats(admin_client_with_engine):
     """GET /api/admin/overview must return 200 with expected top-level keys."""
@@ -74,6 +80,7 @@ async def test_admin_overview_returns_stats(admin_client_with_engine):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_admin_trades_pagination(admin_client_with_engine):
     """GET /api/admin/trades with limit/offset params must return 200 with pagination keys."""
@@ -93,6 +100,7 @@ async def test_admin_trades_pagination(admin_client_with_engine):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_admin_lots_filtering(admin_client_with_engine):
     """GET /api/admin/lots with status param must return 200 with pagination keys."""

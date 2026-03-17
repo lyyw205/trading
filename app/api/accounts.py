@@ -99,7 +99,7 @@ async def get_account(request: Request, account=Depends(get_owned_account)):
     return resp
 
 
-@router.put("/{account_id}", response_model=AccountResponse)
+@router.patch("/{account_id}", response_model=AccountResponse)
 @limiter.limit("30/minute")
 async def update_account(
     body: AccountUpdate,

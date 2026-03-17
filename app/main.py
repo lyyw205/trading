@@ -225,8 +225,12 @@ templates_dir = os.path.join(os.path.dirname(__file__), "dashboard", "templates"
 os.makedirs(templates_dir, exist_ok=True)
 app.state.templates = Jinja2Templates(directory=templates_dir)
 
-# Middleware (order matters: last added = first executed)
-# CSRF must be before AuthMiddleware so CSRF check happens on authenticated requests
+# Middleware execution order (FastAPI processes in REVERSE registration order):
+# 1. Request arrives → SecurityHeaders + NoCache (last registered = first to process)
+# 2. → CORS (handles preflight and cross-origin headers)
+# 3. → RequestId + Metrics (request tracking)
+# 4. → Auth (session/JWT resolution)
+# 5. → CSRF (validates token, auth context already available — innermost)
 app.add_middleware(
     CSRFMiddleware,
     secret=settings.csrf_secret,
@@ -238,12 +242,11 @@ app.add_middleware(LazyAuthMiddleware)
 app.add_middleware(MetricsMiddleware)
 app.add_middleware(RequestIdMiddleware)
 
-# CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in settings.cors_origins.split(",") if o.strip()],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "X-CSRF-Token", "X-CSRFToken"],
 )
 

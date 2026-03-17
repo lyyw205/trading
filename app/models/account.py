@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
@@ -17,11 +17,21 @@ class BuyPauseState(enum.StrEnum):
 
 class TradingAccount(TimestampMixin, Base):
     __tablename__ = "trading_accounts"
+    __table_args__ = (
+        CheckConstraint(
+            "buy_pause_state IN ('ACTIVE', 'THROTTLED', 'PAUSED')",
+            name="chk_buy_pause_state",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     owner_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("user_profiles.id", ondelete="CASCADE"), nullable=False)
     name: Mapped[str] = mapped_column(String, nullable=False)
     exchange: Mapped[str] = mapped_column(String, nullable=False, server_default="binance")
+    # DEPRECATED: Use TradingCombo.symbols instead. This column is kept for
+    # backward compatibility with code paths that have not yet migrated to
+    # combo-based symbol resolution. Target removal: when all 17 usage sites
+    # are migrated to TradingCombo.symbols.
     symbol: Mapped[str] = mapped_column(String, nullable=False, server_default="ETHUSDT")
     base_asset: Mapped[str] = mapped_column(String, nullable=False, server_default="ETH")
     quote_asset: Mapped[str] = mapped_column(String, nullable=False, server_default="USDT")

@@ -102,7 +102,7 @@ async def get_dashboard(
     )
 
 
-@router.get("/{account_id}/pending_earnings")
+@router.get("/{account_id}/pending-earnings")
 @limiter.limit("120/minute")
 async def get_pending_earnings(
     request: Request,
@@ -114,7 +114,7 @@ async def get_pending_earnings(
     return {"pending_earnings_usdt": earnings}
 
 
-@router.post("/{account_id}/approve_earnings", response_model=ApproveEarningsResponse)
+@router.post("/{account_id}/approve-earnings", response_model=ApproveEarningsResponse)
 @limiter.limit("10/minute")
 async def approve_earnings(
     request: Request,
@@ -127,7 +127,7 @@ async def approve_earnings(
     current_price = await engine.get_current_price(account.symbol)
 
     if current_price <= 0:
-        raise HTTPException(status_code=503, detail="현재가를 가져올 수 없습니다.")
+        raise HTTPException(status_code=503, detail="Unable to retrieve current price.")
 
     account_state = AccountStateManager(account.id, session)
 
@@ -265,7 +265,7 @@ def _candle_to_dict(c) -> dict:
     return d
 
 
-@router.get("/{account_id}/price_candles")
+@router.get("/{account_id}/price-candles")
 @limiter.limit("120/minute")
 async def get_price_candles(
     request: Request,
@@ -335,7 +335,7 @@ async def get_price_candles(
     return sorted(buckets.values(), key=lambda x: x["ts_ms"])
 
 
-@router.get("/{account_id}/asset_status", response_model=AssetStatus)
+@router.get("/{account_id}/asset-status", response_model=AssetStatus)
 @limiter.limit("120/minute")
 async def get_asset_status(
     request: Request,
@@ -458,7 +458,7 @@ async def get_asset_status(
     )
 
 
-@router.get("/{account_id}/trade_events")
+@router.get("/{account_id}/trade-events")
 @limiter.limit("120/minute")
 async def get_trade_events(
     request: Request,

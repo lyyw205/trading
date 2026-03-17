@@ -12,6 +12,7 @@ from app.dependencies import limiter, require_admin
 from app.models.account import TradingAccount
 from app.models.user import UserProfile
 from app.schemas.auth import CreateUserRequest, ResetPasswordRequest, SetActiveRequest, SetRoleRequest
+from app.schemas.common import MessageResponse
 from app.utils.logging import audit_log
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -47,7 +48,7 @@ async def admin_list_users(
     ]
 
 
-@router.put("/users/{user_id}/role")
+@router.patch("/users/{user_id}/role")
 @limiter.limit("30/minute")
 async def admin_set_role(
     user_id: str,
@@ -85,7 +86,7 @@ async def admin_create_user(req: CreateUserRequest, request: Request, admin: dic
     return {"status": "created", **new_user}
 
 
-@router.post("/users/{user_id}/reset-password")
+@router.post("/users/{user_id}/reset-password", response_model=MessageResponse)
 @limiter.limit("10/minute")
 async def admin_reset_password(
     user_id: str, req: ResetPasswordRequest, request: Request, admin: dict = Depends(require_admin)
@@ -104,7 +105,7 @@ async def admin_reset_password(
     return {"status": "password_reset"}
 
 
-@router.put("/users/{user_id}/active")
+@router.patch("/users/{user_id}/active")
 @limiter.limit("10/minute")
 async def admin_set_active(user_id: str, req: SetActiveRequest, request: Request, admin: dict = Depends(require_admin)):
     """관리자: 계정 활성/비활성화"""

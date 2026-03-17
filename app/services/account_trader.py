@@ -252,16 +252,13 @@ class AccountTrader:
                     self._throttle_cycle,
                 )
 
-                # Snapshot open lot count BEFORE any buy/sell (account-wide, matches after query)
-                open_lots_before_stmt = (
-                    select(func.count())
-                    .select_from(Lot)
-                    .where(
-                        Lot.account_id == self.account_id,
-                        Lot.status == "OPEN",
-                    )
-                )
-                open_lots_count_before = (await session.execute(open_lots_before_stmt)).scalar_one()
+                # Batch prefetch all open lots (replaces per-combo DB queries in the loop)
+                all_open_lots = await repos.lot.get_all_open_lots_for_account(self.account_id)
+                prefetched_lots: dict[tuple, list] = {}
+                for lot in all_open_lots:
+                    key = (lot.combo_id, lot.symbol)
+                    prefetched_lots.setdefault(key, []).append(lot)
+                open_lots_count_before = len(all_open_lots)
 
                 now = time.time()
                 if now - self._last_scan_log_at >= 3600:
@@ -276,7 +273,7 @@ class AccountTrader:
                     self._last_scan_log_at = now
 
                 for combo in combos:
-                    # Get symbols from combo (fallback to account symbol)
+                    # TODO: migrate to TradingCombo.symbols (legacy account.symbol fallback)
                     combo_symbols = combo.symbols if combo.symbols else [account.symbol]
 
                     for symbol in combo_symbols:
@@ -289,6 +286,7 @@ class AccountTrader:
                             repos,
                             session,
                             account_state,
+                            prefetched_lots,
                         )
 
                 # --- Sell detection: compare open lot count before/after strategies ---
@@ -351,6 +349,7 @@ class AccountTrader:
         repos: RepositoryBundle,
         session,
         account_state: AccountStateManager,
+        prefetched_lots: dict[tuple, list] | None = None,
     ) -> None:
         """Execute buy/sell strategies for a single combo×symbol pair."""
         try:
@@ -374,12 +373,15 @@ class AccountTrader:
         await combo_state.preload()
         prefix = f"CMT_{str(self.account_id)[:8]}_{str(combo.id)[:8]}_"
 
-        # Pre-fetch open lots once for both buy and sell
-        open_lots = await repos.lot.get_open_lots_by_combo(
-            self.account_id,
-            symbol,
-            combo.id,
-        )
+        # Use prefetched lots if available, otherwise fall back to DB query
+        if prefetched_lots is not None:
+            open_lots = prefetched_lots.get((combo.id, symbol), [])
+        else:
+            open_lots = await repos.lot.get_open_lots_by_combo(
+                self.account_id,
+                symbol,
+                combo.id,
+            )
         # Buy params (inject reference_combo_id if set)
         buy_params = buy_logic.validate_params(combo.buy_params or {})
         if combo.reference_combo_id:

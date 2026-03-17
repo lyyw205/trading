@@ -38,6 +38,20 @@ class LotRepository:
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
+    async def get_all_open_lots_for_account(self, account_id: UUID) -> list[Lot]:
+        """계정의 모든 OPEN 로트를 한번에 조회 (배치 프리페치용)."""
+        stmt = (
+            select(Lot)
+            .options(defer(Lot.metadata_))
+            .where(
+                Lot.account_id == account_id,
+                Lot.status == "OPEN",
+            )
+            .order_by(Lot.buy_time_ms.asc())
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
     async def get_open_lots_by_combo(
         self,
         account_id: UUID,

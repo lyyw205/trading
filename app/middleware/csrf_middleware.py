@@ -13,7 +13,6 @@ import re
 
 CSRF_EXEMPT_PATHS = [
     re.compile(r"^/health$"),
-    re.compile(r"^/api/auth/"),
-    re.compile(r"^/api/reports/"),
+    re.compile(r"^/api/auth/login$"),
     re.compile(r"^/metrics$"),
 ]

@@ -11,6 +11,7 @@ from app.db.session import get_trading_session
 from app.dependencies import get_current_user, get_owned_account, limiter
 from app.models.lot import Lot
 from app.models.trading_combo import TradingCombo
+from app.schemas.common import MessageResponse
 from app.schemas.strategy import (
     BuyLogicInfo,
     ComboCreate,
@@ -117,7 +118,7 @@ async def create_combo(
     return ComboResponse.model_validate(combo)
 
 
-@router.put("/accounts/{account_id}/combos/{combo_id}", response_model=ComboResponse)
+@router.patch("/accounts/{account_id}/combos/{combo_id}", response_model=ComboResponse)
 @limiter.limit("30/minute")
 async def update_combo(
     combo_id: UUID,
@@ -183,7 +184,7 @@ async def update_combo(
     return result
 
 
-@router.delete("/accounts/{account_id}/combos/{combo_id}")
+@router.delete("/accounts/{account_id}/combos/{combo_id}", response_model=MessageResponse)
 @limiter.limit("30/minute")
 async def delete_combo(
     combo_id: UUID,
@@ -230,7 +231,7 @@ async def delete_combo(
     return {"status": "deleted"}
 
 
-@router.post("/accounts/{account_id}/combos/{combo_id}/enable")
+@router.post("/accounts/{account_id}/combos/{combo_id}/enable", response_model=MessageResponse)
 @limiter.limit("30/minute")
 async def enable_combo(
     combo_id: UUID,
@@ -254,7 +255,7 @@ async def enable_combo(
     return {"status": "enabled"}
 
 
-@router.post("/accounts/{account_id}/combos/{combo_id}/disable")
+@router.post("/accounts/{account_id}/combos/{combo_id}/disable", response_model=MessageResponse)
 @limiter.limit("30/minute")
 async def disable_combo(
     combo_id: UUID,

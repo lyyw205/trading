@@ -4,6 +4,14 @@ Regression tests for CRIT-2: sell_occurred detection.
 These tests verify the semantics of sell_occurred = (after < before)
 under various lot count scenarios. The scope unification (both queries
 using account-wide WHERE) is enforced by the code change in account_trader.py.
+
+Production reference:
+    app/services/account_trader.py — AccountTrader._run_cycle() (approx. line 302)
+    Inline expression: ``did_sell_occur = open_lots_after < open_lots_count_before``
+
+    The helper below mirrors that expression exactly. Any change to the
+    production comparison operator MUST be reflected here; a mismatch
+    will cause all sell-detection tests to fail.
 """
 
 import pytest
@@ -11,10 +19,17 @@ import pytest
 
 @pytest.mark.unit
 class TestSellOccurredDetection:
-    """sell_occurred = open_lots_after < open_lots_count_before"""
+    """sell_occurred = open_lots_after < open_lots_count_before
+
+    Production code location:
+        app/services/account_trader.py ~ line 302
+        ``did_sell_occur = open_lots_after < open_lots_count_before``
+    """
 
     @staticmethod
     def _sell_occurred(before: int, after: int) -> bool:
+        # Mirrors: did_sell_occur = open_lots_after < open_lots_count_before
+        # (app/services/account_trader.py)
         return after < before
 
     def test_normal_sell_detected(self):

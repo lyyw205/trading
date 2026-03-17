@@ -9,7 +9,7 @@ import threading
 import uuid
 from datetime import UTC, datetime
 
-from app.utils.logging import current_account_id, current_cycle_id
+from app.utils.context import current_account_id, current_cycle_id
 
 # Logger names whose records should never be persisted (recursion guard).
 # Using logger name (dot-separated) instead of record.module (filename-based)

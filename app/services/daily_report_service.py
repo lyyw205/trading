@@ -149,6 +149,38 @@ class DailyReportService:
                     }
 
                 # ============================================================
+                # Section 1e: Detailed error/critical logs (상세 로그, 최대 100건)
+                # ============================================================
+                detail_logs_result = await session.execute(
+                    select(
+                        PersistentLog.logged_at,
+                        PersistentLog.level,
+                        PersistentLog.module,
+                        PersistentLog.message,
+                        PersistentLog.exception,
+                        PersistentLog.account_id,
+                    )
+                    .where(
+                        *period_filter,
+                        PersistentLog.level.in_(["ERROR", "CRITICAL"]),
+                    )
+                    .order_by(PersistentLog.logged_at.desc())
+                    .limit(100)
+                )
+                detail_logs: list[dict] = []
+                for row in detail_logs_result.all():
+                    detail_logs.append(
+                        {
+                            "logged_at": row.logged_at.isoformat(),
+                            "level": row.level,
+                            "module": row.module or "unknown",
+                            "message": row.message[:500] if row.message else "",
+                            "exception": row.exception[:1000] if row.exception else None,
+                            "account_id": str(row.account_id) if row.account_id else None,
+                        }
+                    )
+
+                # ============================================================
                 # Section 2: Hourly error distribution (시간대별)
                 # ============================================================
                 # Extract hour in KST (UTC + 9)
@@ -228,6 +260,82 @@ class DailyReportService:
                 # Ensure bought_lots exists for all accounts
                 for v in trading_perf.values():
                     v.setdefault("bought_lots", 0)
+
+                # ============================================================
+                # Section 3c: Detailed trade logs (개별 거래 내역)
+                # ============================================================
+                # Closed lots detail
+                detail_closed_result = await session.execute(
+                    select(
+                        Lot.lot_id,
+                        Lot.account_id,
+                        Lot.symbol,
+                        Lot.strategy_name,
+                        Lot.buy_price,
+                        Lot.buy_qty,
+                        Lot.buy_time,
+                        Lot.sell_price,
+                        Lot.sell_time,
+                        Lot.fee_usdt,
+                        Lot.net_profit_usdt,
+                    )
+                    .where(*lot_period_filter)
+                    .order_by(Lot.sell_time.desc())
+                    .limit(200)
+                )
+                detail_closed_lots: list[dict] = []
+                for row in detail_closed_result.all():
+                    hold_sec = (row.sell_time - row.buy_time).total_seconds() if row.sell_time and row.buy_time else 0
+                    detail_closed_lots.append(
+                        {
+                            "lot_id": row.lot_id,
+                            "account_id": str(row.account_id),
+                            "symbol": row.symbol,
+                            "strategy": row.strategy_name,
+                            "buy_price": _to_float(row.buy_price),
+                            "buy_qty": _to_float(row.buy_qty),
+                            "buy_time": row.buy_time.isoformat() if row.buy_time else None,
+                            "sell_price": _to_float(row.sell_price),
+                            "sell_time": row.sell_time.isoformat() if row.sell_time else None,
+                            "fee_usdt": _to_float(row.fee_usdt),
+                            "net_profit_usdt": _to_float(row.net_profit_usdt),
+                            "hold_minutes": round(hold_sec / 60, 1),
+                        }
+                    )
+
+                # Bought lots detail
+                detail_bought_result = await session.execute(
+                    select(
+                        Lot.lot_id,
+                        Lot.account_id,
+                        Lot.symbol,
+                        Lot.strategy_name,
+                        Lot.buy_price,
+                        Lot.buy_qty,
+                        Lot.buy_time,
+                        Lot.status,
+                    )
+                    .where(
+                        Lot.buy_time >= period_start_utc,
+                        Lot.buy_time < period_end_utc,
+                    )
+                    .order_by(Lot.buy_time.desc())
+                    .limit(200)
+                )
+                detail_bought_lots: list[dict] = []
+                for row in detail_bought_result.all():
+                    detail_bought_lots.append(
+                        {
+                            "lot_id": row.lot_id,
+                            "account_id": str(row.account_id),
+                            "symbol": row.symbol,
+                            "strategy": row.strategy_name,
+                            "buy_price": _to_float(row.buy_price),
+                            "buy_qty": _to_float(row.buy_qty),
+                            "buy_time": row.buy_time.isoformat() if row.buy_time else None,
+                            "status": row.status,
+                        }
+                    )
 
                 # ============================================================
                 # Section 4: Account status (계정 상태, 스냅샷)
@@ -423,6 +531,40 @@ class DailyReportService:
                 }
 
                 # ============================================================
+                # Section 6b: Detailed reconciliation events (정합성 상세)
+                # ============================================================
+                detail_recon_result = await session.execute(
+                    select(
+                        ReconciliationLog.account_id,
+                        ReconciliationLog.checked_at,
+                        ReconciliationLog.status,
+                        ReconciliationLog.position_diffs,
+                        ReconciliationLog.balance_diff,
+                        ReconciliationLog.fill_gaps,
+                        ReconciliationLog.auto_resolved,
+                    )
+                    .where(
+                        *recon_period_filter,
+                        ReconciliationLog.status.in_(["drift_detected", "error"]),
+                    )
+                    .order_by(ReconciliationLog.checked_at.desc())
+                    .limit(50)
+                )
+                detail_recon_events: list[dict] = []
+                for row in detail_recon_result.all():
+                    detail_recon_events.append(
+                        {
+                            "account_id": str(row.account_id),
+                            "checked_at": row.checked_at.isoformat(),
+                            "status": row.status,
+                            "position_diffs": row.position_diffs,
+                            "balance_diff": row.balance_diff,
+                            "fill_gaps": row.fill_gaps,
+                            "auto_resolved": row.auto_resolved,
+                        }
+                    )
+
+                # ============================================================
                 # Section 7: Server health (서버 안정성)
                 # ============================================================
                 server_health = await self._collect_server_health(session)
@@ -466,6 +608,11 @@ class DailyReportService:
                     "reconciliation": reconciliation,
                     # Server health (서버 안정성)
                     "server_health": server_health,
+                    # ---- Detail sections (상세 데이터, 분석용) ----
+                    "detail_logs": detail_logs,
+                    "detail_closed_lots": detail_closed_lots,
+                    "detail_bought_lots": detail_bought_lots,
+                    "detail_recon_events": detail_recon_events,
                 }
 
                 # Create report

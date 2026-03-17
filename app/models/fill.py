@@ -15,6 +15,7 @@ class Fill(Base):
         Index("idx_fills_account_time", "account_id", "trade_time_ms"),
         Index("idx_fills_inserted_at", "inserted_at"),
         Index("idx_fills_account_symbol", "account_id", "symbol"),
+        Index("idx_fills_account_order", "account_id", "order_id"),
     )
 
     trade_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)

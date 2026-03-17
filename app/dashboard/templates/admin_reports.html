@@ -265,6 +265,19 @@
     font-size: 0.78rem;
     color: var(--text-secondary);
 }
+.download-btns { display: flex; gap: 4px; }
+.btn-dl {
+    padding: 3px 8px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--card-bg);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+.btn-dl:hover { background: var(--accent, #3b82f6); color: #fff; border-color: var(--accent, #3b82f6); }
 .empty-state {
     text-align: center;
     padding: 48px 20px;
@@ -282,6 +295,106 @@
 </style>
 
 <script>
+let _reportsData = [];
+
+function _downloadFile(filename, content, mime) {
+    const blob = new Blob([content], { type: mime });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+}
+
+function downloadReportJSON(idx) {
+    const report = _reportsData[idx];
+    if (!report) return;
+    const json = JSON.stringify(report, null, 2);
+    _downloadFile(`report_${report.report_date}.json`, json, 'application/json');
+}
+
+function downloadReportText(idx) {
+    const report = _reportsData[idx];
+    if (!report) return;
+    const s = report.summary || {};
+    const tt = s.trading_totals || {};
+    const recon = s.reconciliation || {};
+    const portfolio = s.portfolio || {};
+    const sh = s.server_health || {};
+
+    let lines = [];
+    lines.push(`일일 리포트 — ${report.report_date}`);
+    lines.push('━'.repeat(40));
+    lines.push(`건강 점수: ${parseFloat(report.health_score).toFixed(0)} / 100`);
+    lines.push(`생성 시각: ${report.generated_at}`);
+    lines.push('');
+
+    // 장애 현황
+    lines.push('[ 장애 현황 ]');
+    lines.push(`  CRITICAL: ${s.total_criticals || 0}건 | ERROR: ${s.total_errors || 0}건`);
+    lines.push(`  CB 발동: ${s.cb_events || 0}회`);
+    const topMods = (s.top_error_modules || []).map(m => `${m.module}(${m.count})`).join(', ');
+    if (topMods) lines.push(`  주요 모듈: ${topMods}`);
+    lines.push('');
+
+    // 거래 성과
+    lines.push('[ 거래 성과 ]');
+    lines.push(`  매수: ${tt.total_bought || 0}건 | 매도: ${tt.total_closed || 0}건`);
+    const profit = parseFloat(tt.total_profit_usdt) || 0;
+    lines.push(`  실현 손익: ${profit >= 0 ? '+' : ''}${profit.toFixed(2)} USDT`);
+    lines.push(`  수수료: ${parseFloat(tt.total_fees_usdt || 0).toFixed(2)} USDT`);
+    lines.push('');
+
+    // 계정별 요약
+    const accounts = s.accounts || [];
+    if (accounts.length) {
+        lines.push('[ 계정별 요약 ]');
+        for (const a of accounts) {
+            const name = a.name || String(a.account_id).slice(0, 8);
+            const icon = a.cb_status === 'healthy' ? '[정상]' : a.cb_status === 'disabled' ? '[중단]' : '[주의]';
+            const p = parseFloat(a.net_profit_usdt) || 0;
+            const wr = ((parseFloat(a.win_rate) || 0) * 100).toFixed(1);
+            lines.push(`  ${icon} ${name}: ${p >= 0 ? '+' : ''}${p.toFixed(2)} USDT (매수:${a.bought_lots || 0} 매도:${a.closed_lots || 0} 승률:${wr}% ERR:${a.errors || 0})`);
+            if (a.buy_pause_state && a.buy_pause_state !== 'ACTIVE') {
+                lines.push(`       매수상태: ${a.buy_pause_state}${a.buy_pause_reason ? ' (' + a.buy_pause_reason + ')' : ''}`);
+            }
+        }
+        lines.push('');
+    }
+
+    // 포트폴리오
+    lines.push('[ 포트폴리오 ]');
+    lines.push(`  총 투자원금: ${parseFloat(portfolio.total_cost_basis_usdt || 0).toFixed(2)} USDT`);
+    lines.push(`  보유 포지션: ${portfolio.total_open_positions || 0}개 | 오픈 Lot: ${portfolio.total_open_lots || 0}개`);
+    const perAcct = portfolio.per_account || {};
+    for (const [acctId, data] of Object.entries(perAcct)) {
+        lines.push(`  ${acctId.slice(0,8)}... (원금: ${parseFloat(data.cost_basis_usdt || 0).toFixed(2)} USDT, Lots: ${data.open_lots || 0})`);
+        for (const pos of (data.positions || [])) {
+            lines.push(`    - ${pos.symbol}: ${parseFloat(pos.qty).toFixed(4)} @ ${parseFloat(pos.avg_entry).toFixed(2)} (${parseFloat(pos.cost_basis_usdt).toFixed(2)} USDT)`);
+        }
+    }
+    lines.push('');
+
+    // 정합성
+    if (recon.total_drifts > 0) {
+        lines.push('[ 정합성 ]');
+        lines.push(`  Drift: ${recon.total_drifts}건 (자동해소: ${recon.total_auto_resolved || 0}, 수동필요: ${recon.total_manual_needed || 0})`);
+        lines.push('');
+    }
+
+    // 서버 현황
+    lines.push('[ 서버 현황 ]');
+    const pool = sh.db_pool || {};
+    lines.push(`  DB 크기: ${sh.db_size_mb || '-'} MB | 활성 연결: ${sh.db_active_connections || '-'}`);
+    lines.push(`  커넥션 풀: 사용중 ${pool.checked_out || 0} / 유휴 ${pool.checked_in || 0} / 크기 ${pool.pool_size || '-'}`);
+    const proc = sh.process || {};
+    if (proc.pid) {
+        lines.push(`  프로세스: PID ${proc.pid} | RSS ${proc.rss_mb || '-'}MB | CPU ${proc.cpu_percent || 0}% | 업타임 ${proc.uptime_hours || '-'}h`);
+    }
+
+    _downloadFile(`report_${report.report_date}.txt`, lines.join('\n'), 'text/plain');
+}
+
 function _profitCls(v) {
     const n = parseFloat(v) || 0;
     return n > 0 ? 'profit-pos' : n < 0 ? 'profit-neg' : 'profit-zero';
@@ -517,6 +630,7 @@ async function loadReports() {
             return;
         }
 
+        _reportsData = reports;
         container.innerHTML = reports.map((report, idx) => {
             const summary = report.summary || {};
             const score = parseFloat(report.health_score) || 0;
@@ -533,6 +647,10 @@ async function loadReports() {
                         <span class="${_profitCls(totalProfit)}">${_formatProfit(totalProfit)} USDT</span>
                         <span>매수:${tradingTotals.total_bought || 0} 매도:${tradingTotals.total_closed || 0}</span>
                         ${report.telegram_sent_at ? '<span class="telegram-status">전송됨</span>' : ''}
+                    </div>
+                    <div class="download-btns" onclick="event.stopPropagation()">
+                        <button class="btn-dl" title="JSON 다운로드" onclick="downloadReportJSON(${idx})">JSON</button>
+                        <button class="btn-dl" title="텍스트 다운로드" onclick="downloadReportText(${idx})">TXT</button>
                     </div>
                     <span class="health-badge ${cls}">${score.toFixed(0)}</span>
                 </div>
@@ -598,7 +716,7 @@ async function generateReport() {
         const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
         const res = await fetch(`/api/reports/daily/${dateStr}/generate`, {
             method: 'POST',
-            headers: { 'x-csrf-token': csrfToken },
+            headers: { 'X-CSRFToken': csrfToken },
         });
         if (!res.ok) throw new Error(res.statusText);
         const data = await res.json();

@@ -18,7 +18,7 @@ async def login(login_req: LoginRequest, request: Request):
 
     user = await auth_service.authenticate(login_req.email, login_req.password)
     if not user:
-        raise HTTPException(status_code=401, detail="이메일 또는 비밀번호가 올바르지 않습니다.")
+        raise HTTPException(status_code=401, detail="Invalid email or password.")
 
     cookie_value = session_manager.create_session_cookie(user_id=user["id"], role=user["role"])
 

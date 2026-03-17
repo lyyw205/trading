@@ -278,7 +278,7 @@ async function loadPriceChart(accountId, containerId, interval, symbol) {
 
   // Fetch candles
   try {
-    let candleUrl = '/api/dashboard/' + accountId + '/price_candles?interval=' + _dashCurrentInterval;
+    let candleUrl = '/api/dashboard/' + accountId + '/price-candles?interval=' + _dashCurrentInterval;
     if (_dashCurrentSymbol) candleUrl += '&symbol=' + encodeURIComponent(_dashCurrentSymbol);
     const resp = await apiFetch(candleUrl);
     if (resp.ok) {
@@ -300,7 +300,7 @@ async function loadPriceChart(accountId, containerId, interval, symbol) {
   // Fetch trade events (only once, cache for TF switches)
   if (!_dashTradeEvents) {
     try {
-      let eventsUrl = '/api/dashboard/' + accountId + '/trade_events';
+      let eventsUrl = '/api/dashboard/' + accountId + '/trade-events';
       if (_dashCurrentSymbol) eventsUrl += '?symbol=' + encodeURIComponent(_dashCurrentSymbol);
       const resp = await apiFetch(eventsUrl);
       if (resp.ok) _dashTradeEvents = await resp.json();
@@ -537,7 +537,7 @@ async function loadAssetStatus(accountId) {
   const el = document.getElementById('asset-status');
   if (!el) return;
   try {
-    const resp = await apiFetch('/api/dashboard/' + accountId + '/asset_status');
+    const resp = await apiFetch('/api/dashboard/' + accountId + '/asset-status');
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const assetData = await resp.json();
 
@@ -817,7 +817,7 @@ function openEarningsModal(accountId) {
     document.body.appendChild(modal);
   }
   // Fetch latest pending earnings
-  apiFetch('/api/dashboard/' + accountId + '/pending_earnings')
+  apiFetch('/api/dashboard/' + accountId + '/pending-earnings')
     .then(r => r.json())
     .then(data => {
       _earningsTotal = data.pending_earnings_usdt || 0;
@@ -852,7 +852,7 @@ function updateEarningsPreview(pct) {
 async function submitEarningsApproval() {
   const pct = parseFloat(document.getElementById('earnings-slider').value);
   try {
-    const resp = await apiFetch('/api/dashboard/' + _earningsAccountId + '/approve_earnings', {
+    const resp = await apiFetch('/api/dashboard/' + _earningsAccountId + '/approve-earnings', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1475,7 +1475,7 @@ async function saveCombo() {
   const url = isEdit
     ? '/api/accounts/' + ACCOUNT_ID + '/combos/' + editId
     : '/api/accounts/' + ACCOUNT_ID + '/combos';
-  const method = isEdit ? 'PUT' : 'POST';
+  const method = isEdit ? 'PATCH' : 'POST';
 
   if (_comboSymbols.length === 0) { showToast('At least one symbol is required', 'error'); return; }
 

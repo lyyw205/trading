@@ -515,7 +515,7 @@ async function changeUserRole(userId, newRole) {
   if (!confirm('Change this user\'s role to ' + newRole + '?')) { loadUsers(); return; }
   try {
     const resp = await apiFetch('/api/admin/users/' + userId + '/role', {
-      method: 'PUT',
+      method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ role: newRole }),
     });
@@ -569,7 +569,7 @@ async function toggleUserActive(userId, isActive) {
   if (!confirm('Are you sure you want to ' + action + ' this user?')) return;
   try {
     const resp = await apiFetch('/api/admin/users/' + userId + '/active', {
-      method: 'PUT',
+      method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ is_active: !isActive }),
     });
@@ -799,7 +799,7 @@ async function submitEditAccount() {
 
   try {
     const resp = await apiFetch('/api/accounts/' + id, {
-      method: 'PUT',
+      method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
