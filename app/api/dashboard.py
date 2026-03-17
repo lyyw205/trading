@@ -198,15 +198,17 @@ async def get_lots(
     # Enrich with computed fields
     engine = request.app.state.trading_engine
     price_cache: dict[str, float] = {}
-    # Batch fetch sell order statuses
+    # Batch fetch sell order statuses and prices
     sell_order_ids = [lot.sell_order_id for lot in lots_list if lot.sell_order_id]
-    sell_order_map: dict[int, str] = {}
+    sell_order_map: dict[int, tuple[str, float | None]] = {}
     if sell_order_ids:
-        order_stmt = select(Order.order_id, Order.status).where(
+        order_stmt = select(Order.order_id, Order.status, Order.price).where(
             Order.account_id == account.id, Order.order_id.in_(sell_order_ids)
         )
         order_rows = await session.execute(order_stmt)
-        sell_order_map = {row.order_id: row.status for row in order_rows}
+        sell_order_map = {
+            row.order_id: (row.status, float(row.price) if row.price is not None else None) for row in order_rows
+        }
 
     responses = []
     for lot in lots_list:
@@ -223,8 +225,13 @@ async def get_lots(
         pnl_pct = round((cur_price - buy_price) / buy_price * 100, 2) if buy_price > 0 else None
 
         sell_status = None
+        sell_order_price = None
         if lot.sell_order_id:
-            sell_status = sell_order_map.get(lot.sell_order_id, "UNKNOWN")
+            order_info = sell_order_map.get(lot.sell_order_id)
+            if order_info is not None:
+                sell_status, sell_order_price = order_info
+            else:
+                sell_status = "UNKNOWN"
 
         resp = LotResponse.model_validate(lot)
         resp.strategy = lot.strategy_name
@@ -233,6 +240,7 @@ async def get_lots(
         resp.current_price = cur_price
         resp.pnl_pct = pnl_pct
         resp.sell_order_status = sell_status
+        resp.sell_order_price = sell_order_price
         responses.append(resp)
 
     return responses

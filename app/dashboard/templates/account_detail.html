@@ -57,7 +57,7 @@
           <th>Buy Price</th>
           <th>Qty</th>
           <th>Cost</th>
-          <th>Current Price</th>
+          <th>Sell Price</th>
           <th>P&amp;L%</th>
           <th>Sell Order Status</th>
         </tr>
@@ -67,6 +67,33 @@
       </tbody>
     </table>
     <div id="lots-pagination"></div>
+  </div>
+</section>
+
+<!-- Closed Lots Table -->
+<section class="dashboard-section">
+  <div class="section-header">
+    <h2 class="section-title">거래 완료</h2>
+  </div>
+  <div class="table-wrapper">
+    <table class="data-table" id="closed-lots-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Strategy</th>
+          <th>Buy Price</th>
+          <th>Qty</th>
+          <th>Cost</th>
+          <th>Sell Price</th>
+          <th>Profit</th>
+          <th>Sell Time</th>
+        </tr>
+      </thead>
+      <tbody id="closed-lots-tbody">
+        <tr><td colspan="8" class="table-empty">Loading...</td></tr>
+      </tbody>
+    </table>
+    <div id="closed-lots-pagination"></div>
   </div>
 </section>
 

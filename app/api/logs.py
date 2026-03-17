@@ -197,15 +197,46 @@ async def get_account_logs(
     account_id: uuid.UUID,
     request: Request,
     _admin: dict = Depends(require_admin),
+    session: AsyncSession = Depends(get_trading_session),
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
     level: Annotated[str | None, Query(pattern="^(INFO|WARNING|ERROR|CRITICAL)$")] = None,
     visibility: Annotated[str | None, Query(pattern="^(user|admin)$")] = None,
 ) -> list[dict]:
     """
-    Returns recent in-memory log entries for the given account_id.
-    Use visibility=user to show only user-facing logs (fills, pauses, errors).
+    Returns log entries for the given account_id.
+
+    - visibility=user: queries PersistentLog DB table (survives server restarts),
+      filtered by _USER_VISIBLE_RE patterns.
+    - visibility=admin or default: returns in-memory log buffer (real-time).
     """
-    results = log_buffer.get_logs(account_id=str(account_id), level=level, limit=limit)
     if visibility == "user":
-        results = [e for e in results if _is_user_visible(e)]
+        from sqlalchemy import select as sa_select
+
+        from app.models.persistent_log import PersistentLog
+
+        stmt = sa_select(PersistentLog).where(PersistentLog.account_id == account_id)
+        if level:
+            stmt = stmt.where(PersistentLog.level == level)
+        stmt = stmt.order_by(PersistentLog.logged_at.desc()).limit(limit)
+
+        result = await session.execute(stmt)
+        logs = result.scalars().all()
+
+        # Filter by user-visible patterns and map to frontend-expected format
+        results = []
+        for log in logs:
+            if not _USER_VISIBLE_RE.search(log.message):
+                continue
+            results.append(
+                {
+                    "ts": log.logged_at.isoformat(),
+                    "level": log.level,
+                    "module": log.module or "",
+                    "msg": log.message,
+                }
+            )
+        return results
+
+    # Default / admin: in-memory buffer (real-time logs)
+    results = log_buffer.get_logs(account_id=str(account_id), level=level, limit=limit)
     return results

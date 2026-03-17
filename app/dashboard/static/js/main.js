@@ -221,6 +221,7 @@ async function loadAccountDashboard(accountId) {
     loadPriceChart(accountId, 'price-chart', '1m', _dashCurrentSymbol),
     loadAssetStatus(accountId),
     loadProtectionStatus(accountId),
+    loadClosedLots(accountId),
   ]);
 }
 
@@ -933,7 +934,7 @@ function _renderLots(filter) {
       <td>${fmt(lot.buy_price, 2)}</td>
       <td>${fmt(lot.qty, 6)}</td>
       <td>${fmt(lot.cost_usdt, 2)}</td>
-      <td>${fmt(lot.current_price, 2)}</td>
+      <td>${lot.sell_order_price ? fmt(lot.sell_order_price, 2) : '-'}</td>
       <td class="${pnlClass}">${pnl != null ? pnl.toFixed(2) + '%' : '-'}</td>
       <td><span class="order-status">${escapeHtml(lot.sell_order_status || '-')}</span></td>
     </tr>`;
@@ -958,6 +959,98 @@ function _renderLotsPagination(total, totalPages) {
   }
   html += `<button class="pagination-btn" onclick="lotsGoPage(${_lotsPage + 1})" ${_lotsPage >= totalPages - 1 ? 'disabled' : ''}>&rsaquo;</button>`;
   html += `<button class="pagination-btn" onclick="lotsGoPage(${totalPages - 1})" ${_lotsPage >= totalPages - 1 ? 'disabled' : ''}>&raquo;</button>`;
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+/* ============================================================
+   Closed Lots
+   ============================================================ */
+
+let _closedLots = [];
+let _closedLotsPage = 0;
+const CLOSED_LOTS_PER_PAGE = 30;
+
+async function loadClosedLots(accountId) {
+  try {
+    const resp = await apiFetch('/api/dashboard/' + accountId + '/lots?status=CLOSED&limit=200');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    _closedLots = await resp.json();
+    _closedLotsPage = 0;
+    _renderClosedLots();
+  } catch (e) {
+    const tbody = document.getElementById('closed-lots-tbody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="8" class="table-empty error-text">Failed to load closed lots: ' + escapeHtml(e.message) + '</td></tr>';
+  }
+}
+
+function closedLotsGoPage(page) {
+  _closedLotsPage = page;
+  _renderClosedLots();
+}
+
+function _renderClosedLots() {
+  const tbody = document.getElementById('closed-lots-tbody');
+  if (!tbody) return;
+  if (!_closedLots.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="table-empty">거래 완료된 항목이 없습니다</td></tr>';
+    _renderClosedLotsPagination(0, 0);
+    return;
+  }
+
+  const totalPages = Math.ceil(_closedLots.length / CLOSED_LOTS_PER_PAGE);
+  if (_closedLotsPage >= totalPages) _closedLotsPage = totalPages - 1;
+  const start = _closedLotsPage * CLOSED_LOTS_PER_PAGE;
+  const page = _closedLots.slice(start, start + CLOSED_LOTS_PER_PAGE);
+
+  tbody.innerHTML = page.map((lot, i) => {
+    const profit = lot.net_profit_usdt;
+    const profitClass = profit == null ? '' : (profit >= 0 ? 'pnl-positive' : 'pnl-negative');
+    const profitStr = profit != null ? (profit >= 0 ? '+' : '') + fmt(profit, 2) : '-';
+    const sellPrice = lot.sell_price != null ? fmt(lot.sell_price, 2) : '-';
+    const cost = fmt(lot.buy_price * lot.buy_qty, 2);
+    let sellTime = '';
+    if (lot.sell_time) {
+      try {
+        const d = new Date(lot.sell_time);
+        const kst = new Date(d.getTime() + 9 * 3600000);
+        sellTime = kst.getUTCFullYear() + '-'
+          + String(kst.getUTCMonth() + 1).padStart(2, '0') + '-'
+          + String(kst.getUTCDate()).padStart(2, '0') + ' '
+          + String(kst.getUTCHours()).padStart(2, '0') + ':'
+          + String(kst.getUTCMinutes()).padStart(2, '0');
+      } catch (_) {}
+    }
+    return `<tr>
+      <td>${start + i + 1}</td>
+      <td><span class="strategy-badge">${escapeHtml(lot.strategy || '-')}</span></td>
+      <td>${fmt(lot.buy_price, 2)}</td>
+      <td>${fmt(lot.qty, 6)}</td>
+      <td>${cost}</td>
+      <td>${sellPrice}</td>
+      <td class="${profitClass}">${profitStr}</td>
+      <td>${sellTime || '-'}</td>
+    </tr>`;
+  }).join('');
+
+  _renderClosedLotsPagination(_closedLots.length, totalPages);
+}
+
+function _renderClosedLotsPagination(total, totalPages) {
+  const container = document.getElementById('closed-lots-pagination');
+  if (!container) return;
+  if (totalPages <= 1) { container.innerHTML = ''; return; }
+  let html = '<div class="pagination">';
+  html += `<span class="pagination-info">${total}건 중 ${_closedLotsPage * CLOSED_LOTS_PER_PAGE + 1}-${Math.min((_closedLotsPage + 1) * CLOSED_LOTS_PER_PAGE, total)}건</span>`;
+  html += `<button class="pagination-btn" onclick="closedLotsGoPage(0)" ${_closedLotsPage === 0 ? 'disabled' : ''}>&laquo;</button>`;
+  html += `<button class="pagination-btn" onclick="closedLotsGoPage(${_closedLotsPage - 1})" ${_closedLotsPage === 0 ? 'disabled' : ''}>&lsaquo;</button>`;
+  const startP = Math.max(0, _closedLotsPage - 2);
+  const endP = Math.min(totalPages, startP + 5);
+  for (let p = startP; p < endP; p++) {
+    html += `<button class="pagination-btn${p === _closedLotsPage ? ' active' : ''}" onclick="closedLotsGoPage(${p})">${p + 1}</button>`;
+  }
+  html += `<button class="pagination-btn" onclick="closedLotsGoPage(${_closedLotsPage + 1})" ${_closedLotsPage >= totalPages - 1 ? 'disabled' : ''}>&rsaquo;</button>`;
+  html += `<button class="pagination-btn" onclick="closedLotsGoPage(${totalPages - 1})" ${_closedLotsPage >= totalPages - 1 ? 'disabled' : ''}>&raquo;</button>`;
   html += '</div>';
   container.innerHTML = html;
 }

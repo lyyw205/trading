@@ -28,6 +28,7 @@ class LotResponse(BaseModel):
     current_price: float | None = None
     pnl_pct: float | None = None
     sell_order_status: str | None = None
+    sell_order_price: float | None = None
 
     model_config = {"from_attributes": True}
 
