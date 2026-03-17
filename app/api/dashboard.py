@@ -449,9 +449,19 @@ async def get_asset_status(
             )
         )
 
+    # Free USDT balance from exchange
+    free_balance = 0.0
+    try:
+        trader = engine._traders.get(account.id)
+        if trader and trader._client:
+            free_balance = await trader._client.get_free_balance(account.quote_asset)
+    except Exception:
+        pass
+
     return AssetStatus(
         btc_balance=base_qty,
         usdt_balance=round(base_qty * primary_price, 2) if primary_price > 0 else 0,
+        free_balance_usdt=round(free_balance, 2),
         held_symbols=held_symbols,
         reserve_pool_qty=reserve_qty,
         reserve_pool_usdt=reserve_cost,

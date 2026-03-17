@@ -55,6 +55,7 @@ class OpenLotSymbol(BaseModel):
 class AssetStatus(BaseModel):
     btc_balance: float
     usdt_balance: float
+    free_balance_usdt: float = 0.0
     held_symbols: list[HeldSymbol] = []
     reserve_pool_qty: float
     reserve_pool_usdt: float

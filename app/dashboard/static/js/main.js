@@ -580,6 +580,7 @@ async function loadAssetStatus(accountId) {
             ${fmt(portfolioValue, 2)} <span style="font-size:0.9rem;color:var(--text-muted);">USDT</span>
           </div>
           <div class="asset-sub">투자원금 ${fmt(assetData.total_invested_usdt, 2)} USDT</div>
+          <div class="asset-sub">가용 잔고 ${fmt(assetData.free_balance_usdt || 0, 2)} USDT</div>
         </div>
         <div style="flex:0 0 auto;min-width:140px;text-align:right;">
           <div class="asset-label">미실현 손익</div>
