@@ -235,7 +235,18 @@ async def get_account_logs(
                     "msg": log.message,
                 }
             )
-        return results
+
+        # Merge in-memory scan logs (not persisted to DB, but useful for user)
+        _SCAN_RE = re.compile(r"스캔 중:")
+        mem_logs = log_buffer.get_logs(account_id=str(account_id), level=level, limit=limit)
+        for entry in mem_logs:
+            msg = entry.get("msg", "")
+            if _SCAN_RE.search(msg):
+                results.append(entry)
+
+        # Sort merged results by timestamp descending, then trim to limit
+        results.sort(key=lambda x: x.get("ts", ""), reverse=True)
+        return results[:limit]
 
     # Default / admin: in-memory buffer (real-time logs)
     results = log_buffer.get_logs(account_id=str(account_id), level=level, limit=limit)
