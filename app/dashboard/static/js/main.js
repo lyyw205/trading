@@ -890,6 +890,9 @@ function switchLotStatus(status) {
   });
   document.getElementById('lots-open-view').style.display = (status === 'OPEN' || status === 'ALL') ? '' : 'none';
   document.getElementById('lots-closed-view').style.display = (status === 'CLOSED' || status === 'ALL') ? '' : 'none';
+  // 탭 전환 시 테이블 재렌더링
+  if (status === 'OPEN' || status === 'ALL') _renderLots(_currentLotFilter);
+  if (status === 'CLOSED' || status === 'ALL') _renderClosedLots();
 }
 
 /**
@@ -973,7 +976,7 @@ function lotsGoPage(page) {
 }
 
 function _renderLots(filter) {
-  document.querySelectorAll('.filter-tab').forEach(tab => {
+  document.querySelectorAll('#lot-filter-tabs .filter-tab').forEach(tab => {
     tab.classList.toggle('active', tab.dataset.filter === filter);
   });
   const filtered = filter === 'all' ? _allLots : _allLots.filter(l => l.combo_id === filter);
