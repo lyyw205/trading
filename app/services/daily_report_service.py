@@ -36,6 +36,17 @@ def _to_float(value: Decimal | None) -> float:
     return float(round(value, 4))
 
 
+def _sanitize_for_json(obj: object) -> object:
+    """Recursively convert Decimal values to float for JSON serialization."""
+    if isinstance(obj, dict):
+        return {k: _sanitize_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize_for_json(v) for v in obj]
+    if isinstance(obj, Decimal):
+        return float(round(obj, 4))
+    return obj
+
+
 class DailyReportService:
     """Generates daily operational reports from persistent logs."""
 
@@ -622,7 +633,7 @@ class DailyReportService:
                     period_start=period_start_utc,
                     period_end=period_end_utc,
                     health_score=health_score,
-                    summary=summary,
+                    summary=_sanitize_for_json(summary),
                 )
                 session.add(report)
                 await session.commit()

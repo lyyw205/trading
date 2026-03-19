@@ -45,6 +45,7 @@
   <div class="section-header">
     <h2 class="section-title">Lots</h2>
     <div class="filter-tabs" id="lot-status-tabs">
+      <button class="filter-tab" data-status="ALL" onclick="switchLotStatus('ALL')">All</button>
       <button class="filter-tab active" data-status="OPEN" onclick="switchLotStatus('OPEN')">Open</button>
       <button class="filter-tab" data-status="CLOSED" onclick="switchLotStatus('CLOSED')">Filled</button>
     </div>
@@ -449,8 +450,8 @@ async function loadAccountLogs() {
         + '</div>';
     }
     panel.innerHTML = html;
-    // Auto-scroll to bottom (newest logs)
-    panel.scrollTop = panel.scrollHeight;
+    // 최신 로그가 맨 위이므로 스크롤을 맨 위로
+    panel.scrollTop = 0;
   } catch (e) {
     console.error('Failed to load logs', e);
     panel.innerHTML = '<div class="log-empty">로그 로딩 중 오류 발생</div>';

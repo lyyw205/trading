@@ -888,8 +888,8 @@ function switchLotStatus(status) {
   document.querySelectorAll('#lot-status-tabs .filter-tab').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.status === status);
   });
-  document.getElementById('lots-open-view').style.display = status === 'OPEN' ? '' : 'none';
-  document.getElementById('lots-closed-view').style.display = status === 'CLOSED' ? '' : 'none';
+  document.getElementById('lots-open-view').style.display = (status === 'OPEN' || status === 'ALL') ? '' : 'none';
+  document.getElementById('lots-closed-view').style.display = (status === 'CLOSED' || status === 'ALL') ? '' : 'none';
 }
 
 /**

@@ -263,13 +263,22 @@ class AccountTrader:
                 now = time.time()
                 if now - self._last_scan_log_at >= 3600:
                     total_symbols = sum(len(c.symbols) if c.symbols else 1 for c in combos)
-                    logger.info(
-                        "스캔 중: %d개 콤보, %d개 심볼 | 잔고=%.2f | 상태=%s",
-                        len(combos),
-                        total_symbols,
-                        free_balance,
-                        self._buy_pause_state.value,
-                    )
+                    if self._buy_pause_state == BuyPauseState.PAUSED:
+                        logger.info(
+                            "매도 감시 실행완료 | %d개 콤보, %d개 심볼 | 잔고=%.2f | 포지션=%s",
+                            len(combos),
+                            total_symbols,
+                            free_balance,
+                            "있음" if self._has_open_positions else "없음",
+                        )
+                    else:
+                        logger.info(
+                            "스캔 중: %d개 콤보, %d개 심볼 | 잔고=%.2f | 상태=%s",
+                            len(combos),
+                            total_symbols,
+                            free_balance,
+                            self._buy_pause_state.value,
+                        )
                     self._last_scan_log_at = now
 
                 for combo in combos:
@@ -313,6 +322,7 @@ class AccountTrader:
                         pass  # 재체크 실패 시 기존 is_balance_sufficient 유지
 
                 # --- Buy pause state transition ---
+                prev_state = self._buy_pause_state
                 new_state, new_count = await pause_mgr.update_state(
                     self._buy_pause_state,
                     self._consecutive_low_balance,
@@ -321,6 +331,15 @@ class AccountTrader:
                 )
                 self._buy_pause_state = new_state
                 self._consecutive_low_balance = new_count
+
+                # 상태 전환 시 유저에게 보이는 로그
+                if new_state != prev_state:
+                    if new_state == BuyPauseState.PAUSED:
+                        logger.info("잔고 부족으로 매수 일시중단. 매도 감시는 계속됩니다.")
+                    elif new_state == BuyPauseState.THROTTLED:
+                        logger.info("잔고 부족 감지. 매수 빈도를 줄여 운영합니다.")
+                    elif new_state == BuyPauseState.ACTIVE and prev_state != BuyPauseState.ACTIVE:
+                        logger.info("잔고가 회복되어 정상 매수를 재개합니다.")
 
                 # Record success
                 self._consecutive_failures = 0
@@ -707,11 +726,11 @@ class AccountTrader:
                         # 잔고 부족을 BuyPauseManager에 피드백 (THROTTLED → PAUSED 전환)
                         self._consecutive_low_balance += 1
                         if self._buy_pause_mgr:
-                            new_state, new_count = self._buy_pause_mgr.update_state(
-                                current_state=self._buy_pause_state,
-                                is_balance_sufficient=False,
-                                did_sell_occur=False,
-                                consecutive_low_balance=self._consecutive_low_balance,
+                            new_state, new_count = await self._buy_pause_mgr.update_state(
+                                self._buy_pause_state,
+                                self._consecutive_low_balance,
+                                False,
+                                False,
                             )
                             if new_state != self._buy_pause_state:
                                 logger.info("BuyPause: %s → %s (balance error)", self._buy_pause_state, new_state)
@@ -745,6 +764,8 @@ class AccountTrader:
                     self._buy_pause_state,
                     self._has_open_positions,
                 )
+                if self._buy_pause_state == BuyPauseState.PAUSED and not self._has_open_positions:
+                    logger.info("포지션 없음. %.0f시간 후 재확인합니다.", interval / 3600)
                 await self._interruptible_sleep(interval)
         finally:
             current_account_id.reset(token)
