@@ -570,58 +570,79 @@ async function loadAssetStatus(accountId) {
     }
     const compTotal = compositionItems.reduce((s, c) => s + c.value, 0);
 
-    // --- P1: 포트폴리오 요약 헤더 ---
-    const summaryHtml = `
-    <div class="asset-card asset-card--summary" style="background: linear-gradient(135deg, var(--bg-floating) 0%, var(--bg-secondary) 100%);">
-      <div style="display:flex;flex-wrap:wrap;gap:1.5rem;align-items:flex-start;justify-content:space-between;">
-        <div style="flex:1;min-width:160px;">
-          <div class="asset-label">포트폴리오 평가금액</div>
-          <div style="font-size:1.5rem;font-weight:700;font-variant-numeric:tabular-nums;margin:0.25rem 0;">
-            ${fmt(portfolioValue, 2)} <span style="font-size:0.9rem;color:var(--text-muted);">USDT</span>
-          </div>
-          <div class="asset-sub">투자원금 ${fmt(assetData.total_invested_usdt, 2)} USDT</div>
-          <div class="asset-sub">가용 잔고 ${fmt(assetData.free_balance_usdt || 0, 2)} USDT</div>
-        </div>
-        <div style="flex:0 0 auto;min-width:140px;text-align:right;">
-          <div class="asset-label">미실현 손익</div>
-          <div style="font-size:1.3rem;font-weight:700;font-variant-numeric:tabular-nums;color:${pnlColor};margin:0.25rem 0;">
-            ${pnlSign}${fmt(totalPnl, 2)} USDT
-          </div>
-          <div style="font-size:0.8rem;color:${pnlColor};font-weight:600;">${pnlSign}${pnlPct.toFixed(2)}%</div>
-          ${assetData.total_invested_usdt > 0 ? `
-          <div style="margin-top:0.4rem;height:6px;border-radius:3px;background:var(--card-border);overflow:hidden;width:120px;margin-left:auto;">
-            <div style="height:100%;border-radius:3px;background:${pnlColor};width:${Math.min(Math.abs(pnlPct), 100)}%;transition:width 0.3s;"></div>
-          </div>` : ''}
-        </div>
-      </div>
-      ${compTotal > 0 ? `
-      <div style="margin-top:1rem;">
-        <div class="asset-label" style="margin-bottom:0.4rem;">자산 구성</div>
-        <div style="display:flex;height:8px;border-radius:4px;overflow:hidden;background:var(--card-border);">
-          ${compositionItems.map(c => `<div style="width:${(c.value / compTotal * 100).toFixed(1)}%;background:${c.color};transition:width 0.3s;" title="${c.label}: ${fmt(c.value, 2)} USDT (${(c.value / compTotal * 100).toFixed(1)}%)"></div>`).join('')}
-        </div>
-        <div style="display:flex;flex-wrap:wrap;gap:0.5rem 1rem;margin-top:0.4rem;">
-          ${compositionItems.map(c => `<span style="font-size:0.7rem;color:var(--text-muted);display:flex;align-items:center;gap:0.3rem;"><span style="width:8px;height:8px;border-radius:2px;background:${c.color};display:inline-block;"></span>${c.label} ${(c.value / compTotal * 100).toFixed(1)}%</span>`).join('')}
-        </div>
-      </div>` : ''}
-    </div>`;
+    const summaryHtml = '';
 
     // --- Held Symbols 테이블 ---
     let symbolsHtml = '';
     if (symbols.length > 0) {
       symbolsHtml = `
       <div class="asset-card asset-card--symbols">
-        <div class="asset-card-row" style="justify-content:space-between;align-items:center;">
-          <div style="display:flex;align-items:center;gap:0.75rem;">
-            <div class="asset-icon asset-icon-warning">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.5 8H14a2 2 0 0 1 0 4h-4.5m0-4v8m0-4H14a2 2 0 0 1 0 4H9.5m2-10v2m0 8v2"/></svg>
-            </div>
-            <div>
-              <div class="asset-label">보유 심볼</div>
-              <div class="asset-value">${fmt(totalHeldValue, 2)} USDT</div>
+        <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;">
+          <div>
+            <div class="asset-label" style="margin-bottom:0.4rem;letter-spacing:0.08em;">포트폴리오 평가금액</div>
+            <div style="font-size:clamp(1.4rem,3vw,1.8rem);font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:-0.03em;line-height:1;color:var(--text);">
+              ${fmt(portfolioValue, 2)}<span style="font-size:0.6em;font-weight:500;color:var(--text-muted);margin-left:0.35em;">USDT</span>
             </div>
           </div>
-          <div class="asset-sub">${symbols.length}개 심볼</div>
+          <div class="asset-sub">${symbols.length + 1}개 자산</div>
+        </div>
+        <div class="held-symbols-table" style="margin-top:0.75rem;">
+          <table style="width:100%;border-collapse:collapse;font-size:0.8rem;">
+            <thead>
+              <tr style="color:var(--text-muted);text-align:left;border-bottom:1px solid var(--card-border);">
+                <th style="padding:0.4rem 0.5rem;font-weight:600;">심볼</th>
+                <th style="padding:0.4rem 0.5rem;font-weight:600;text-align:right;">수량</th>
+                <th style="padding:0.4rem 0.5rem;font-weight:600;text-align:right;">평균단가</th>
+                <th style="padding:0.4rem 0.5rem;font-weight:600;text-align:right;">현재가</th>
+                <th style="padding:0.4rem 0.5rem;font-weight:600;text-align:right;">평가금액</th>
+                <th style="padding:0.4rem 0.5rem;font-weight:600;text-align:right;">손익</th>
+                <th style="padding:0.4rem 0.5rem;font-weight:600;text-align:right;">오픈 Lot</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style="border-bottom:1px solid var(--card-border);color:var(--text-muted);">
+                <td style="padding:0.4rem 0.5rem;font-weight:600;">USDT</td>
+                <td style="padding:0.4rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums;">${fmt(assetData.free_balance_usdt || 0, 2)}</td>
+                <td style="padding:0.4rem 0.5rem;text-align:right;">—</td>
+                <td style="padding:0.4rem 0.5rem;text-align:right;">1.00</td>
+                <td style="padding:0.4rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums;">${fmt(assetData.free_balance_usdt || 0, 2)}</td>
+                <td style="padding:0.4rem 0.5rem;text-align:right;">—</td>
+                <td style="padding:0.4rem 0.5rem;text-align:right;">—</td>
+              </tr>
+              ${(() => {
+                const lotsMap = {};
+                (assetData.open_lots_by_symbol || []).forEach(l => { lotsMap[l.symbol] = l; });
+                return symbols.map(holding => {
+                  const holdingPnlColor = holding.pnl_usdt >= 0 ? 'var(--success)' : 'var(--danger, #ef4444)';
+                  const holdingPnlSign = holding.pnl_usdt >= 0 ? '+' : '';
+                  const lot = lotsMap[holding.symbol];
+                  const lotText = lot ? lot.count + '건' : '—';
+                  return `<tr style="border-bottom:1px solid var(--card-border);">
+                    <td style="padding:0.4rem 0.5rem;font-weight:600;">${escapeHtml(holding.symbol).replace('USDT','')}</td>
+                    <td style="padding:0.4rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums;">${fmt(holding.qty, 6)}</td>
+                    <td style="padding:0.4rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums;">${fmt(holding.avg_entry, 2)}</td>
+                    <td style="padding:0.4rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums;">${fmt(holding.current_price, 2)}</td>
+                    <td style="padding:0.4rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums;">${fmt(holding.value_usdt, 2)}</td>
+                    <td style="padding:0.4rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums;color:${holdingPnlColor};">${holdingPnlSign}${fmt(holding.pnl_usdt, 2)} (${holdingPnlSign}${holding.pnl_pct}%)</td>
+                    <td style="padding:0.4rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums;">${lotText}</td>
+                  </tr>`;
+                }).join('');
+              })()}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+    } else {
+      symbolsHtml = `
+      <div class="asset-card asset-card--symbols">
+        <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;">
+          <div>
+            <div class="asset-label" style="margin-bottom:0.4rem;letter-spacing:0.08em;">포트폴리오 평가금액</div>
+            <div style="font-size:clamp(1.4rem,3vw,1.8rem);font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:-0.03em;line-height:1;color:var(--text);">
+              ${fmt(portfolioValue, 2)}<span style="font-size:0.6em;font-weight:500;color:var(--text-muted);margin-left:0.35em;">USDT</span>
+            </div>
+          </div>
+          <div class="asset-sub">1개 자산</div>
         </div>
         <div class="held-symbols-table" style="margin-top:0.75rem;">
           <table style="width:100%;border-collapse:collapse;font-size:0.8rem;">
@@ -636,32 +657,57 @@ async function loadAssetStatus(accountId) {
               </tr>
             </thead>
             <tbody>
-              ${symbols.map(holding => {
-                const holdingPnlColor = holding.pnl_usdt >= 0 ? 'var(--success)' : 'var(--danger, #ef4444)';
-                const holdingPnlSign = holding.pnl_usdt >= 0 ? '+' : '';
-                return `<tr style="border-bottom:1px solid var(--card-border);">
-                  <td style="padding:0.4rem 0.5rem;font-weight:600;">${escapeHtml(holding.symbol).replace('USDT','')}</td>
-                  <td style="padding:0.4rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums;">${fmt(holding.qty, 6)}</td>
-                  <td style="padding:0.4rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums;">${fmt(holding.avg_entry, 2)}</td>
-                  <td style="padding:0.4rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums;">${fmt(holding.current_price, 2)}</td>
-                  <td style="padding:0.4rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums;">${fmt(holding.value_usdt, 2)}</td>
-                  <td style="padding:0.4rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums;color:${holdingPnlColor};">${holdingPnlSign}${fmt(holding.pnl_usdt, 2)} (${holdingPnlSign}${holding.pnl_pct}%)</td>
-                </tr>`;
-              }).join('')}
+              <tr style="border-bottom:1px solid var(--card-border);color:var(--text-muted);">
+                <td style="padding:0.4rem 0.5rem;font-weight:600;">USDT</td>
+                <td style="padding:0.4rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums;">${fmt(assetData.free_balance_usdt || 0, 2)}</td>
+                <td style="padding:0.4rem 0.5rem;text-align:right;">—</td>
+                <td style="padding:0.4rem 0.5rem;text-align:right;">1.00</td>
+                <td style="padding:0.4rem 0.5rem;text-align:right;font-variant-numeric:tabular-nums;">${fmt(assetData.free_balance_usdt || 0, 2)}</td>
+                <td style="padding:0.4rem 0.5rem;text-align:right;">—</td>
+              </tr>
             </tbody>
           </table>
         </div>
       </div>`;
-    } else {
-      symbolsHtml = `
-      <div class="asset-card asset-card--symbols">
-        <div class="asset-card-row">
-          <div class="asset-icon asset-icon-warning">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.5 8H14a2 2 0 0 1 0 4h-4.5m0-4v8m0-4H14a2 2 0 0 1 0 4H9.5m2-10v2m0 8v2"/></svg>
+    }
+
+    // --- 자산 구성 도넛 차트 카드 ---
+    let donutHtml = '';
+    if (compTotal > 0) {
+      const size = 140;
+      const cx = size / 2, cy = size / 2, r = 52, strokeW = 24;
+      const circumference = 2 * Math.PI * r;
+      let offset = 0;
+      const arcs = compositionItems.map(c => {
+        const pct = c.value / compTotal;
+        const dash = circumference * pct;
+        const gap = circumference - dash;
+        const arc = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${c.color}" stroke-width="${strokeW}" stroke-dasharray="${dash.toFixed(2)} ${gap.toFixed(2)}" stroke-dashoffset="${(-offset).toFixed(2)}" style="transition:stroke-dashoffset 0.3s;"/>`;
+        offset += dash;
+        return arc;
+      });
+      donutHtml = `
+      <div class="asset-card asset-card--donut">
+        <div class="asset-label" style="margin-bottom:0.75rem;">자산 구성</div>
+        <div style="display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap;">
+          <div style="position:relative;width:${size}px;height:${size}px;flex-shrink:0;">
+            <svg viewBox="0 0 ${size} ${size}" style="transform:rotate(-90deg);width:100%;height:100%;">
+              ${arcs.join('')}
+            </svg>
+            <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;">
+              <div style="font-size:0.7rem;color:var(--text-muted);">Total</div>
+              <div style="font-size:0.9rem;font-weight:700;font-variant-numeric:tabular-nums;">${fmt(compTotal, 0)}</div>
+              <div style="font-size:0.65rem;color:var(--text-muted);">USDT</div>
+            </div>
           </div>
-          <div>
-            <div class="asset-label">보유 심볼</div>
-            <div class="asset-value">없음</div>
+          <div style="display:flex;flex-direction:column;gap:0.4rem;flex:1;min-width:120px;">
+            ${compositionItems.map(c => `
+              <div style="display:flex;align-items:center;gap:0.5rem;font-size:0.8rem;">
+                <span style="width:10px;height:10px;border-radius:2px;background:${c.color};display:inline-block;flex-shrink:0;"></span>
+                <span>${c.label}</span>
+                <div style="font-variant-numeric:tabular-nums;color:var(--text-muted);">${fmt(c.value, 2)} <span style="font-size:0.7rem;">(${(c.value / compTotal * 100).toFixed(1)}%)</span></div>
+              </div>
+            `).join('')}
           </div>
         </div>
       </div>`;
@@ -670,49 +716,7 @@ async function loadAssetStatus(accountId) {
     el.innerHTML = `
       ${summaryHtml}
       ${symbolsHtml}
-      <div class="asset-card--sidestack">
-        <div class="asset-card">
-          <div class="asset-card-row">
-            <div class="asset-icon asset-icon-info">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-            </div>
-            <div>
-              <div class="asset-label">Reserve Pool</div>
-              <div class="asset-value">${fmt(assetData.reserve_pool_usdt, 2)} USDT</div>
-              <div class="asset-sub">${assetData.reserve_pool_qty != null ? fmt(assetData.reserve_pool_qty, 6) + ' qty' : ''} · ${assetData.reserve_pool_pct != null ? assetData.reserve_pool_pct + '%' : ''}</div>
-            </div>
-          </div>
-        </div>
-        <div class="asset-card earnings-card ${(assetData.pending_earnings_usdt || 0) > 0 ? 'has-earnings' : ''}">
-          <div class="asset-card-row">
-            <div class="asset-icon asset-icon-orange">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/></svg>
-            </div>
-            <div>
-              <div class="asset-label">적립금 (Pending)</div>
-              <div class="asset-value">${fmt(assetData.pending_earnings_usdt || 0, 2)} USDT</div>
-            </div>
-          </div>
-          <button class="btn btn-sm btn-approve" style="margin-top:0.5rem;"
-                  onclick="openEarningsModal('${accountId}')"
-                  ${(assetData.pending_earnings_usdt || 0) <= 0 ? 'disabled' : ''}>
-            Reserve 추가
-          </button>
-        </div>
-        <div class="asset-card">
-          <div class="asset-card-row">
-            <div class="asset-icon asset-icon-primary">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
-            </div>
-            <div>
-              <div class="asset-label">투자원금</div>
-              <div class="asset-value">${fmt(assetData.total_invested_usdt, 2)} USDT</div>
-            </div>
-          </div>
-        </div>
-      </div>
-      ${_renderRealizedPnl(assetData)}
-      ${_renderOpenLotsBySymbol(assetData)}
+      ${donutHtml}
     `;
   } catch (e) {
     el.innerHTML = '<p class="error-text">Failed to load asset status</p>';
@@ -880,19 +884,17 @@ async function submitEarningsApproval() {
    ============================================================ */
 
 let _allLots = [];
-let _currentLotFilter = 'all';
-let _lotsPage = 0;
 const LOTS_PER_PAGE = 30;
 
+let _currentLotStatusFilter = 'ALL';
+
 function switchLotStatus(status) {
+  _currentLotStatusFilter = status;
+  _allLotsPage = 0;
   document.querySelectorAll('#lot-status-tabs .filter-tab').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.status === status);
   });
-  document.getElementById('lots-open-view').style.display = (status === 'OPEN' || status === 'ALL') ? '' : 'none';
-  document.getElementById('lots-closed-view').style.display = (status === 'CLOSED' || status === 'ALL') ? '' : 'none';
-  // 탭 전환 시 테이블 재렌더링
-  if (status === 'OPEN' || status === 'ALL') _renderLots(_currentLotFilter);
-  if (status === 'CLOSED' || status === 'ALL') _renderClosedLots();
+  _renderAllLots();
 }
 
 /**
@@ -956,153 +958,132 @@ async function loadLots(accountId) {
     const resp = await apiFetch('/api/dashboard/' + accountId + '/lots');
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     _allLots = await resp.json();
-    _lotsPage = 0;
-    _renderLots(_currentLotFilter);
+    _allLotsPage = 0;
+    _renderAllLots();
   } catch (e) {
-    const tbody = document.getElementById('lots-tbody');
-    if (tbody) tbody.innerHTML = '<tr><td colspan="8" class="table-empty error-text">Failed to load lots: ' + escapeHtml(e.message) + '</td></tr>';
+    const tbody = document.getElementById('all-lots-tbody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="10" class="table-empty error-text">Failed to load lots: ' + escapeHtml(e.message) + '</td></tr>';
   }
 }
-
-function filterLots(filter) {
-  _currentLotFilter = filter;
-  _lotsPage = 0;
-  _renderLots(filter);
-}
-
-function lotsGoPage(page) {
-  _lotsPage = page;
-  _renderLots(_currentLotFilter);
-}
-
-function _renderLots(filter) {
-  document.querySelectorAll('#lot-filter-tabs .filter-tab').forEach(tab => {
-    tab.classList.toggle('active', tab.dataset.filter === filter);
-  });
-  const filtered = filter === 'all' ? _allLots : _allLots.filter(l => l.combo_id === filter);
-  const tbody = document.getElementById('lots-tbody');
-  if (!tbody) return;
-  if (!filtered.length) {
-    tbody.innerHTML = '<tr><td colspan="8" class="table-empty">No lots found</td></tr>';
-    _renderLotsPagination(0, 0);
-    return;
-  }
-
-  const totalPages = Math.ceil(filtered.length / LOTS_PER_PAGE);
-  if (_lotsPage >= totalPages) _lotsPage = totalPages - 1;
-  const start = _lotsPage * LOTS_PER_PAGE;
-  const page = filtered.slice(start, start + LOTS_PER_PAGE);
-
-  tbody.innerHTML = page.map((lot, i) => {
-    const pnl = lot.pnl_pct;
-    const pnlClass = pnl == null ? '' : (pnl >= 0 ? 'pnl-positive' : 'pnl-negative');
-    return `<tr>
-      <td>${start + i + 1}</td>
-      <td><span class="strategy-badge">${escapeHtml(lot.strategy || '-')}</span></td>
-      <td>${fmt(lot.buy_price, 2)}</td>
-      <td>${fmt(lot.qty, 6)}</td>
-      <td>${fmt(lot.cost_usdt, 2)}</td>
-      <td>${lot.sell_order_price ? fmt(lot.sell_order_price, 2) : '-'}</td>
-      <td class="${pnlClass}">${pnl != null ? pnl.toFixed(2) + '%' : '-'}</td>
-      <td><span class="order-status">${escapeHtml(lot.sell_order_status || '-')}</span></td>
-    </tr>`;
-  }).join('');
-
-  _renderLotsPagination(filtered.length, totalPages);
-}
-
-function _renderLotsPagination(total, totalPages) {
-  _renderPagination({
-    containerId: 'lots-pagination',
-    total,
-    totalPages,
-    currentPage: _lotsPage,
-    perPage: LOTS_PER_PAGE,
-    goPageFn: 'lotsGoPage',
-  });
-}
-
-/* ============================================================
-   Closed Lots
-   ============================================================ */
 
 let _closedLots = [];
-let _closedLotsPage = 0;
-const CLOSED_LOTS_PER_PAGE = 30;
 
 async function loadClosedLots(accountId) {
   try {
     const resp = await apiFetch('/api/dashboard/' + accountId + '/lots?status=CLOSED&limit=200');
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     _closedLots = await resp.json();
-    _closedLotsPage = 0;
-    _renderClosedLots();
+    _renderAllLots();
   } catch (e) {
-    const tbody = document.getElementById('closed-lots-tbody');
-    if (tbody) tbody.innerHTML = '<tr><td colspan="8" class="table-empty error-text">Failed to load closed lots: ' + escapeHtml(e.message) + '</td></tr>';
+    const tbody = document.getElementById('all-lots-tbody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="10" class="table-empty error-text">Failed to load closed lots: ' + escapeHtml(e.message) + '</td></tr>';
   }
 }
 
-function closedLotsGoPage(page) {
-  _closedLotsPage = page;
-  _renderClosedLots();
+/* ============================================================
+   All Lots (Open + Closed unified)
+   ============================================================ */
+
+let _allLotsPage = 0;
+
+function allLotsGoPage(page) {
+  _allLotsPage = page;
+  _renderAllLots();
 }
 
-function _renderClosedLots() {
-  const tbody = document.getElementById('closed-lots-tbody');
+function _renderAllLots() {
+  const tbody = document.getElementById('all-lots-tbody');
   if (!tbody) return;
-  if (!_closedLots.length) {
-    tbody.innerHTML = '<tr><td colspan="8" class="table-empty">거래 완료된 항목이 없습니다</td></tr>';
-    _renderClosedLotsPagination(0, 0);
+
+  // Merge open and closed lots with status tag, then filter by tab
+  let merged = [
+    ..._allLots.map(l => ({...l, _status: 'OPEN'})),
+    ..._closedLots.map(l => ({...l, _status: 'CLOSED'})),
+  ];
+  if (_currentLotStatusFilter === 'OPEN') merged = merged.filter(l => l._status === 'OPEN');
+  else if (_currentLotStatusFilter === 'CLOSED') merged = merged.filter(l => l._status === 'CLOSED');
+
+  if (!merged.length) {
+    tbody.innerHTML = '<tr><td colspan="10" class="table-empty">No lots found</td></tr>';
+    _renderAllLotsPagination(0, 0);
     return;
   }
 
-  const totalPages = Math.ceil(_closedLots.length / CLOSED_LOTS_PER_PAGE);
-  if (_closedLotsPage >= totalPages) _closedLotsPage = totalPages - 1;
-  const start = _closedLotsPage * CLOSED_LOTS_PER_PAGE;
-  const page = _closedLots.slice(start, start + CLOSED_LOTS_PER_PAGE);
+  // Sort by buy_time descending (newest first)
+  merged.sort((a, b) => new Date(b.buy_time).getTime() - new Date(a.buy_time).getTime());
+
+  const totalPages = Math.ceil(merged.length / LOTS_PER_PAGE);
+  if (_allLotsPage >= totalPages) _allLotsPage = totalPages - 1;
+  const start = _allLotsPage * LOTS_PER_PAGE;
+  const page = merged.slice(start, start + LOTS_PER_PAGE);
 
   tbody.innerHTML = page.map((lot, i) => {
-    const profit = lot.net_profit_usdt;
-    const profitClass = profit == null ? '' : (profit >= 0 ? 'pnl-positive' : 'pnl-negative');
-    const profitStr = profit != null ? (profit >= 0 ? '+' : '') + fmt(profit, 2) : '-';
-    const sellPrice = lot.sell_price != null ? fmt(lot.sell_price, 2) : '-';
-    const cost = fmt(lot.buy_price * lot.buy_qty, 2);
-    let sellTime = '';
-    if (lot.sell_time) {
+    const isOpen = lot._status === 'OPEN';
+
+    // P&L%: open uses server pnl_pct, closed calculates from price
+    let pnl = null;
+    if (isOpen) {
+      pnl = lot.pnl_pct;
+    } else if (lot.sell_price != null && lot.buy_price > 0) {
+      pnl = ((lot.sell_price - lot.buy_price) / lot.buy_price) * 100;
+    }
+    const pnlClass = pnl == null ? '' : (pnl >= 0 ? 'pnl-positive' : 'pnl-negative');
+    const pnlStr = pnl != null ? (pnl >= 0 ? '+' : '') + pnl.toFixed(2) + '%' : '-';
+
+    // Sell price: open uses sell_order_price, closed uses sell_price
+    const sellPrice = isOpen
+      ? (lot.sell_order_price ? fmt(lot.sell_order_price, 2) : '-')
+      : (lot.sell_price != null ? fmt(lot.sell_price, 2) : '-');
+
+    // Qty: open uses qty, closed uses buy_qty
+    const qty = isOpen ? lot.qty : lot.buy_qty;
+
+    // Cost
+    const cost = lot.cost_usdt != null ? fmt(lot.cost_usdt, 2) : fmt(lot.buy_price * (qty ?? 0), 2);
+
+    // Buy time in KST
+    let buyTime = '';
+    if (lot.buy_time) {
       try {
-        const d = new Date(lot.sell_time);
+        const d = new Date(lot.buy_time);
         const kst = new Date(d.getTime() + 9 * 3600000);
-        sellTime = kst.getUTCFullYear() + '-'
-          + String(kst.getUTCMonth() + 1).padStart(2, '0') + '-'
-          + String(kst.getUTCDate()).padStart(2, '0') + ' '
-          + String(kst.getUTCHours()).padStart(2, '0') + ':'
-          + String(kst.getUTCMinutes()).padStart(2, '0');
+        buyTime = String(kst.getUTCMonth() + 1).padStart(2, '0') + '-' +
+          String(kst.getUTCDate()).padStart(2, '0') + ' ' +
+          String(kst.getUTCHours()).padStart(2, '0') + ':' +
+          String(kst.getUTCMinutes()).padStart(2, '0');
       } catch (_) {}
     }
+
+    // Status badge
+    const statusBadge = isOpen
+      ? '<span class="status-badge status-open">OPEN</span>'
+      : '<span class="status-badge status-closed">CLOSED</span>';
+
     return `<tr>
       <td>${start + i + 1}</td>
+      <td>${statusBadge}</td>
       <td><span class="strategy-badge">${escapeHtml(lot.strategy || '-')}</span></td>
+      <td>${escapeHtml(lot.symbol || '-')}</td>
       <td>${fmt(lot.buy_price, 2)}</td>
-      <td>${fmt(lot.qty, 6)}</td>
+      <td>${fmt(qty, 6)}</td>
       <td>${cost}</td>
       <td>${sellPrice}</td>
-      <td class="${profitClass}">${profitStr}</td>
-      <td>${sellTime || '-'}</td>
+      <td class="${pnlClass}">${pnlStr}</td>
+      <td>${buyTime || '-'}</td>
     </tr>`;
   }).join('');
 
-  _renderClosedLotsPagination(_closedLots.length, totalPages);
+  _renderAllLotsPagination(merged.length, totalPages);
 }
 
-function _renderClosedLotsPagination(total, totalPages) {
+function _renderAllLotsPagination(total, totalPages) {
   _renderPagination({
-    containerId: 'closed-lots-pagination',
+    containerId: 'all-lots-pagination',
     total,
     totalPages,
-    currentPage: _closedLotsPage,
-    perPage: CLOSED_LOTS_PER_PAGE,
-    goPageFn: 'closedLotsGoPage',
+    currentPage: _allLotsPage,
+    perPage: LOTS_PER_PAGE,
+    goPageFn: 'allLotsGoPage',
   });
 }
 
@@ -1224,7 +1205,6 @@ async function loadCombosAndLots(accountId) {
     if (sellResp.ok) _sellLogics = await sellResp.json();
 
     _renderCombosPanel(accountId);
-    _buildComboLotFilterTabs();
     await loadLots(accountId);
   } catch (e) {
     const el = document.getElementById('combos-panel');
@@ -1320,15 +1300,6 @@ function _renderCombosPanel(accountId) {
   }).join('');
 }
 
-function _buildComboLotFilterTabs() {
-  const container = document.getElementById('lot-filter-tabs');
-  if (!container) return;
-  let html = '<button class="filter-tab active" data-filter="all" onclick="filterLots(\'all\')">All</button>';
-  for (const combo of _combos) {
-    html += `<button class="filter-tab" data-filter="${combo.id}" onclick="filterLots('${combo.id}')">${escapeHtml(combo.name)}</button>`;
-  }
-  container.innerHTML = html;
-}
 
 /* ============================================================
    Combo Wizard — 5-Step Navigation

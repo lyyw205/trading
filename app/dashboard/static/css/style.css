@@ -581,18 +581,11 @@ html.theme-transition *::after {
   gap: 0.75rem;
 }
 
-/* Slot assignments — content-optimal widths */
-.asset-card--summary     { grid-column: 1 / 9; }   /* 8/12 — wide portfolio header */
-.asset-card--realized    { grid-column: 9 / 13; }  /* 4/12 — compact realized PnL */
-.asset-card--symbols     { grid-column: 1 / 9; }   /* 8/12 — symbol table */
-.asset-card--sidestack   { grid-column: 9 / 13; grid-row: span 1; display: flex; flex-direction: column; gap: 0.75rem; } /* 4/12 container */
-.asset-card--open-lots   { grid-column: 1 / -1; }  /* full-width */
-
-/* Side-stack inner cards share the column but stack vertically */
-.asset-card--sidestack .asset-card {
-  flex: 1;
-  min-height: 0;
-}
+/* Slot assignments */
+.asset-card--summary     { grid-column: 1 / -1; }
+.asset-card--symbols     { grid-column: 1 / 9; }
+.asset-card--donut       { grid-column: 9 / 13; }
+.asset-card--open-lots   { grid-column: 1 / -1; }
 
 .asset-card {
   background: var(--bg-floating);
@@ -602,15 +595,6 @@ html.theme-transition *::after {
   transition: border-color 0.15s;
 }
 .asset-card:hover { border-color: var(--primary-light); }
-
-/* The sidestack wrapper is not itself a card */
-.asset-card--sidestack {
-  background: transparent;
-  border: none;
-  padding: 0;
-  border-radius: 0;
-}
-.asset-card--sidestack:hover { border-color: transparent; }
 .asset-label {
   font-size: 0.7rem;
   color: var(--text-muted);
@@ -1040,6 +1024,8 @@ html.theme-transition *::after {
 
 .badge-buy-paused   { background: var(--warning-light); color: var(--warning); }
 .badge-buy-throttled { background: var(--orange-light); color: var(--orange); }
+.status-open   { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+.status-closed { background: rgba(156, 163, 175, 0.15); color: #9ca3af; }
 
 /* ————————————————————————————————————————
    Tables
@@ -2083,10 +2069,8 @@ select.form-input {
   .accounts-grid { grid-template-columns: 1fr; }
   .asset-grid { grid-template-columns: repeat(4, 1fr); }
   .asset-card--summary   { grid-column: 1 / -1; }
-  .asset-card--realized  { grid-column: 1 / -1; }
+  .asset-card--donut     { grid-column: 1 / -1; }
   .asset-card--symbols   { grid-column: 1 / -1; }
-  .asset-card--sidestack { grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap; }
-  .asset-card--sidestack .asset-card { flex: 1 1 160px; }
   .asset-card--open-lots { grid-column: 1 / -1; }
   .health-grid { grid-template-columns: 1fr 1fr; }
   .status-row { grid-template-columns: 1fr; }
@@ -2099,12 +2083,10 @@ select.form-input {
 @media (max-width: 480px) {
   .asset-grid { grid-template-columns: 1fr; }
   .asset-card--summary,
-  .asset-card--realized,
+  .asset-card--donut,
+  .asset-card--balance,
   .asset-card--symbols,
-  .asset-card--sidestack,
   .asset-card--open-lots { grid-column: 1 / -1; }
-  .asset-card--sidestack { flex-direction: column; }
-  .asset-card--sidestack .asset-card { flex: 1 1 auto; }
   .health-grid { grid-template-columns: 1fr; }
   .filter-tabs { overflow-x: auto; flex-wrap: nowrap; }
 }
