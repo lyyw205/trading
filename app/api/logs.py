@@ -49,10 +49,12 @@ _USER_VISIBLE_RE: re.Pattern[str] = re.compile(
             r"buy_usdt .+ below min_trade_usdt",
             r"Insufficient .+ balance",
             r"notional .+ below minimum",
-            # Trading loop lifecycle
-            r"트레이딩 루프가 정상 시작",
+            # Trading loop lifecycle (admin-only, 서버 재시작마다 발생)
+            # r"트레이딩 루프가 정상 시작",
             # Scanning activity (periodic heartbeat)
             r"스캔 중:",
+            # Sell-only monitoring heartbeat (PAUSED state)
+            r"매도 감시 실행완료",
             # Sell order status changes (user cares if cancelled/expired)
             r"sell order \d+ for lot \d+ (CANCELED|EXPIRED)",
             # Place order failures (user's money is affected)

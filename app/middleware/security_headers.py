@@ -19,7 +19,7 @@ class SecurityHeadersMiddleware:
             b"default-src 'self'; "
             b"script-src 'self' 'unsafe-inline' https://unpkg.com; "
             b"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; "
-            b"font-src 'self' https://fonts.gstatic.com; "
+            b"font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net; "
             b"img-src 'self' data:; "
             b"connect-src 'self'; "
             b"frame-ancestors 'none'",

@@ -67,10 +67,10 @@
 
 {% block scripts %}
 <script>
-let _lotsPage = 0;
+let _adminLotsPage = 0;
 const _lotsLimit = 100;
 
-function resetAndLoad() { _lotsPage = 0; loadLots(); }
+function resetAndLoad() { _adminLotsPage = 0; loadLots(); }
 
 async function loadLots() {
   const tbody = document.getElementById('lots-tbody');
@@ -78,7 +78,7 @@ async function loadLots() {
 
   const accountId = document.getElementById('filter-account').value;
   const status = document.getElementById('filter-status').value;
-  const offset = _lotsPage * _lotsLimit;
+  const offset = _adminLotsPage * _lotsLimit;
 
   let url = `/api/admin/lots?limit=${_lotsLimit}&offset=${offset}`;
   if (accountId) url += `&account_id=${accountId}`;
@@ -125,17 +125,17 @@ async function loadLots() {
     const totalPages = Math.ceil(total / _lotsLimit);
     const pag = document.getElementById('lots-pagination');
     pag.style.display = totalPages > 1 ? 'flex' : 'none';
-    document.getElementById('lots-page-info').textContent = `Page ${_lotsPage + 1} of ${totalPages} (${total} total)`;
-    document.getElementById('lots-prev').disabled = _lotsPage === 0;
-    document.getElementById('lots-next').disabled = _lotsPage >= totalPages - 1;
+    document.getElementById('lots-page-info').textContent = `Page ${_adminLotsPage + 1} of ${totalPages} (${total} total)`;
+    document.getElementById('lots-prev').disabled = _adminLotsPage === 0;
+    document.getElementById('lots-next').disabled = _adminLotsPage >= totalPages - 1;
   } catch (e) {
     tbody.innerHTML = '<tr><td colspan="10" class="table-empty error-text">Failed to load lots</td></tr>';
   }
 }
 
 function changeLotsPage(delta) {
-  _lotsPage += delta;
-  if (_lotsPage < 0) _lotsPage = 0;
+  _adminLotsPage += delta;
+  if (_adminLotsPage < 0) _adminLotsPage = 0;
   loadLots();
 }
 
