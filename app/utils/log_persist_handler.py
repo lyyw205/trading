@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import json
 import logging
 import queue
 import re
@@ -88,8 +90,11 @@ class PersistLogHandler(logging.Handler):
         if record.name.startswith(_SKIP_LOGGER_PREFIXES):
             return
 
-        # INFO/WARNING: only persist if it matches a trade event pattern
-        if record.levelno < logging.ERROR:
+        # Audit logs: always persist (security event trail)
+        is_audit = record.name == "audit"
+
+        # INFO/WARNING: only persist if it matches a trade event pattern or is an audit log
+        if record.levelno < logging.ERROR and not is_audit:
             msg = record.getMessage()
             if not _TRADE_EVENT_RE.search(msg):
                 return
@@ -117,6 +122,21 @@ class PersistLogHandler(logging.Handler):
                 "exception": _mask_sensitive(self.formatException(record.exc_info) if record.exc_info else None),
                 "extra": {},
             }
+
+            # Audit logs: parse JSON message into extra for structured DB querying
+            if is_audit:
+                try:
+                    audit_data = json.loads(record.getMessage())
+                    entry["extra"] = audit_data
+                    entry["module"] = "audit"
+                    entry["message"] = audit_data.get("event", "audit_event")
+                    # Override account_id from audit data if present
+                    audit_acct = audit_data.get("account_id")
+                    if audit_acct and not account_id:
+                        with contextlib.suppress(ValueError):
+                            entry["account_id"] = uuid.UUID(audit_acct)
+                except (json.JSONDecodeError, TypeError):
+                    entry["extra"] = {"raw": record.getMessage()}
 
             # Add cycle_id if available
             cycle_id = current_cycle_id.get()

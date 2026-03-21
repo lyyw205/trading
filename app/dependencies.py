@@ -1,3 +1,4 @@
+import logging
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, Request
@@ -5,6 +6,9 @@ from slowapi import Limiter
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_trading_session
+from app.utils.logging import audit_log
+
+logger = logging.getLogger(__name__)
 
 
 def _get_client_ip(request: Request) -> str:
@@ -36,6 +40,7 @@ async def get_current_user(request: Request) -> dict:
 async def require_admin(user: dict = Depends(get_current_user)) -> dict:
     """관리자 권한 확인. 비관리자 시 403."""
     if user.get("role") != "admin":
+        logger.warning("Non-admin access attempt: user_id=%s, email=%s", user["id"], user.get("email", ""))
         raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
     return user
 
@@ -53,6 +58,12 @@ async def get_owned_account(
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
     if str(account.owner_id) != user["id"] and user.get("role") != "admin":
+        audit_log(
+            "cross_account_access_denied",
+            user_id=user["id"],
+            account_id=str(account_id),
+            owner_id=str(account.owner_id),
+        )
         raise HTTPException(status_code=403, detail="Access denied")
     return account
 

@@ -86,8 +86,11 @@ def setup_logging(level: str = "INFO") -> None:
         logging.getLogger(name).setLevel(logging.WARNING)
 
     # 감사 로그 전용 핸들러 (JSON 문자열을 그대로 출력)
+    # stdout 핸들러는 유지하되, propagate=True로 PersistLogHandler에도 전달하여
+    # 감사 이벤트가 DB에 보존되도록 한다. (Option A2)
+    # TODO: 감사 쿼리가 복잡해지면 전용 AuditLog 모델+테이블로 마이그레이션 검토
     audit = logging.getLogger("audit")
-    audit.propagate = False
+    audit.propagate = True
     audit.handlers.clear()
     audit_handler = logging.StreamHandler()
     audit_handler.setFormatter(logging.Formatter("%(message)s"))
