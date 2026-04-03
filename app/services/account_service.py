@@ -32,6 +32,8 @@ class AccountService:
         quote_asset: str = "USDT",
         loop_interval_sec: int = 60,
         order_cooldown_sec: int = 7,
+        is_paper: bool = False,
+        paper_initial_balance: float = 0.0,
     ) -> TradingAccount:
         account = TradingAccount(
             owner_id=owner_id,
@@ -43,6 +45,8 @@ class AccountService:
             quote_asset=quote_asset,
             loop_interval_sec=loop_interval_sec,
             order_cooldown_sec=order_cooldown_sec,
+            is_paper=is_paper,
+            paper_initial_balance=paper_initial_balance,
         )
         return await self._repo.create(account)
 

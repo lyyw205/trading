@@ -84,6 +84,8 @@ async def create_account(
         quote_asset=body.quote_asset,
         loop_interval_sec=body.loop_interval_sec,
         order_cooldown_sec=body.order_cooldown_sec,
+        is_paper=body.is_paper,
+        paper_initial_balance=body.paper_initial_balance,
     )
     await session.commit()
 

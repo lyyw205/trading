@@ -52,6 +52,8 @@ class TradingAccount(TimestampMixin, Base):
     pending_earnings_usdt: Mapped[Decimal] = mapped_column(Numeric, nullable=False, server_default="0")
     loop_interval_sec: Mapped[int] = mapped_column(Integer, nullable=False, server_default="60")
     order_cooldown_sec: Mapped[int] = mapped_column(Integer, nullable=False, server_default="7")
+    is_paper: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    paper_initial_balance: Mapped[Decimal] = mapped_column(Numeric, nullable=False, server_default="0")
 
     owner = relationship("UserProfile", back_populates="accounts")
     strategy_configs = relationship("StrategyConfig", back_populates="account", cascade="all, delete-orphan")

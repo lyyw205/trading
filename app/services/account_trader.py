@@ -67,6 +67,7 @@ class AccountTrader:
         self.account_id = account_id
         self._running = True
         self._client: BinanceClient | None = None
+        self._is_paper: bool = False
         self._buy_instances: dict[tuple[UUID, str], BaseBuyLogic] = {}
         self._sell_instances: dict[tuple[UUID, str], BaseSellLogic] = {}
         self._price_collector = price_collector
@@ -87,7 +88,7 @@ class AccountTrader:
         self._wake_event = asyncio.Event()
 
     async def _init_client(self):
-        """Initialize the BinanceClient with decrypted API keys"""
+        """Initialize the exchange client (BinanceClient or BacktestClient for paper accounts)."""
         async with TradingSessionLocal() as session:
             repo = AccountRepository(session)
             account = await repo.get_by_id(self.account_id)
@@ -100,14 +101,77 @@ class AccountTrader:
                     "Circuit breaker already tripped (%d failures), not starting", self._consecutive_failures
                 )
                 raise RuntimeError(f"Circuit breaker active: {self._consecutive_failures} failures")
-            api_key = self._encryption.decrypt(account.api_key_encrypted)
-            api_secret = self._encryption.decrypt(account.api_secret_encrypted)
-            self._client = BinanceClient(api_key, api_secret, account.symbol)
+
+            if account.is_paper:
+                from app.exchange.backtest_client import BacktestClient
+
+                # 페이퍼 계정: DB에서 잔고 복원 후 BacktestClient 생성
+                balance = await self._restore_paper_balance(session, account)
+                self._client = BacktestClient(
+                    symbol=account.symbol,
+                    initial_balance_usdt=balance["usdt_free"],
+                )
+                # 보유 코인 잔고 복원 (open lots 기반)
+                for asset, qty in balance["assets"].items():
+                    if asset not in self._client._balances:
+                        self._client._balances[asset] = {"free": 0.0, "locked": 0.0}
+                    self._client._balances[asset]["free"] = qty
+                self._is_paper = True
+                logger.info("페이퍼 계정 초기화 완료: USDT=%.2f, assets=%s", balance["usdt_free"], balance["assets"])
+            else:
+                api_key = self._encryption.decrypt(account.api_key_encrypted)
+                api_secret = self._encryption.decrypt(account.api_secret_encrypted)
+                self._client = BinanceClient(api_key, api_secret, account.symbol)
+                self._is_paper = False
+
             # Register client for pre-passed combo symbols (avoids redundant DB query)
             all_symbols = {account.symbol}
             all_symbols.update(s.upper() for s in self._initial_symbols)
             for symbol in all_symbols:
                 self._price_collector.register_client(symbol, self._client)
+
+    async def _restore_paper_balance(self, session, account) -> dict:
+        """페이퍼 계정 잔고를 DB fills 기반으로 복원.
+
+        Formula: current_usdt = initial_balance - Σ(buy_cost) + Σ(sell_revenue)
+        Asset balances computed from open lots.
+        """
+        initial = float(account.paper_initial_balance)
+
+        # 매수 총액 (quote_qty 합산)
+        buy_sum_stmt = select(func.coalesce(func.sum(Fill.quote_qty), 0)).where(
+            Fill.account_id == self.account_id,
+            Fill.side == "BUY",
+        )
+        buy_total = float((await session.execute(buy_sum_stmt)).scalar_one())
+
+        # 매도 총액 (quote_qty 합산)
+        sell_sum_stmt = select(func.coalesce(func.sum(Fill.quote_qty), 0)).where(
+            Fill.account_id == self.account_id,
+            Fill.side == "SELL",
+        )
+        sell_total = float((await session.execute(sell_sum_stmt)).scalar_one())
+
+        usdt_free = initial - buy_total + sell_total
+
+        # Open lots 기반 코인 잔고 복원
+        open_lots_stmt = (
+            select(Lot.symbol, func.sum(Lot.buy_qty))
+            .where(
+                Lot.account_id == self.account_id,
+                Lot.status == "OPEN",
+            )
+            .group_by(Lot.symbol)
+        )
+        lot_result = await session.execute(open_lots_stmt)
+        assets: dict[str, float] = {}
+        for symbol, qty in lot_result.all():
+            base_asset, _ = parse_symbol(symbol)
+            assets[base_asset] = assets.get(base_asset, 0.0) + float(qty)
+
+        logger.info("페이퍼 잔고 복원: USDT=%.2f (초기=%.2f, 매수=%.2f, 매도=%.2f), assets=%s",
+                     usdt_free, initial, buy_total, sell_total, assets)
+        return {"usdt_free": usdt_free, "assets": assets}
 
     def _get_or_create_buy(self, combo_id: UUID, symbol: str, name: str) -> BaseBuyLogic:
         key = (combo_id, symbol)
@@ -373,6 +437,10 @@ class AccountTrader:
         if cur_price <= 0:
             logger.warning("Price is 0 for %s, skipping", symbol)
             return
+
+        # 페이퍼 계정: 라이브 가격을 BacktestClient에 주입 (주문 체결 시뮬레이션)
+        if self._is_paper and hasattr(self._client, "set_price"):
+            self._client.set_price(cur_price)
 
         buy_logic = self._get_or_create_buy(combo.id, symbol, combo.buy_logic_name)
         sell_logic = self._get_or_create_sell(combo.id, symbol, combo.sell_logic_name)
