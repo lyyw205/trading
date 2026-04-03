@@ -242,9 +242,13 @@ app.add_middleware(LazyAuthMiddleware)
 app.add_middleware(MetricsMiddleware)
 app.add_middleware(RequestIdMiddleware)
 
+_cors_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
+if "*" in _cors_origins and settings.environment == "production":
+    raise ValueError("CORS wildcard origin('*')은 production에서 allow_credentials=True와 함께 사용할 수 없습니다")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[o.strip() for o in settings.cors_origins.split(",") if o.strip()],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "X-CSRF-Token", "X-CSRFToken"],

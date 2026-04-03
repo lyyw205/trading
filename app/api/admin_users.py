@@ -66,6 +66,9 @@ async def admin_set_role(
     user.role = role
     await session.commit()
 
+    from app.middleware.auth import LazyAuthMiddleware
+    LazyAuthMiddleware.evict_user_cache(user_id)
+
     audit_log("admin_role_changed", user_id=admin["id"], target_user=user_id, new_role=role)
     return {"status": "updated", "user_id": user_id, "role": role}
 

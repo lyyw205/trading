@@ -21,6 +21,11 @@ htmlcov/
 .coverage.*
 coverage.xml
 
+# Sensitive data
+dump.sql
+*.sql.gz
+*.sql.bak
+
 # IDE
 .vscode/
 .idea/

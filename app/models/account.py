@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer, Numeric, String
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
@@ -22,6 +22,7 @@ class TradingAccount(TimestampMixin, Base):
             "buy_pause_state IN ('ACTIVE', 'THROTTLED', 'PAUSED')",
             name="chk_buy_pause_state",
         ),
+        Index("idx_trading_accounts_owner", "owner_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)

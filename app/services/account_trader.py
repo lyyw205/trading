@@ -121,6 +121,137 @@ class AccountTrader:
             self._sell_instances[key] = SellLogicRegistry.create_instance(name)
         return self._sell_instances[key]
 
+    def _instrument_sentry(self, cycle_id: str, combos_count: int) -> None:
+        """Set Sentry tags/context for the current cycle. Non-critical."""
+        try:
+            import sentry_sdk
+
+            sentry_sdk.set_tag("account_id", str(self.account_id))
+            sentry_sdk.set_tag("trading_cycle", cycle_id)
+            sentry_sdk.set_context(
+                "trading",
+                {
+                    "buy_pause_state": str(self._buy_pause_state),
+                    "active_combos": combos_count,
+                },
+            )
+        except ImportError:
+            pass  # Sentry SDK not installed
+        except Exception as e:
+            logger.debug("Sentry instrumentation failed: %s", e)
+
+    async def _run_combo_loop(
+        self,
+        combos: list,
+        account,
+        free_balance: float,
+        is_balance_sufficient: bool,
+        should_buy: bool,
+        repos: RepositoryBundle,
+        session,
+        account_state: AccountStateManager,
+        prefetched_lots: dict[tuple, list],
+    ) -> None:
+        """Execute scan logging and combo x symbol tick loop."""
+        now = time.time()
+        if now - self._last_scan_log_at >= 3600:
+            total_symbols = sum(len(c.symbols) if c.symbols else 1 for c in combos)
+            if self._buy_pause_state == BuyPauseState.PAUSED:
+                logger.info(
+                    "매도 감시 실행완료 | %d개 콤보, %d개 심볼 | 잔고=%.2f | 포지션=%s",
+                    len(combos),
+                    total_symbols,
+                    free_balance,
+                    "있음" if self._has_open_positions else "없음",
+                )
+            else:
+                logger.info(
+                    "스캔 중: %d개 콤보, %d개 심볼 | 잔고=%.2f | 상태=%s",
+                    len(combos),
+                    total_symbols,
+                    free_balance,
+                    self._buy_pause_state.value,
+                )
+            self._last_scan_log_at = now
+
+        for combo in combos:
+            # TODO: migrate to TradingCombo.symbols (legacy account.symbol fallback)
+            combo_symbols = combo.symbols if combo.symbols else [account.symbol]
+
+            for symbol in combo_symbols:
+                await self._execute_symbol_tick(
+                    combo,
+                    symbol,
+                    free_balance,
+                    is_balance_sufficient,
+                    should_buy,
+                    repos,
+                    session,
+                    account_state,
+                    prefetched_lots,
+                )
+
+    async def _post_cycle_sell_check(
+        self,
+        session,
+        account,
+        open_lots_count_before: int,
+        is_balance_sufficient: bool,
+        pause_mgr: BuyPauseManager,
+    ) -> bool:
+        """Detect sells, recheck balance if needed, update buy-pause state.
+
+        Returns updated is_balance_sufficient.
+
+        Side effects:
+            - Sets self._has_open_positions based on open lot count
+            - Updates self._buy_pause_state and self._consecutive_low_balance via pause_mgr
+        """
+        # --- Sell detection: compare open lot count before/after strategies ---
+        open_lots_after_stmt = (
+            select(func.count())
+            .select_from(Lot)
+            .where(
+                Lot.account_id == self.account_id,
+                Lot.status == "OPEN",
+            )
+        )
+        open_lots_after = (await session.execute(open_lots_after_stmt)).scalar_one()
+        did_sell_occur = open_lots_after < open_lots_count_before
+        self._has_open_positions = open_lots_after > 0
+
+        # 매도 발생 + PAUSED → 잔고 재체크
+        if did_sell_occur and self._buy_pause_state == BuyPauseState.PAUSED:
+            try:
+                fresh_balance = await self._client.get_free_balance(account.quote_asset)
+                is_balance_sufficient = fresh_balance >= MIN_TRADE_USDT
+                if is_balance_sufficient:
+                    logger.info("Sell detected + balance recovered → will resume")
+            except Exception:
+                pass  # 재체크 실패 시 기존 is_balance_sufficient 유지
+
+        # --- Buy pause state transition ---
+        prev_state = self._buy_pause_state
+        new_state, new_count = await pause_mgr.update_state(
+            self._buy_pause_state,
+            self._consecutive_low_balance,
+            is_balance_sufficient,
+            did_sell_occur,
+        )
+        self._buy_pause_state = new_state
+        self._consecutive_low_balance = new_count
+
+        # 상태 전환 시 유저에게 보이는 로그
+        if new_state != prev_state:
+            if new_state == BuyPauseState.PAUSED:
+                logger.info("잔고 부족으로 매수 일시중단. 매도 감시는 계속됩니다.")
+            elif new_state == BuyPauseState.THROTTLED:
+                logger.info("잔고 부족 감지. 매수 빈도를 줄여 운영합니다.")
+            elif new_state == BuyPauseState.ACTIVE and prev_state != BuyPauseState.ACTIVE:
+                logger.info("잔고가 회복되어 정상 매수를 재개합니다.")
+
+        return is_balance_sufficient
+
     async def step(self) -> int:
         """Single trading cycle with DB retry. Returns loop_interval_sec."""
         last_exc: OperationalError | None = None
@@ -139,75 +270,41 @@ class AccountTrader:
     async def _do_step(self) -> int:
         """Inner step logic. Returns loop_interval_sec for run_forever."""
         start_time = time.perf_counter()
-        result = 60  # default interval; assigned here to avoid UnboundLocalError on mid-step exceptions
-        # Generate cycle ID for correlation across logs
-        cycle_id = uuid4().hex[:12]
+        result, cycle_id = 60, uuid4().hex[:12]
         cycle_token = current_cycle_id.set(cycle_id)
-        # Set account context for structured logging
         token = current_account_id.set(str(self.account_id))
         try:
             async with TradingSessionLocal() as session:
-                # Load account
                 account_repo = AccountRepository(session)
                 account = await account_repo.get_by_id(self.account_id)
                 if not account or not account.is_active:
                     return 60
-
-                # Sync buy-pause state from DB
                 raw_state = account.buy_pause_state
                 self._buy_pause_state = BuyPauseState(raw_state) if raw_state else BuyPauseState.ACTIVE
                 self._consecutive_low_balance = account.consecutive_low_balance or 0
-
-                # Rate limiter
                 await self._rate_limiter.acquire(weight=1)
-
-                # Sync orders and fills (deferred until combo symbols are known)
-                order_repo = OrderRepository(session)
-                position_repo = PositionRepository(session)
-                # Order sync deferred until combo symbols are known
-
-                # Price fetching moved to per-symbol in combo loop
-
-                # --- Balance pre-check (account-level, single API call) ---
-                is_balance_sufficient = True
-                free_balance = 0.0
+                order_repo, position_repo = OrderRepository(session), PositionRepository(session)
+                is_balance_sufficient, free_balance = True, 0.0
                 try:
                     free_balance = await self._client.get_free_balance(account.quote_asset)
                     is_balance_sufficient = free_balance >= MIN_TRADE_USDT
                 except Exception as e:
                     logger.warning("Balance check failed: %s, skipping buy evaluation", e)
-                    # 잔고 API 실패 → 상태 변경 없이 이번 사이클 매수 스킵
                     is_balance_sufficient = False
-
-                # Run active strategies
                 lot_repo = LotRepository(session)
-                repos = RepositoryBundle(
-                    lot=lot_repo,
-                    order=order_repo,
-                    position=position_repo,
-                    price=None,  # price_repo is module-level functions
-                )
-
-                # --- Combo-based execution (Phase 3) ---
+                repos = RepositoryBundle(lot=lot_repo, order=order_repo, position=position_repo, price=None)
                 combo_stmt = select(TradingCombo).where(
-                    TradingCombo.account_id == self.account_id,
-                    TradingCombo.is_enabled.is_(True),
+                    TradingCombo.account_id == self.account_id, TradingCombo.is_enabled.is_(True),
                 )
-                combo_result = await session.execute(combo_stmt)
-                combos = list(combo_result.scalars().all())
-
+                combos = list((await session.execute(combo_stmt)).scalars().all())
                 if not combos:
                     return result
-
-                # Sync orders and fills for all combo symbols
+                # Sync orders/fills and reconcile orphans
                 all_combo_symbols = {account.symbol}
                 for c in combos:
                     if c.symbols:
                         all_combo_symbols.update(s.upper() for s in c.symbols)
                 await self._sync_orders_and_fills(account, all_combo_symbols, order_repo, position_repo, session)
-
-                # Reconcile orphaned sell orders (Binance has them, DB lots don't)
-                # Wrapped in SAVEPOINT so failure doesn't abort the trading cycle
                 orphan_count = 0
                 try:
                     async with session.begin_nested():
@@ -215,142 +312,34 @@ class AccountTrader:
                 except Exception as e:
                     logger.warning("Orphan reconciliation failed (non-fatal): %s", e)
                 if orphan_count > 0:
-                    logger.warning(
-                        "Reconciled %d orphaned sell orders for account %s",
-                        orphan_count,
-                        self.account_id,
-                    )
-
-                # Sentry context for this trading cycle
-                try:
-                    import sentry_sdk
-
-                    sentry_sdk.set_tag("account_id", str(self.account_id))
-                    sentry_sdk.set_tag("trading_cycle", cycle_id)
-                    sentry_sdk.set_context(
-                        "trading",
-                        {
-                            "buy_pause_state": str(self._buy_pause_state),
-                            "active_combos": len(combos),
-                        },
-                    )
-                except Exception:
-                    pass  # Sentry not configured
-
-                # Buy pause manager (shares step session)
+                    logger.warning("Reconciled %d orphaned sell orders for account %s", orphan_count, self.account_id)
+                self._instrument_sentry(cycle_id, len(combos))
                 pause_mgr = BuyPauseManager(self.account_id, session)
                 self._buy_pause_mgr = pause_mgr
-
-                # Single AccountStateManager for the entire cycle (preloaded shared scope)
                 account_state = AccountStateManager(self.account_id, session)
                 await account_state.preload()
-
-                # Buy-pause 가드: 사이클당 1회 판정 (combo x symbol 루프 밖)
                 should_buy, self._throttle_cycle = BuyPauseManager.should_attempt_buy(
-                    self._buy_pause_state,
-                    is_balance_sufficient,
-                    self._throttle_cycle,
+                    self._buy_pause_state, is_balance_sufficient, self._throttle_cycle,
                 )
-
-                # Batch prefetch all open lots (replaces per-combo DB queries in the loop)
                 all_open_lots = await repos.lot.get_all_open_lots_for_account(self.account_id)
                 prefetched_lots: dict[tuple, list] = {}
                 for lot in all_open_lots:
-                    key = (lot.combo_id, lot.symbol)
-                    prefetched_lots.setdefault(key, []).append(lot)
-                open_lots_count_before = len(all_open_lots)
-
-                now = time.time()
-                if now - self._last_scan_log_at >= 3600:
-                    total_symbols = sum(len(c.symbols) if c.symbols else 1 for c in combos)
-                    if self._buy_pause_state == BuyPauseState.PAUSED:
-                        logger.info(
-                            "매도 감시 실행완료 | %d개 콤보, %d개 심볼 | 잔고=%.2f | 포지션=%s",
-                            len(combos),
-                            total_symbols,
-                            free_balance,
-                            "있음" if self._has_open_positions else "없음",
-                        )
-                    else:
-                        logger.info(
-                            "스캔 중: %d개 콤보, %d개 심볼 | 잔고=%.2f | 상태=%s",
-                            len(combos),
-                            total_symbols,
-                            free_balance,
-                            self._buy_pause_state.value,
-                        )
-                    self._last_scan_log_at = now
-
-                for combo in combos:
-                    # TODO: migrate to TradingCombo.symbols (legacy account.symbol fallback)
-                    combo_symbols = combo.symbols if combo.symbols else [account.symbol]
-
-                    for symbol in combo_symbols:
-                        await self._execute_symbol_tick(
-                            combo,
-                            symbol,
-                            free_balance,
-                            is_balance_sufficient,
-                            should_buy,
-                            repos,
-                            session,
-                            account_state,
-                            prefetched_lots,
-                        )
-
-                # --- Sell detection: compare open lot count before/after strategies ---
-                open_lots_after_stmt = (
-                    select(func.count())
-                    .select_from(Lot)
-                    .where(
-                        Lot.account_id == self.account_id,
-                        Lot.status == "OPEN",
-                    )
+                    prefetched_lots.setdefault((lot.combo_id, lot.symbol), []).append(lot)
+                await self._run_combo_loop(
+                    combos, account, free_balance, is_balance_sufficient,
+                    should_buy, repos, session, account_state, prefetched_lots,
                 )
-                open_lots_after = (await session.execute(open_lots_after_stmt)).scalar_one()
-                did_sell_occur = open_lots_after < open_lots_count_before
-                self._has_open_positions = open_lots_after > 0
-
-                # 매도 발생 + PAUSED → 잔고 재체크
-                if did_sell_occur and self._buy_pause_state == BuyPauseState.PAUSED:
-                    try:
-                        fresh_balance = await self._client.get_free_balance(account.quote_asset)
-                        is_balance_sufficient = fresh_balance >= MIN_TRADE_USDT
-                        if is_balance_sufficient:
-                            logger.info("Sell detected + balance recovered → will resume")
-                    except Exception:
-                        pass  # 재체크 실패 시 기존 is_balance_sufficient 유지
-
-                # --- Buy pause state transition ---
-                prev_state = self._buy_pause_state
-                new_state, new_count = await pause_mgr.update_state(
-                    self._buy_pause_state,
-                    self._consecutive_low_balance,
-                    is_balance_sufficient,
-                    did_sell_occur,
+                is_balance_sufficient = await self._post_cycle_sell_check(
+                    session, account, len(all_open_lots), is_balance_sufficient, pause_mgr,
                 )
-                self._buy_pause_state = new_state
-                self._consecutive_low_balance = new_count
-
-                # 상태 전환 시 유저에게 보이는 로그
-                if new_state != prev_state:
-                    if new_state == BuyPauseState.PAUSED:
-                        logger.info("잔고 부족으로 매수 일시중단. 매도 감시는 계속됩니다.")
-                    elif new_state == BuyPauseState.THROTTLED:
-                        logger.info("잔고 부족 감지. 매수 빈도를 줄여 운영합니다.")
-                    elif new_state == BuyPauseState.ACTIVE and prev_state != BuyPauseState.ACTIVE:
-                        logger.info("잔고가 회복되어 정상 매수를 재개합니다.")
-
                 # Record success
                 self._consecutive_failures = 0
                 self._failure_history.clear()
                 self._last_success_at = time.time()
                 await account_repo.update_last_success(self.account_id)
-                # Reset auto recovery counter on success
                 if account.auto_recovery_attempts and account.auto_recovery_attempts > 0:
                     await account_repo.reset_auto_recovery_on_success(account_id=self.account_id)
                 await session.commit()
-
                 result = account.loop_interval_sec if account.loop_interval_sec else 60
         finally:
             current_account_id.reset(token)
