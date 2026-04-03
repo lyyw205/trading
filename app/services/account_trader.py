@@ -169,8 +169,14 @@ class AccountTrader:
             base_asset, _ = parse_symbol(symbol)
             assets[base_asset] = assets.get(base_asset, 0.0) + float(qty)
 
-        logger.info("페이퍼 잔고 복원: USDT=%.2f (초기=%.2f, 매수=%.2f, 매도=%.2f), assets=%s",
-                     usdt_free, initial, buy_total, sell_total, assets)
+        logger.info(
+            "페이퍼 잔고 복원: USDT=%.2f (초기=%.2f, 매수=%.2f, 매도=%.2f), assets=%s",
+            usdt_free,
+            initial,
+            buy_total,
+            sell_total,
+            assets,
+        )
         return {"usdt_free": usdt_free, "assets": assets}
 
     def _get_or_create_buy(self, combo_id: UUID, symbol: str, name: str) -> BaseBuyLogic:
@@ -358,7 +364,8 @@ class AccountTrader:
                 lot_repo = LotRepository(session)
                 repos = RepositoryBundle(lot=lot_repo, order=order_repo, position=position_repo, price=None)
                 combo_stmt = select(TradingCombo).where(
-                    TradingCombo.account_id == self.account_id, TradingCombo.is_enabled.is_(True),
+                    TradingCombo.account_id == self.account_id,
+                    TradingCombo.is_enabled.is_(True),
                 )
                 combos = list((await session.execute(combo_stmt)).scalars().all())
                 if not combos:
@@ -383,18 +390,31 @@ class AccountTrader:
                 account_state = AccountStateManager(self.account_id, session)
                 await account_state.preload()
                 should_buy, self._throttle_cycle = BuyPauseManager.should_attempt_buy(
-                    self._buy_pause_state, is_balance_sufficient, self._throttle_cycle,
+                    self._buy_pause_state,
+                    is_balance_sufficient,
+                    self._throttle_cycle,
                 )
                 all_open_lots = await repos.lot.get_all_open_lots_for_account(self.account_id)
                 prefetched_lots: dict[tuple, list] = {}
                 for lot in all_open_lots:
                     prefetched_lots.setdefault((lot.combo_id, lot.symbol), []).append(lot)
                 await self._run_combo_loop(
-                    combos, account, free_balance, is_balance_sufficient,
-                    should_buy, repos, session, account_state, prefetched_lots,
+                    combos,
+                    account,
+                    free_balance,
+                    is_balance_sufficient,
+                    should_buy,
+                    repos,
+                    session,
+                    account_state,
+                    prefetched_lots,
                 )
                 is_balance_sufficient = await self._post_cycle_sell_check(
-                    session, account, len(all_open_lots), is_balance_sufficient, pause_mgr,
+                    session,
+                    account,
+                    len(all_open_lots),
+                    is_balance_sufficient,
+                    pause_mgr,
                 )
                 # Record success
                 self._consecutive_failures = 0
