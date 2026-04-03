@@ -14,13 +14,13 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # --- Indexes (CONCURRENTLY for zero-downtime) ---
+    # --- Indexes ---
     op.execute(
-        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_fills_account_order "
+        "CREATE INDEX IF NOT EXISTS idx_fills_account_order "
         "ON fills (account_id, order_id)"
     )
     op.execute(
-        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_orders_symbol "
+        "CREATE INDEX IF NOT EXISTS idx_orders_symbol "
         "ON orders (symbol)"
     )
 
@@ -41,5 +41,5 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.execute("ALTER TABLE user_profiles DROP CONSTRAINT IF EXISTS chk_user_role")
     op.execute("ALTER TABLE trading_accounts DROP CONSTRAINT IF EXISTS chk_buy_pause_state")
-    op.execute("DROP INDEX CONCURRENTLY IF EXISTS idx_orders_symbol")
-    op.execute("DROP INDEX CONCURRENTLY IF EXISTS idx_fills_account_order")
+    op.execute("DROP INDEX IF EXISTS idx_orders_symbol")
+    op.execute("DROP INDEX IF EXISTS idx_fills_account_order")
