@@ -103,9 +103,10 @@ async def create_combo(
     await session.commit()
     await session.refresh(combo)
 
-    # Refresh kline WS subscriptions for new symbols
+    # 계정이 엔진에 없으면 자동 시작, 있으면 구독만 갱신
     engine = getattr(request.app.state, "trading_engine", None)
     if engine:
+        await engine.start_account(account.id)
         await engine.refresh_subscriptions(account.id)
 
     audit_log(
