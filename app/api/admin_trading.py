@@ -34,7 +34,7 @@ async def admin_list_trades(
     side: Literal["BUY", "SELL"] | None = Query(default=None),
 ):
     """Cross-account trade history with pagination."""
-    stmt = select(Order).options(defer(Order.raw_json)).order_by(Order.order_id.desc())
+    stmt = select(Order).options(defer(Order.raw_json)).order_by(Order.update_time_ms.desc())
     count_stmt = select(sa_func.count(Order.order_id))
 
     if account_id:
