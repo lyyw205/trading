@@ -588,7 +588,79 @@ class AccountTrader:
                 except Exception as e:
                     logger.warning("Order %s upsert failed: %s", oid, e)
 
-        # Step 3: Sync recent fills per symbol (incremental fetch via last trade_id)
+        # Step 3: Sync recent fills per symbol
+        if self._is_paper:
+            # Paper accounts: create fills from FILLED order raw_json (no exchange API)
+            symbols_with_new_fills = await self._sync_paper_fills(symbols, order_repo, session)
+        else:
+            symbols_with_new_fills = await self._sync_exchange_fills(
+                symbols, order_repo, synced_oids, session
+            )
+
+        # 4-6: Conditional recompute — only for symbols with new fills
+        for symbol in symbols_with_new_fills:
+            await position_repo.recompute_from_fills(self.account_id, symbol)
+
+    async def _sync_paper_fills(
+        self, symbols: set[str], order_repo: OrderRepository, session
+    ) -> set[str]:
+        """Paper accounts: create Fill records from FILLED orders' raw_json."""
+        # Find FILLED orders without corresponding fills
+        filled_stmt = (
+            select(Order)
+            .where(
+                Order.account_id == self.account_id,
+                Order.symbol.in_(symbols),
+                Order.status == "FILLED",
+            )
+        )
+        filled_result = await session.execute(filled_stmt)
+        filled_orders = list(filled_result.scalars().all())
+
+        # Get existing fill order_ids to skip
+        existing_stmt = (
+            select(Fill.order_id)
+            .where(Fill.account_id == self.account_id, Fill.symbol.in_(symbols))
+            .distinct()
+        )
+        existing_result = await session.execute(existing_stmt)
+        existing_oids = {row[0] for row in existing_result.all()}
+
+        symbols_with_new_fills: set[str] = set()
+        for order in filled_orders:
+            if order.order_id in existing_oids:
+                continue
+            raw = order.raw_json or {}
+            fills = raw.get("fills", [])
+            if not fills:
+                continue
+            fill_rows = []
+            for i, f in enumerate(fills):
+                is_buyer = (order.side or "").upper() == "BUY"
+                trade_data = {
+                    "id": order.order_id * 100 + i,  # synthetic trade_id
+                    "orderId": order.order_id,
+                    "symbol": order.symbol,
+                    "isBuyer": is_buyer,
+                    "price": f.get("price", "0"),
+                    "qty": f.get("qty", "0"),
+                    "quoteQty": str(float(f.get("price", 0)) * float(f.get("qty", 0))),
+                    "commission": f.get("commission", "0"),
+                    "commissionAsset": f.get("commissionAsset", "USDT"),
+                    "time": order.update_time_ms or 0,
+                }
+                fill_rows.append((order.order_id, trade_data))
+            if fill_rows:
+                await order_repo.insert_fills_batch(self.account_id, fill_rows)
+                symbols_with_new_fills.add(order.symbol)
+                logger.info("Paper fill created: order %s symbol %s (%d fills)", order.order_id, order.symbol, len(fill_rows))
+
+        return symbols_with_new_fills
+
+    async def _sync_exchange_fills(
+        self, symbols: set[str], order_repo: OrderRepository, synced_oids: set[int], session
+    ) -> set[str]:
+        """Real accounts: sync fills from exchange API (incremental via last trade_id)."""
         try:
             max_id_stmt = (
                 select(Fill.symbol, func.max(Fill.trade_id))
@@ -658,9 +730,7 @@ class AccountTrader:
             except Exception as e:
                 logger.warning("Fills processing failed for %s: %s", symbol, e)
 
-        # 4-6: Conditional recompute — only for symbols with new fills
-        for symbol in symbols_with_new_fills:
-            await position_repo.recompute_from_fills(self.account_id, symbol)
+        return symbols_with_new_fills
 
     _ORPHAN_TP_RE = re.compile(r"^CMT_[0-9a-f]{8}_[0-9a-f]{8}__TP_(\d+)$")
 
