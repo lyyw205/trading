@@ -593,35 +593,26 @@ class AccountTrader:
             # Paper accounts: create fills from FILLED order raw_json (no exchange API)
             symbols_with_new_fills = await self._sync_paper_fills(symbols, order_repo, session)
         else:
-            symbols_with_new_fills = await self._sync_exchange_fills(
-                symbols, order_repo, synced_oids, session
-            )
+            symbols_with_new_fills = await self._sync_exchange_fills(symbols, order_repo, synced_oids, session)
 
         # 4-6: Conditional recompute — only for symbols with new fills
         for symbol in symbols_with_new_fills:
             await position_repo.recompute_from_fills(self.account_id, symbol)
 
-    async def _sync_paper_fills(
-        self, symbols: set[str], order_repo: OrderRepository, session
-    ) -> set[str]:
+    async def _sync_paper_fills(self, symbols: set[str], order_repo: OrderRepository, session) -> set[str]:
         """Paper accounts: create Fill records from FILLED orders' raw_json."""
         # Find FILLED orders without corresponding fills
-        filled_stmt = (
-            select(Order)
-            .where(
-                Order.account_id == self.account_id,
-                Order.symbol.in_(symbols),
-                Order.status == "FILLED",
-            )
+        filled_stmt = select(Order).where(
+            Order.account_id == self.account_id,
+            Order.symbol.in_(symbols),
+            Order.status == "FILLED",
         )
         filled_result = await session.execute(filled_stmt)
         filled_orders = list(filled_result.scalars().all())
 
         # Get existing fill order_ids to skip
         existing_stmt = (
-            select(Fill.order_id)
-            .where(Fill.account_id == self.account_id, Fill.symbol.in_(symbols))
-            .distinct()
+            select(Fill.order_id).where(Fill.account_id == self.account_id, Fill.symbol.in_(symbols)).distinct()
         )
         existing_result = await session.execute(existing_stmt)
         existing_oids = {row[0] for row in existing_result.all()}
@@ -653,7 +644,9 @@ class AccountTrader:
             if fill_rows:
                 await order_repo.insert_fills_batch(self.account_id, fill_rows)
                 symbols_with_new_fills.add(order.symbol)
-                logger.info("Paper fill created: order %s symbol %s (%d fills)", order.order_id, order.symbol, len(fill_rows))
+                logger.info(
+                    "Paper fill created: order %s symbol %s (%d fills)", order.order_id, order.symbol, len(fill_rows)
+                )
 
         return symbols_with_new_fills
 
