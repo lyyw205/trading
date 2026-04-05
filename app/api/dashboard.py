@@ -258,7 +258,7 @@ async def get_trades(
         select(Order)
         .options(defer(Order.raw_json))
         .where(Order.account_id == account.id)
-        .order_by(Order.update_time_ms.desc())
+        .order_by(Order.order_id.desc())
         .limit(limit)
     )
     result = await session.execute(stmt)

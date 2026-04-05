@@ -1,6 +1,5 @@
 import uuid
 from datetime import datetime
-from decimal import Decimal
 
 from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, Index, Numeric, String
 from sqlalchemy.dialects.postgresql import JSONB
@@ -24,7 +23,7 @@ class BacktestRun(CreatedAtMixin, Base):
     combos: Mapped[list[dict] | None] = mapped_column(JSONB, nullable=True)
     strategies: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     strategy_params: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    initial_usdt: Mapped[Decimal] = mapped_column(Numeric, nullable=False)
+    initial_usdt: Mapped[float] = mapped_column(Numeric, nullable=False)
     start_ts_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
     end_ts_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False, server_default="PENDING")

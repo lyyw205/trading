@@ -1,5 +1,4 @@
 import uuid
-from decimal import Decimal
 
 from sqlalchemy import ForeignKey, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -14,9 +13,9 @@ class Position(UpdatedAtMixin, Base):
         ForeignKey("trading_accounts.id", ondelete="CASCADE"), primary_key=True
     )
     symbol: Mapped[str] = mapped_column(String, primary_key=True)
-    qty: Mapped[Decimal] = mapped_column(Numeric, nullable=False)
-    cost_basis_usdt: Mapped[Decimal] = mapped_column(Numeric, nullable=False)
-    avg_entry: Mapped[Decimal] = mapped_column(Numeric, nullable=False)
+    qty: Mapped[float] = mapped_column(Numeric, nullable=False)
+    cost_basis_usdt: Mapped[float] = mapped_column(Numeric, nullable=False)
+    avg_entry: Mapped[float] = mapped_column(Numeric, nullable=False)
 
     account = relationship("TradingAccount", back_populates="positions")
 

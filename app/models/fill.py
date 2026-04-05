@@ -1,6 +1,5 @@
 import uuid
 from datetime import datetime
-from decimal import Decimal
 
 from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, Numeric, String, func
 from sqlalchemy.dialects.postgresql import JSONB
@@ -25,10 +24,10 @@ class Fill(Base):
     order_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     symbol: Mapped[str] = mapped_column(String, nullable=False)
     side: Mapped[str | None] = mapped_column(String, nullable=True)
-    price: Mapped[Decimal | None] = mapped_column(Numeric, nullable=True)
-    qty: Mapped[Decimal | None] = mapped_column(Numeric, nullable=True)
-    quote_qty: Mapped[Decimal | None] = mapped_column(Numeric, nullable=True)
-    commission: Mapped[Decimal | None] = mapped_column(Numeric, nullable=True)
+    price: Mapped[float | None] = mapped_column(Numeric, nullable=True)
+    qty: Mapped[float | None] = mapped_column(Numeric, nullable=True)
+    quote_qty: Mapped[float | None] = mapped_column(Numeric, nullable=True)
+    commission: Mapped[float | None] = mapped_column(Numeric, nullable=True)
     commission_asset: Mapped[str | None] = mapped_column(String, nullable=True)
     trade_time_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     raw_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)

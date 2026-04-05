@@ -1,5 +1,4 @@
 import uuid
-from decimal import Decimal
 
 from sqlalchemy import BigInteger, ForeignKey, Index, Numeric, String
 from sqlalchemy.dialects.postgresql import JSONB
@@ -24,10 +23,10 @@ class Order(UpdatedAtMixin, Base):
     side: Mapped[str | None] = mapped_column(String, nullable=True)
     type: Mapped[str | None] = mapped_column(String, nullable=True)
     status: Mapped[str | None] = mapped_column(String, nullable=True)
-    price: Mapped[Decimal | None] = mapped_column(Numeric, nullable=True)
-    orig_qty: Mapped[Decimal | None] = mapped_column(Numeric, nullable=True)
-    executed_qty: Mapped[Decimal | None] = mapped_column(Numeric, nullable=True)
-    cum_quote_qty: Mapped[Decimal | None] = mapped_column(Numeric, nullable=True)
+    price: Mapped[float | None] = mapped_column(Numeric, nullable=True)
+    orig_qty: Mapped[float | None] = mapped_column(Numeric, nullable=True)
+    executed_qty: Mapped[float | None] = mapped_column(Numeric, nullable=True)
+    cum_quote_qty: Mapped[float | None] = mapped_column(Numeric, nullable=True)
     client_order_id: Mapped[str | None] = mapped_column(String, nullable=True)
     update_time_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     raw_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
