@@ -313,6 +313,8 @@ async function loadPriceChart(accountId, containerId, interval, symbol) {
   if (_dashTradeEvents && _dashCandleMap) {
     const sortedTimes = Object.keys(_dashCandleMap).map(Number).sort((a, b) => a - b);
     const intSec = INTERVAL_SEC[_dashCurrentInterval] || 300;
+    const candleMin = sortedTimes.length ? sortedTimes[0] : 0;
+    const candleMax = sortedTimes.length ? sortedTimes[sortedTimes.length - 1] : 0;
 
     function snapToCandle(t) {
       if (_dashCandleMap[t]) return t;
@@ -337,6 +339,7 @@ async function loadPriceChart(accountId, containerId, interval, symbol) {
       .filter(e => e.time && e.price)
       .forEach(e => {
         let time = Math.floor(e.time / intSec) * intSec;
+        if (time < candleMin - intSec || time > candleMax + intSec) return;
         time = snapToCandle(time);
         if (!_dashTradeGroups[time]) _dashTradeGroups[time] = [];
         _dashTradeGroups[time].push({
