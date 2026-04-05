@@ -21,7 +21,7 @@ class DailyReport(Base):
     generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     period_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     period_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    health_score: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False)
+    health_score: Mapped[float] = mapped_column(Numeric(5, 2, asdecimal=False), nullable=False)
     summary: Mapped[dict] = mapped_column(JSONB, nullable=False)
     telegram_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     discord_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

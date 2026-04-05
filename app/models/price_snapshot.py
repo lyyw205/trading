@@ -11,4 +11,4 @@ class PriceSnapshot(CreatedAtMixin, Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     symbol: Mapped[str] = mapped_column(String, nullable=False)
     ts_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    price: Mapped[float] = mapped_column(Numeric, nullable=False)
+    price: Mapped[float] = mapped_column(Numeric(asdecimal=False), nullable=False)

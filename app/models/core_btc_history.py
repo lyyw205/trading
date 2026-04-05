@@ -18,6 +18,6 @@ class CoreBtcHistory(CreatedAtMixin, Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     account_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("trading_accounts.id", ondelete="CASCADE"), nullable=False)
     symbol: Mapped[str] = mapped_column(String, nullable=False)
-    btc_qty: Mapped[float] = mapped_column(Numeric, nullable=False)
-    cost_usdt: Mapped[float] = mapped_column(Numeric, nullable=False)
+    btc_qty: Mapped[float] = mapped_column(Numeric(asdecimal=False), nullable=False)
+    cost_usdt: Mapped[float] = mapped_column(Numeric(asdecimal=False), nullable=False)
     source: Mapped[str] = mapped_column(String, nullable=False)
