@@ -240,6 +240,11 @@ let _dashCurrentSymbol = null;
 // Interval → seconds mapping for candle bucketing
 const INTERVAL_SEC = { '1m': 60, '5m': 300, '1h': 3600, '1d': 86400 };
 
+// Historical candle loading state
+let _dashEarliestTs = null;    // earliest candle timestamp (seconds)
+let _dashLoadingHistory = false; // prevent concurrent fetches
+let _dashAllCandles = [];        // full sorted candle array
+
 async function loadPriceChart(accountId, containerId, interval, symbol) {
   const container = document.getElementById(containerId);
   if (!container || typeof LightweightCharts === 'undefined') return;
@@ -278,6 +283,9 @@ async function loadPriceChart(accountId, containerId, interval, symbol) {
   });
 
   // Fetch candles
+  _dashAllCandles = [];
+  _dashEarliestTs = null;
+  _dashLoadingHistory = false;
   try {
     let candleUrl = '/api/dashboard/' + accountId + '/price-candles?interval=' + _dashCurrentInterval;
     if (_dashCurrentSymbol) candleUrl += '&symbol=' + encodeURIComponent(_dashCurrentSymbol);
@@ -289,14 +297,55 @@ async function loadPriceChart(accountId, containerId, interval, symbol) {
         time: Math.floor(candle.ts_ms / 1000),
         open: candle.open, high: candle.high, low: candle.low, close: candle.close,
       }));
+      _dashAllCandles = mapped;
       _dashCandleSeries.setData(mapped);
       _dashChart.timeScale().fitContent();
+      if (mapped.length > 0) _dashEarliestTs = mapped[0].time;
 
       // Build candle map for overlay
       _dashCandleMap = {};
       mapped.forEach(c => { _dashCandleMap[c.time] = c; });
     }
   } catch (e) { console.error('Failed to load candles', e); }
+
+  // Subscribe to visible range changes for lazy loading older candles
+  _dashChart.timeScale().subscribeVisibleLogicalRangeChange(async (logicalRange) => {
+    if (!logicalRange || _dashLoadingHistory || !_dashEarliestTs) return;
+    // Load more when user scrolls within 10 bars of the left edge
+    if (logicalRange.from > 10) return;
+
+    _dashLoadingHistory = true;
+    try {
+      const intSec = INTERVAL_SEC[_dashCurrentInterval] || 60;
+      const to_ms = _dashEarliestTs * 1000;
+      const spans = { '1m': 6 * 3600_000, '5m': 24 * 3600_000, '1h': 7 * 86400_000, '1d': 90 * 86400_000 };
+      const from_ms = to_ms - (spans[_dashCurrentInterval] || 24 * 3600_000);
+
+      let url = '/api/dashboard/' + _dashAccountId + '/price-candles?interval=' + _dashCurrentInterval;
+      url += '&from_ms=' + from_ms + '&to_ms=' + to_ms;
+      if (_dashCurrentSymbol) url += '&symbol=' + encodeURIComponent(_dashCurrentSymbol);
+
+      const resp = await apiFetch(url);
+      if (resp.ok) {
+        const older = await resp.json();
+        const olderMapped = older.map(c => ({
+          time: Math.floor(c.ts_ms / 1000),
+          open: c.open, high: c.high, low: c.low, close: c.close,
+        })).filter(c => c.time < _dashEarliestTs);
+
+        if (olderMapped.length > 0) {
+          _dashAllCandles = [...olderMapped, ..._dashAllCandles];
+          _dashCandleSeries.setData(_dashAllCandles);
+          _dashEarliestTs = _dashAllCandles[0].time;
+          olderMapped.forEach(c => { _dashCandleMap[c.time] = c; });
+        } else {
+          // No more data — stop trying
+          _dashEarliestTs = null;
+        }
+      }
+    } catch (e) { console.error('Failed to load older candles', e); }
+    _dashLoadingHistory = false;
+  });
 
   // Fetch trade events (only once, cache for TF switches)
   if (!_dashTradeEvents) {
