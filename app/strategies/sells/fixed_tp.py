@@ -220,7 +220,12 @@ class FixedTpSell(BaseSellLogic):
                 net_profit if net_profit > 0 else 0.0,
             )
 
-        elif sell_status in ("CANCELED", "REJECTED", "EXPIRED", "NOT_FOUND"):  # [PAPER-ONLY] NOT_FOUND: BacktestClient 재시작 대응
+        elif sell_status in (
+            "CANCELED",
+            "REJECTED",
+            "EXPIRED",
+            "NOT_FOUND",
+        ):  # [PAPER-ONLY] NOT_FOUND: BacktestClient 재시작 대응
             logger.info(
                 "fixed_tp: sell order %s for lot %s %s, clearing",
                 lot.sell_order_id,
