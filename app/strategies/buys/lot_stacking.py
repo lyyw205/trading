@@ -321,8 +321,9 @@ class LotStackingBuy(BaseBuyLogic):
                 await state.set("sizing_round", cur_round + 1)
 
             logger.info(
-                "lot_stacking_buy: LOT buy filled qty_net=%.8f avg=%.2f",
+                "lot_stacking_buy: LOT buy filled qty_net=%.8f avg=%.2f → base_price=%.2f",
                 bought_qty_net,
+                avg_price,
                 avg_price,
             )
 

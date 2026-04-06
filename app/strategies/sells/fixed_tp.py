@@ -212,12 +212,14 @@ class FixedTpSell(BaseSellLogic):
                 f"sell_retry_after:{lot.lot_id}",
             )
 
+            new_base = await state.get_float("base_price", 0.0)
             logger.info(
-                "fixed_tp: lot %s TP filled sell=%.2f profit=%.4f pending_earnings+=%.4f",
+                "fixed_tp: lot %s TP filled sell=%.2f profit=%.4f pending_earnings+=%.4f base_price=%.2f",
                 lot.lot_id,
                 sell_price,
                 net_profit,
                 net_profit if net_profit > 0 else 0.0,
+                new_base,
             )
 
         elif sell_status in (
