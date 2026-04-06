@@ -548,7 +548,7 @@ async function loadAssetStatus(accountId) {
     const symbols = assetData.held_symbols || [];
     const totalHeldValue = symbols.reduce((sum, holding) => sum + holding.value_usdt, 0);
     const totalPnl = symbols.reduce((sum, holding) => sum + holding.pnl_usdt, 0);
-    const portfolioValue = totalHeldValue + (assetData.reserve_pool_usdt || 0) + (assetData.usdt_balance || 0);
+    const portfolioValue = totalHeldValue + (assetData.reserve_pool_usdt || 0) + (assetData.free_balance_usdt || 0);
     const pnlPct = assetData.total_invested_usdt > 0 ? (totalPnl / assetData.total_invested_usdt * 100) : 0;
     const pnlColor = totalPnl >= 0 ? 'var(--success)' : 'var(--danger, #ef4444)';
     const pnlSign = totalPnl >= 0 ? '+' : '';

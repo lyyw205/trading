@@ -116,6 +116,10 @@ class AccountTrader:
                     if asset not in self._client._balances:
                         self._client._balances[asset] = {"free": 0.0, "locked": 0.0}
                     self._client._balances[asset]["free"] = qty
+
+                # [PAPER-ONLY] 미체결 주문 복원 (서버 재시작 시 in-memory 주문 유실 방지)
+                await self._restore_paper_open_orders(session)
+
                 self._is_paper = True
                 logger.info("페이퍼 계정 초기화 완료: USDT=%.2f, assets=%s", balance["usdt_free"], balance["assets"])
             else:
@@ -179,6 +183,63 @@ class AccountTrader:
         )
         return {"usdt_free": usdt_free, "assets": assets}
 
+    # ---- [PAPER-ONLY] 페이퍼 미체결 주문 복원 (삭제 시 이 메서드 + _init_client 호출부 제거) ----
+    async def _restore_paper_open_orders(self, session) -> None:
+        """서버 재시작 시 DB의 미체결 주문을 BacktestClient에 복원.
+
+        미체결 주문의 locked 자산도 free에서 차감하여 잔고 정합성을 유지한다.
+        """
+        stmt = select(Order).where(
+            Order.account_id == self.account_id,
+            Order.status.in_(("NEW", "PARTIALLY_FILLED")),
+        )
+        result = await session.execute(stmt)
+        open_orders = list(result.scalars().all())
+        if not open_orders:
+            return
+
+        max_order_id = 0
+        for db_order in open_orders:
+            order_dict = {
+                "orderId": db_order.order_id,
+                "clientOrderId": db_order.client_order_id or "",
+                "symbol": db_order.symbol,
+                "side": db_order.side or "",
+                "type": db_order.type or "LIMIT",
+                "status": "NEW",
+                "price": str(db_order.price or 0),
+                "origQty": str(db_order.orig_qty or 0),
+                "executedQty": str(db_order.executed_qty or 0),
+                "cummulativeQuoteQty": str(db_order.cum_quote_qty or 0),
+                "timeInForce": "GTC",
+                "transactTime": db_order.update_time_ms or 0,
+            }
+            self._client._open_orders.append(order_dict)
+
+            if db_order.order_id > max_order_id:
+                max_order_id = db_order.order_id
+
+            # 잔고 free → locked 조정
+            qty = float(db_order.orig_qty or 0) - float(db_order.executed_qty or 0)
+            if qty <= 0:
+                continue
+
+            if db_order.side == "BUY":
+                lock_amount = qty * float(db_order.price or 0)
+                self._client._balances["USDT"]["free"] -= lock_amount
+                self._client._balances["USDT"]["locked"] += lock_amount
+            elif db_order.side == "SELL":
+                asset = parse_symbol(db_order.symbol)[0]
+                if asset in self._client._balances:
+                    self._client._balances[asset]["free"] -= qty
+                    self._client._balances[asset]["locked"] += qty
+
+        # order_id 카운터를 DB 최대값 이후로 설정 (충돌 방지)
+        if max_order_id >= self._client._order_id_counter:
+            self._client._order_id_counter = max_order_id + 1
+
+        logger.info("페이퍼 미체결 주문 %d건 복원 완료", len(open_orders))
+
     def _get_or_create_buy(self, combo_id: UUID, symbol: str, name: str) -> BaseBuyLogic:
         key = (combo_id, symbol)
         if key not in self._buy_instances:
@@ -226,21 +287,40 @@ class AccountTrader:
         now = time.time()
         if now - self._last_scan_log_at >= 3600:
             total_symbols = sum(len(c.symbols) if c.symbols else 1 for c in combos)
+
+            # 각 콤보×심볼의 base_price 수집
+            bp_parts: list[str] = []
+            for combo in combos:
+                combo_symbols = combo.symbols if combo.symbols else [account.symbol]
+                for symbol in combo_symbols:
+                    try:
+                        ss = StrategyStateStore(self.account_id, f"{combo.id}:{symbol}", session)
+                        await ss.preload()
+                        bp = await ss.get_float("base_price", 0.0)
+                        if bp > 0:
+                            bp_parts.append(f"{symbol}={bp:.2f}")
+                    except Exception:
+                        pass
+
+            bp_info = " | base=" + ", ".join(bp_parts) if bp_parts else ""
+
             if self._buy_pause_state == BuyPauseState.PAUSED:
                 logger.info(
-                    "매도 감시 실행완료 | %d개 콤보, %d개 심볼 | 잔고=%.2f | 포지션=%s",
+                    "매도 감시 실행완료 | %d개 콤보, %d개 심볼 | 잔고=%.2f | 포지션=%s%s",
                     len(combos),
                     total_symbols,
                     free_balance,
                     "있음" if self._has_open_positions else "없음",
+                    bp_info,
                 )
             else:
                 logger.info(
-                    "스캔 중: %d개 콤보, %d개 심볼 | 잔고=%.2f | 상태=%s",
+                    "스캔 중: %d개 콤보, %d개 심볼 | 잔고=%.2f | 상태=%s%s",
                     len(combos),
                     total_symbols,
                     free_balance,
                     self._buy_pause_state.value,
+                    bp_info,
                 )
             self._last_scan_log_at = now
 
