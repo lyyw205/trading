@@ -540,7 +540,7 @@ class AccountTrader:
 
         # 페이퍼 계정: 라이브 가격을 BacktestClient에 주입 (주문 체결 시뮬레이션)
         if self._is_paper and hasattr(self._client, "set_price"):
-            self._client.set_price(cur_price)
+            self._client.set_price(cur_price, symbol)
 
         buy_logic = self._get_or_create_buy(combo.id, symbol, combo.buy_logic_name)
         sell_logic = self._get_or_create_sell(combo.id, symbol, combo.sell_logic_name)

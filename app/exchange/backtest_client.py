@@ -32,6 +32,7 @@ class BacktestClient(ExchangeClient):
             "USDT": {"free": initial_balance_usdt, "locked": 0.0},
             "BTC": {"free": initial_balance_btc, "locked": 0.0},
         }
+        self._prices: dict[str, float] = {}
         self._open_orders: list[dict] = []
         self._filled_orders: list[dict] = []
         self._trades: list[dict] = []
@@ -42,17 +43,21 @@ class BacktestClient(ExchangeClient):
     # Price helpers
     # ------------------------------------------------------------------
 
-    def set_price(self, price: float) -> None:
+    def set_price(self, price: float, symbol: str | None = None) -> None:
         """Set current simulated price and check limit order fills."""
         self._current_price = price
+        if symbol:
+            self._prices[symbol] = price
         self._check_order_fills()
 
-    def set_candle(self, close: float, low: float, high: float, ts_ms: int) -> None:
+    def set_candle(self, close: float, low: float, high: float, ts_ms: int, symbol: str | None = None) -> None:
         """Set candle data for realistic fill simulation."""
         self._current_price = close
         self._candle_low = low
         self._candle_high = high
         self._sim_time_ms = ts_ms
+        if symbol:
+            self._prices[symbol] = close
         self._check_order_fills()
 
     def _time_ms(self) -> int:
@@ -63,14 +68,20 @@ class BacktestClient(ExchangeClient):
 
         Uses candle low for BUY fills and candle high for SELL fills
         when candle data is available, for realistic simulation.
+        Per-symbol prices are used when available to prevent cross-symbol fills.
         """
         remaining: list[dict] = []
-        buy_check = self._candle_low if self._candle_low > 0 else self._current_price
-        sell_check = self._candle_high if self._candle_high > 0 else self._current_price
 
         for order in self._open_orders:
             filled = False
+            order_symbol = order["symbol"]
             order_price = float(order["price"])
+
+            # 심볼별 가격이 있으면 해당 가격 사용, 없으면 fallback
+            sym_price = self._prices.get(order_symbol, self._current_price)
+            buy_check = self._candle_low if self._candle_low > 0 and order_symbol == self.symbol else sym_price
+            sell_check = self._candle_high if self._candle_high > 0 and order_symbol == self.symbol else sym_price
+
             if (order["side"] == "BUY" and buy_check <= order_price) or (
                 order["side"] == "SELL" and sell_check >= order_price
             ):
@@ -146,7 +157,7 @@ class BacktestClient(ExchangeClient):
     # ------------------------------------------------------------------
 
     async def get_price(self, symbol: str) -> float:
-        return self._current_price
+        return self._prices.get(symbol, self._current_price)
 
     async def get_symbol_filters(self, symbol: str) -> SymbolFilters:
         return self._filters
