@@ -430,7 +430,7 @@ class DailyReportService:
                     )
                 )
                 portfolio_by_account: dict[str, list[dict]] = {}
-                total_cost_basis = Decimal("0")
+                total_cost_basis = 0.0
                 total_open_positions = 0
                 for row in positions_result.all():
                     if row.qty <= 0:

@@ -420,7 +420,7 @@ async def admin_system_health(
     except Exception as exc:
         _logger.warning("Failed to query pg_stat_activity: %s", exc)
 
-    # --- Slow queries (optional) ---
+    # --- Slow queries (optional, requires pg_stat_statements extension) ---
     slow_queries = []
     try:
         slow_query_result = await session.execute(
@@ -434,8 +434,8 @@ async def admin_system_health(
             {"query": row[0][:120], "calls": row[1], "avg_ms": float(row[2]), "total_ms": float(row[3])}
             for row in slow_query_result.fetchall()
         ]
-    except Exception:
-        pass
+    except Exception as exc:
+        _logger.debug("pg_stat_statements unavailable: %s", exc)
 
     # --- Dead tuples ---
     dead_tuples = []
@@ -446,16 +446,18 @@ async def admin_system_health(
         dead_tuples = [
             {"table": row[0], "dead_tuples": row[1], "live_tuples": row[2]} for row in dead_tuple_result.fetchall()
         ]
-    except Exception:
-        pass
+    except Exception as exc:
+        _logger.warning("Failed to query dead tuples: %s", exc)
 
     # --- DB size ---
     db_size_mb = 0
     try:
-        db_size_result = await session.execute(text("SELECT pg_database_size(current_database()) / 1024 / 1024"))
-        db_size_mb = db_size_result.scalar_one()
-    except Exception:
-        pass
+        db_size_result = await session.execute(
+            text("SELECT round(pg_database_size(current_database()) / 1024.0 / 1024.0, 1)")
+        )
+        db_size_mb = float(db_size_result.scalar_one())
+    except Exception as exc:
+        _logger.warning("Failed to query DB size: %s", exc)
 
     # --- WebSocket status ---
     engine = request.app.state.trading_engine
@@ -479,8 +481,8 @@ async def admin_system_health(
             select(sa_func.count()).where(Order.update_time_ms >= hour_ago_ms, Order.status == "FILLED")
         )
         fills_last_hour = fill_count_result.scalar_one()
-    except Exception:
-        pass
+    except Exception as exc:
+        _logger.warning("Failed to query trading activity: %s", exc)
 
     # --- Error trend (last 6 hours, hourly buckets) ---
     error_trend = []
@@ -494,8 +496,8 @@ async def admin_system_health(
             )
         )
         error_trend = [{"hour": row[0].isoformat(), "count": row[1]} for row in error_trend_result.fetchall()]
-    except Exception:
-        pass
+    except Exception as exc:
+        _logger.warning("Failed to query error trend: %s", exc)
 
     # --- Candle counts ---
     candle_stats = []
@@ -512,8 +514,8 @@ async def admin_system_health(
         )
         candle_result = await session.execute(union_sql)
         candle_stats = [{"table": row[0], "symbol": row[1], "count": row[2]} for row in candle_result.fetchall()]
-    except Exception:
-        pass
+    except Exception as exc:
+        _logger.warning("Failed to query candle stats: %s", exc)
 
     return {
         "server": server,
