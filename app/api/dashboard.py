@@ -343,6 +343,52 @@ async def get_price_candles(
     return sorted(buckets.values(), key=lambda x: x["ts_ms"])
 
 
+@router.get("/{account_id}/base-prices")
+@limiter.limit("120/minute")
+async def get_base_prices(
+    request: Request,
+    account=Depends(get_owned_account),
+    session: AsyncSession = Depends(get_trading_session),
+):
+    """Get base_price for each combo×symbol pair (for chart price lines)."""
+    from app.models.strategy_state import StrategyState
+    from app.models.trading_combo import TradingCombo
+
+    combos = (
+        await session.execute(
+            select(TradingCombo).where(TradingCombo.account_id == account.id, TradingCombo.is_enabled.is_(True))
+        )
+    ).scalars().all()
+
+    result = []
+    for combo in combos:
+        symbols = combo.symbols if combo.symbols else [account.symbol]
+        for symbol in symbols:
+            scope = f"{combo.id}:{symbol}"
+            row = (
+                await session.execute(
+                    select(StrategyState.value).where(
+                        StrategyState.account_id == account.id,
+                        StrategyState.scope == scope,
+                        StrategyState.key == "base_price",
+                    )
+                )
+            ).scalar_one_or_none()
+            if row:
+                try:
+                    bp = float(row)
+                    drop_pct = (combo.buy_params or {}).get("drop_pct", 0.01)
+                    result.append({
+                        "symbol": symbol,
+                        "combo_name": combo.name,
+                        "base_price": bp,
+                        "trigger_price": round(bp * (1 - drop_pct), 2),
+                    })
+                except (ValueError, TypeError):
+                    pass
+    return result
+
+
 @router.get("/{account_id}/asset-status", response_model=AssetStatus)
 @limiter.limit("120/minute")
 async def get_asset_status(

@@ -225,6 +225,49 @@ async function loadAccountDashboard(accountId) {
   ]);
 }
 
+function _rebuildTradeGroups() {
+  _dashTradeGroups = {};
+  if (!_dashTradeEvents || !_dashCandleMap) return;
+  const sortedTimes = Object.keys(_dashCandleMap).map(Number).sort((a, b) => a - b);
+  const intSec = INTERVAL_SEC[_dashCurrentInterval] || 300;
+  const candleMin = sortedTimes.length ? sortedTimes[0] : 0;
+  const candleMax = sortedTimes.length ? sortedTimes[sortedTimes.length - 1] : 0;
+
+  function snapToCandle(t) {
+    if (_dashCandleMap[t]) return t;
+    let lo = 0, hi = sortedTimes.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (sortedTimes[mid] < t) lo = mid + 1;
+      else hi = mid;
+    }
+    const candidates = [];
+    if (lo < sortedTimes.length) candidates.push(sortedTimes[lo]);
+    if (lo > 0) candidates.push(sortedTimes[lo - 1]);
+    let best = candidates[0], bestDist = Math.abs(t - best);
+    for (const candidateTime of candidates) {
+      const distance = Math.abs(t - candidateTime);
+      if (distance < bestDist) { best = candidateTime; bestDist = distance; }
+    }
+    return best;
+  }
+
+  _dashTradeEvents
+    .filter(e => e.time && e.price)
+    .forEach(e => {
+      let time = Math.floor(e.time / intSec) * intSec;
+      if (time < candleMin - intSec || time > candleMax + intSec) return;
+      time = snapToCandle(time);
+      if (!_dashTradeGroups[time]) _dashTradeGroups[time] = [];
+      _dashTradeGroups[time].push({
+        time,
+        price: parseFloat(e.price),
+        side: (e.side || '') === 'buy' ? 'buy' : 'sell',
+        ts_ms: e.time * 1000,
+      });
+    });
+}
+
 // ── Price chart state (module-level for overlay re-render) ──
 let _dashChart = null;
 let _dashCandleSeries = null;
@@ -308,6 +351,36 @@ async function loadPriceChart(accountId, containerId, interval, symbol) {
     }
   } catch (e) { console.error('Failed to load candles', e); }
 
+  // Fetch base_price and draw price lines
+  try {
+    const bpResp = await apiFetch('/api/dashboard/' + accountId + '/base-prices');
+    if (bpResp.ok) {
+      const basePrices = await bpResp.json();
+      basePrices.forEach(bp => {
+        if (_dashCurrentSymbol && bp.symbol !== _dashCurrentSymbol) return;
+        if (!_dashCurrentSymbol && bp.symbol !== _dashAllCandles._defaultSymbol) {
+          // show all if no symbol filter
+        }
+        _dashCandleSeries.createPriceLine({
+          price: bp.base_price,
+          color: '#9e9e9e',
+          lineWidth: 1,
+          lineStyle: LightweightCharts.LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: 'Base ' + bp.base_price.toFixed(2),
+        });
+        _dashCandleSeries.createPriceLine({
+          price: bp.trigger_price,
+          color: '#5b9bd5',
+          lineWidth: 1,
+          lineStyle: LightweightCharts.LineStyle.Dotted,
+          axisLabelVisible: true,
+          title: 'Buy ' + bp.trigger_price.toFixed(2),
+        });
+      });
+    }
+  } catch (e) { console.error('Failed to load base prices', e); }
+
   // Subscribe to visible range changes for lazy loading older candles
   _dashChart.timeScale().subscribeVisibleLogicalRangeChange(async (logicalRange) => {
     if (!logicalRange || _dashLoadingHistory || !_dashEarliestTs) return;
@@ -338,6 +411,7 @@ async function loadPriceChart(accountId, containerId, interval, symbol) {
           _dashCandleSeries.setData(_dashAllCandles);
           _dashEarliestTs = _dashAllCandles[0].time;
           olderMapped.forEach(c => { _dashCandleMap[c.time] = c; });
+          _rebuildTradeGroups();
         } else {
           // No more data — stop trying
           _dashEarliestTs = null;
@@ -358,47 +432,7 @@ async function loadPriceChart(accountId, containerId, interval, symbol) {
   }
 
   // Build trade groups snapped to candle times
-  _dashTradeGroups = {};
-  if (_dashTradeEvents && _dashCandleMap) {
-    const sortedTimes = Object.keys(_dashCandleMap).map(Number).sort((a, b) => a - b);
-    const intSec = INTERVAL_SEC[_dashCurrentInterval] || 300;
-    const candleMin = sortedTimes.length ? sortedTimes[0] : 0;
-    const candleMax = sortedTimes.length ? sortedTimes[sortedTimes.length - 1] : 0;
-
-    function snapToCandle(t) {
-      if (_dashCandleMap[t]) return t;
-      let lo = 0, hi = sortedTimes.length - 1;
-      while (lo < hi) {
-        const mid = (lo + hi) >> 1;
-        if (sortedTimes[mid] < t) lo = mid + 1;
-        else hi = mid;
-      }
-      const candidates = [];
-      if (lo < sortedTimes.length) candidates.push(sortedTimes[lo]);
-      if (lo > 0) candidates.push(sortedTimes[lo - 1]);
-      let best = candidates[0], bestDist = Math.abs(t - best);
-      for (const candidateTime of candidates) {
-        const distance = Math.abs(t - candidateTime);
-        if (distance < bestDist) { best = candidateTime; bestDist = distance; }
-      }
-      return best;
-    }
-
-    _dashTradeEvents
-      .filter(e => e.time && e.price)
-      .forEach(e => {
-        let time = Math.floor(e.time / intSec) * intSec;
-        if (time < candleMin - intSec || time > candleMax + intSec) return;
-        time = snapToCandle(time);
-        if (!_dashTradeGroups[time]) _dashTradeGroups[time] = [];
-        _dashTradeGroups[time].push({
-          time,
-          price: parseFloat(e.price),
-          side: (e.side || '') === 'buy' ? 'buy' : 'sell',
-          ts_ms: e.time * 1000,
-        });
-      });
-  }
+  _rebuildTradeGroups();
 
   // Schedule overlay render on visible range changes
   const scheduleOverlay = () => {
