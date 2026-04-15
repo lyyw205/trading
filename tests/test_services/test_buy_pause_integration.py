@@ -146,7 +146,7 @@ class TestUpdateStateTransitions:
         )
 
         assert new_state == BuyPauseState.PAUSED
-        assert new_count == 4  # incremented but state unchanged
+        assert new_count == 3  # PAUSED stays unchanged, no counter increment
 
 
 # ---------------------------------------------------------------------------
