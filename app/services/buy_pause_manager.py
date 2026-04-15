@@ -70,15 +70,11 @@ class BuyPauseManager:
             # 잔고 회복 → 즉시 ACTIVE
             new_pause_state = BuyPauseState.ACTIVE
             new_low_balance_count = 0
-        elif did_sell_occur and current_state == BuyPauseState.PAUSED:
-            # 매도 발생했지만 잔고는 여전히 부족 → PAUSED 유지, 카운터만 증가
-            new_low_balance_count = consecutive_low + 1
-            logger.info(
-                "Sell occurred but balance still low, staying PAUSED (count=%d)",
-                new_low_balance_count,
-            )
+        elif current_state == BuyPauseState.PAUSED:
+            # 이미 PAUSED — 잔고 부족이 계속되는 한 상태 유지, DB 불필요한 UPDATE 방지
+            pass
         else:
-            # 잔고 부족
+            # 잔고 부족 (ACTIVE 또는 THROTTLED에서)
             new_low_balance_count = consecutive_low + 1
             if new_low_balance_count >= 3:
                 new_pause_state = BuyPauseState.PAUSED

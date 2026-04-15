@@ -419,8 +419,9 @@ async def admin_system_health(
         active_connections = conn_result.scalar_one()
     except Exception as exc:
         _logger.warning("Failed to query pg_stat_activity: %s", exc)
+        await session.rollback()
 
-    # --- Slow queries (optional, requires pg_stat_statements extension) ---
+    # --- Slow queries (optional, pg_stat_statements may not be installed) ---
     slow_queries = []
     try:
         slow_query_result = await session.execute(
@@ -436,6 +437,7 @@ async def admin_system_health(
         ]
     except Exception as exc:
         _logger.debug("pg_stat_statements unavailable: %s", exc)
+        await session.rollback()
 
     # --- Dead tuples ---
     dead_tuples = []
@@ -448,6 +450,7 @@ async def admin_system_health(
         ]
     except Exception as exc:
         _logger.warning("Failed to query dead tuples: %s", exc)
+        await session.rollback()
 
     # --- DB size ---
     db_size_mb = 0
@@ -458,6 +461,7 @@ async def admin_system_health(
         db_size_mb = float(db_size_result.scalar_one())
     except Exception as exc:
         _logger.warning("Failed to query DB size: %s", exc)
+        await session.rollback()
 
     # --- WebSocket status ---
     engine = request.app.state.trading_engine
@@ -483,6 +487,7 @@ async def admin_system_health(
         fills_last_hour = fill_count_result.scalar_one()
     except Exception as exc:
         _logger.warning("Failed to query trading activity: %s", exc)
+        await session.rollback()
 
     # --- Error trend (last 6 hours, hourly buckets) ---
     error_trend = []
@@ -498,6 +503,7 @@ async def admin_system_health(
         error_trend = [{"hour": row[0].isoformat(), "count": row[1]} for row in error_trend_result.fetchall()]
     except Exception as exc:
         _logger.warning("Failed to query error trend: %s", exc)
+        await session.rollback()
 
     # --- Candle counts ---
     candle_stats = []
@@ -516,6 +522,7 @@ async def admin_system_health(
         candle_stats = [{"table": row[0], "symbol": row[1], "count": row[2]} for row in candle_result.fetchall()]
     except Exception as exc:
         _logger.warning("Failed to query candle stats: %s", exc)
+        await session.rollback()
 
     return {
         "server": server,

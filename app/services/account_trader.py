@@ -82,6 +82,7 @@ class AccountTrader:
         self._consecutive_low_balance: int = 0
         self._has_open_positions: bool = False
         self._buy_pause_mgr: BuyPauseManager | None = None
+        self._balance_error_in_cycle: bool = False
         self._throttle_cycle: int = 0
         self._last_scan_log_at: float = 0.0  # 스캔 로그 throttle (1시간 간격)
         # Wake event for interruptible sleep (manual resume)
@@ -478,6 +479,7 @@ class AccountTrader:
                 prefetched_lots: dict[tuple, list] = {}
                 for lot in all_open_lots:
                     prefetched_lots.setdefault((lot.combo_id, lot.symbol), []).append(lot)
+                self._balance_error_in_cycle = False
                 await self._run_combo_loop(
                     combos,
                     account,
@@ -489,6 +491,8 @@ class AccountTrader:
                     account_state,
                     prefetched_lots,
                 )
+                if self._balance_error_in_cycle:
+                    is_balance_sufficient = False
                 is_balance_sufficient = await self._post_cycle_sell_check(
                     session,
                     account,
@@ -595,7 +599,14 @@ class AccountTrader:
 
         # 2. 매수 (buy-pause 가드 적용 — 사이클 단위 판정)
         if should_buy:
-            await buy_logic.tick(buy_ctx, combo_state, self._client, account_state, repos, combo.id)
+            try:
+                await buy_logic.tick(buy_ctx, combo_state, self._client, account_state, repos, combo.id)
+            except Exception as exc:
+                if classify_error(exc) == ErrorType.BALANCE:
+                    logger.warning("Balance insufficient for %s buy, marking for pause update", symbol)
+                    self._balance_error_in_cycle = True
+                else:
+                    raise
 
     async def _sync_orders_and_fills(
         self,

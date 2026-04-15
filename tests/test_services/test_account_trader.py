@@ -622,6 +622,142 @@ async def test_do_step_resets_failure_counter_on_success(trader):
 
 
 # ---------------------------------------------------------------------------
+# Balance error → buy pause state transition (fix for cd4a8b0 regression)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_balance_error_transitions_to_throttled(trader):
+    """BALANCE error in buy_logic.tick must NOT crash _do_step.
+
+    The error should be caught, is_balance_sufficient overridden to False,
+    and _post_cycle_sell_check should run → state transitions to THROTTLED.
+    Session must be committed so the state persists in DB.
+    """
+    import contextlib
+
+    account = _make_account_mock(buy_pause_state="ACTIVE", consecutive_low_balance=0)
+    combo = _make_combo_mock(trader.account_id)
+    extras, patches = _build_step_mocks(trader, account, [combo])
+
+    # Simulate Binance insufficient balance error from buy_logic.tick
+    balance_exc = RuntimeError("APIError(code=-2010): Account has insufficient balance for requested action.")
+
+    from unittest.mock import patch as mock_patch
+
+    from app.utils.error_classification import ErrorType
+
+    extras["buy_logic"].tick.side_effect = balance_exc
+
+    # classify_error should return BALANCE for this exception
+    with contextlib.ExitStack() as stack:
+        for p in patches:
+            stack.enter_context(p)
+        stack.enter_context(
+            mock_patch(
+                "app.services.account_trader.classify_error",
+                return_value=ErrorType.BALANCE,
+            )
+        )
+        result = await trader._do_step()
+
+    # _do_step must complete normally (not crash)
+    assert result == account.loop_interval_sec
+    # sell_logic must have run (before buy error)
+    extras["sell_logic"].tick.assert_awaited_once()
+    # session must be committed (state persists to DB)
+    extras["session"].commit.assert_awaited_once()
+    # balance error flag must be set
+    assert trader._balance_error_in_cycle is True
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_balance_error_sell_still_runs_for_all_symbols(trader):
+    """With multi-symbol combo, BALANCE error on first symbol must NOT
+    prevent sell_logic from running on the second symbol.
+    """
+    import contextlib
+
+    account = _make_account_mock(buy_pause_state="ACTIVE")
+    # Multi-symbol combo
+    combo = MagicMock()
+    combo.id = uuid.uuid4()
+    combo.account_id = trader.account_id
+    combo.is_enabled = True
+    combo.symbols = ["ETHUSDT", "BTCUSDT"]
+    combo.buy_logic_name = "lot_stacking"
+    combo.sell_logic_name = "fixed_tp"
+    combo.buy_params = {}
+    combo.sell_params = {}
+    combo.reference_combo_id = None
+
+    extras, patches = _build_step_mocks(trader, account, [combo])
+
+    sell_symbols = []
+
+    async def _sell_tick(ctx, *a, **kw):
+        sell_symbols.append(ctx.symbol)
+
+    extras["sell_logic"].tick.side_effect = _sell_tick
+
+    balance_exc = RuntimeError("APIError(code=-2010): insufficient balance")
+
+    from unittest.mock import patch as mock_patch
+
+    from app.utils.error_classification import ErrorType
+
+    extras["buy_logic"].tick.side_effect = balance_exc
+
+    with contextlib.ExitStack() as stack:
+        for p in patches:
+            stack.enter_context(p)
+        stack.enter_context(
+            mock_patch(
+                "app.services.account_trader.classify_error",
+                return_value=ErrorType.BALANCE,
+            )
+        )
+        result = await trader._do_step()
+
+    # Both symbols must have sell_logic executed
+    assert len(sell_symbols) == 2
+    assert set(sell_symbols) == {"ETHUSDT", "BTCUSDT"}
+    # Session committed
+    extras["session"].commit.assert_awaited_once()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_non_balance_error_still_propagates(trader):
+    """Non-BALANCE errors in buy_logic.tick must still propagate (not swallowed)."""
+    import contextlib
+
+    account = _make_account_mock()
+    combo = _make_combo_mock(trader.account_id)
+    extras, patches = _build_step_mocks(trader, account, [combo])
+
+    extras["buy_logic"].tick.side_effect = RuntimeError("some transient network error")
+
+    from unittest.mock import patch as mock_patch
+
+    from app.utils.error_classification import ErrorType
+
+    with contextlib.ExitStack() as stack:
+        for p in patches:
+            stack.enter_context(p)
+        stack.enter_context(
+            mock_patch(
+                "app.services.account_trader.classify_error",
+                return_value=ErrorType.TRANSIENT,
+            )
+        )
+        with pytest.raises(RuntimeError, match="some transient network error"):
+            await trader._do_step()
+
+
+# ---------------------------------------------------------------------------
 # Circuit breaker tests (run_forever level)
 # ---------------------------------------------------------------------------
 
