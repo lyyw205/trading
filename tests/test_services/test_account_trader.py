@@ -719,7 +719,7 @@ async def test_balance_error_sell_still_runs_for_all_symbols(trader):
                 return_value=ErrorType.BALANCE,
             )
         )
-        result = await trader._do_step()
+        await trader._do_step()
 
     # Both symbols must have sell_logic executed
     assert len(sell_symbols) == 2
