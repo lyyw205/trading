@@ -355,10 +355,14 @@ async def get_base_prices(
     from app.models.trading_combo import TradingCombo
 
     combos = (
-        await session.execute(
-            select(TradingCombo).where(TradingCombo.account_id == account.id, TradingCombo.is_enabled.is_(True))
+        (
+            await session.execute(
+                select(TradingCombo).where(TradingCombo.account_id == account.id, TradingCombo.is_enabled.is_(True))
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     result = []
     for combo in combos:
@@ -378,12 +382,14 @@ async def get_base_prices(
                 try:
                     bp = float(row)
                     drop_pct = (combo.buy_params or {}).get("drop_pct", 0.01)
-                    result.append({
-                        "symbol": symbol,
-                        "combo_name": combo.name,
-                        "base_price": bp,
-                        "trigger_price": round(bp * (1 - drop_pct), 2),
-                    })
+                    result.append(
+                        {
+                            "symbol": symbol,
+                            "combo_name": combo.name,
+                            "base_price": bp,
+                            "trigger_price": round(bp * (1 - drop_pct), 2),
+                        }
+                    )
                 except (ValueError, TypeError):
                     pass
     return result
