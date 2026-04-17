@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -49,12 +49,12 @@ class TestForceLogout:
 class TestIatValidation:
     def test_iat_before_password_changed_is_invalid(self):
         """Session issued before password change should be rejected."""
-        pw_changed = datetime(2026, 4, 17, 12, 0, 0, tzinfo=timezone.utc)
+        pw_changed = datetime(2026, 4, 17, 12, 0, 0, tzinfo=UTC)
         session_iat = int(pw_changed.timestamp()) - 3600  # 1 hour before
         assert session_iat < pw_changed.timestamp()
 
     def test_iat_after_password_changed_is_valid(self):
         """Session issued after password change should be accepted."""
-        pw_changed = datetime(2026, 4, 17, 12, 0, 0, tzinfo=timezone.utc)
+        pw_changed = datetime(2026, 4, 17, 12, 0, 0, tzinfo=UTC)
         session_iat = int(pw_changed.timestamp()) + 3600  # 1 hour after
         assert session_iat > pw_changed.timestamp()
