@@ -888,21 +888,20 @@ function openEarningsModal(accountId) {
         </div>
         <div class="earnings-slider-wrap">
           <label>Reserve 비율: <span id="earnings-pct-label">100</span>%</label>
-          <input type="range" id="earnings-slider" min="0" max="100" value="100"
-                 oninput="updateEarningsPreview(this.value)">
+          <input type="range" id="earnings-slider" min="0" max="100" value="100">
         </div>
         <div class="earnings-quick-buttons">
-          <button class="btn btn-sm" onclick="updateEarningsPreview(100)">100% Reserve</button>
-          <button class="btn btn-sm" onclick="updateEarningsPreview(50)">50 / 50</button>
-          <button class="btn btn-sm" onclick="updateEarningsPreview(0)">100% 유동</button>
+          <button class="btn btn-sm" data-action="updateEarningsPreview" data-pct="100">100% Reserve</button>
+          <button class="btn btn-sm" data-action="updateEarningsPreview" data-pct="50">50 / 50</button>
+          <button class="btn btn-sm" data-action="updateEarningsPreview" data-pct="0">100% 유동</button>
         </div>
         <div id="earnings-preview" class="earnings-preview"></div>
         <p class="book-value-notice">
           * Reserve BTC 수량은 현재가 기준 장부상 환산값이며, 실제 거래가와 차이가 있을 수 있습니다.
         </p>
         <div class="modal-actions">
-          <button class="btn btn-primary" onclick="submitEarningsApproval()">확인</button>
-          <button class="btn" onclick="closeEarningsModal()">취소</button>
+          <button class="btn btn-primary" data-action="submitEarningsApproval">확인</button>
+          <button class="btn" data-action="closeEarningsModal">취소</button>
         </div>
       </div>
     `;
@@ -1021,19 +1020,19 @@ function _renderPagination({ containerId, total, totalPages, currentPage, perPag
   html += `<span class="pagination-info">${total}건 중 ${start}–${end}건</span>`;
 
   // Prev arrow
-  html += `<button class="pagination-nav" onclick="${goPageFn}(${currentPage - 1})" ${isFirst ? 'disabled' : ''} aria-label="이전">&#8249;</button>`;
+  html += `<button class="pagination-nav" data-action="goPage" data-page="${currentPage - 1}" data-page-fn="${goPageFn}" ${isFirst ? 'disabled' : ''} aria-label="이전">&#8249;</button>`;
 
   // Page buttons
   for (const p of pages) {
     if (p === '...') {
       html += `<span class="pagination-btn pagination-ellipsis">…</span>`;
     } else {
-      html += `<button class="pagination-btn${p === currentPage ? ' active' : ''}" onclick="${goPageFn}(${p})" aria-label="${p + 1}페이지"${p === currentPage ? ' aria-current="page"' : ''}>${p + 1}</button>`;
+      html += `<button class="pagination-btn${p === currentPage ? ' active' : ''}" data-action="goPage" data-page="${p}" data-page-fn="${goPageFn}" aria-label="${p + 1}페이지"${p === currentPage ? ' aria-current="page"' : ''}>${p + 1}</button>`;
     }
   }
 
   // Next arrow
-  html += `<button class="pagination-nav" onclick="${goPageFn}(${currentPage + 1})" ${isLast ? 'disabled' : ''} aria-label="다음">&#8250;</button>`;
+  html += `<button class="pagination-nav" data-action="goPage" data-page="${currentPage + 1}" data-page-fn="${goPageFn}" ${isLast ? 'disabled' : ''} aria-label="다음">&#8250;</button>`;
   html += '</div>';
 
   container.innerHTML = html;
@@ -1324,7 +1323,7 @@ function _renderCombosPanel(accountId) {
       const visible = syms.slice(0, MAX_SHOW).map(s => `<span class="symbol-tag">${escapeHtml(s)}</span>`).join('');
       const moreId = 'combo-syms-' + combo.id;
       const hidden = syms.length > MAX_SHOW
-        ? `<span class="combo-symbols-more" onclick="document.getElementById('${moreId}').classList.add('show');this.style.display='none'">+${syms.length - MAX_SHOW}개 더</span>` +
+        ? `<span class="combo-symbols-more" data-action="showMoreSymbols" data-target-id="${moreId}">+${syms.length - MAX_SHOW}개 더</span>` +
           `<span class="combo-symbols-hidden" id="${moreId}">${syms.slice(MAX_SHOW).map(s => `<span class="symbol-tag">${escapeHtml(s)}</span>`).join('')}</span>`
         : '';
       symbolsHtml = `<div class="combo-symbols-row">${visible}${hidden}</div>`;
@@ -1353,7 +1352,7 @@ function _renderCombosPanel(accountId) {
 
       const toggleId = 'combo-params-' + combo.id;
       paramsSection = `
-        <button class="combo-params-toggle" onclick="this.classList.toggle('open');document.getElementById('${toggleId}').classList.toggle('open')">
+        <button class="combo-params-toggle" data-action="toggleComboParams" data-toggle-id="${toggleId}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
           파라미터 ${totalParams}개
         </button>
@@ -1369,9 +1368,9 @@ function _renderCombosPanel(accountId) {
           <span class="status-badge ${enabledClass}">${enabledText}</span>
         </div>
         <div class="combo-card-actions">
-          <button class="btn btn-outline btn-sm" onclick="editCombo('${combo.id}')">Edit</button>
-          <button class="btn btn-outline btn-sm" onclick="toggleCombo('${accountId}','${combo.id}',${combo.is_enabled})">${combo.is_enabled ? 'Disable' : 'Enable'}</button>
-          <button class="btn btn-danger btn-sm" onclick="deleteCombo('${accountId}','${combo.id}')">Delete</button>
+          <button class="btn btn-outline btn-sm" data-action="editCombo" data-combo-id="${escapeHtml(combo.id)}">Edit</button>
+          <button class="btn btn-outline btn-sm" data-action="toggleCombo" data-account-id="${escapeHtml(accountId)}" data-combo-id="${escapeHtml(combo.id)}" data-enabled="${combo.is_enabled}">${combo.is_enabled ? 'Disable' : 'Enable'}</button>
+          <button class="btn btn-danger btn-sm" data-action="deleteCombo" data-account-id="${escapeHtml(accountId)}" data-combo-id="${escapeHtml(combo.id)}">Delete</button>
         </div>
       </div>
       <div class="combo-card-body">
@@ -1521,7 +1520,7 @@ function renderComboSymbolTags() {
   const container = document.getElementById('combo-symbol-tags');
   if (!container) return;
   container.innerHTML = _comboSymbols.map(s =>
-    `<span class="symbol-tag">${escapeHtml(s)}<button class="symbol-tag-remove" onclick="removeComboSymbol('${escapeHtml(s)}')">&times;</button></span>`
+    `<span class="symbol-tag">${escapeHtml(s)}<button class="symbol-tag-remove" data-action="removeComboSymbol" data-symbol="${escapeHtml(s)}">&times;</button></span>`
   ).join('');
 }
 
@@ -1635,7 +1634,7 @@ function renderComboConditionParams(side, existingParams) {
           const curSm = current.sizing_mode ?? defaults.sizing_mode ?? 'fixed';
           const btnVisible = curSm === 'scaled_plan' ? '' : 'display:none';
           extraHtml = `<div data-depends-on="sizing_mode" data-depends-values="scaled_plan" style="${btnVisible};margin-top:4px;">
-            <button type="button" class="btn btn-outline btn-sm" onclick="openBuyPlanCalc()">매수 계획 계산기</button>
+            <button type="button" class="btn btn-outline btn-sm" data-action="openBuyPlanCalc">매수 계획 계산기</button>
           </div>`;
         }
       }
@@ -1790,7 +1789,7 @@ async function loadProtectionStatus(accountId) {
           <div class="prot-info-item"><span class="prot-info-label">연속 횟수</span><span class="prot-info-val">${count}회</span></div>
           <div class="prot-info-item"><span class="prot-info-label">상태</span><span class="prot-info-val">${isPaused ? '매도 감지 시 자동 재개' : '5사이클당 1회 매수'}</span></div>
         </div>`;
-      bpAction = `<button class="btn btn-primary btn-sm prot-action-btn" onclick="resumeBuying('${accountId}')">매수 재개</button>`;
+      bpAction = `<button class="btn btn-primary btn-sm prot-action-btn" data-action="resumeBuying" data-account-id="${escapeHtml(accountId)}">매수 재개</button>`;
     }
 
     const bpHtml = `
@@ -1825,7 +1824,7 @@ async function loadProtectionStatus(accountId) {
           <div class="prot-info-item"><span class="prot-info-label">발동 시점</span><span class="prot-info-val">${disabledSince}</span></div>
           <div class="prot-info-item"><span class="prot-info-label">마지막 정상 거래</span><span class="prot-info-val">${lastOk}</span></div>
         </div>`;
-      cbAction = `<button class="btn btn-danger btn-sm prot-action-btn" onclick="resetCircuitBreaker('${accountId}')">CB 초기화</button>`;
+      cbAction = `<button class="btn btn-danger btn-sm prot-action-btn" data-action="resetCircuitBreaker" data-account-id="${escapeHtml(accountId)}">CB 초기화</button>`;
     } else if (cbFailures > 0) {
       cbDot = 'warn';
       cbLabel = '주의 (' + cbFailures + '/5 실패)';
@@ -2052,6 +2051,47 @@ async function loadAccountOptions(selectId, onLoaded) {
     if (onLoaded) onLoaded(accounts);
   } catch (e) {}
 }
+
+/* ============================================================
+   Global event delegation for CSP-compatible dynamic buttons
+   ============================================================ */
+document.addEventListener('input', function(e) {
+  if (e.target && e.target.id === 'earnings-slider') {
+    updateEarningsPreview(e.target.value);
+  }
+});
+
+document.addEventListener('click', function(e) {
+  const el = e.target.closest('[data-action]');
+  if (!el) return;
+  const action = el.dataset.action;
+
+  switch (action) {
+    case 'editCombo': editCombo(el.dataset.comboId); break;
+    case 'toggleCombo': toggleCombo(el.dataset.accountId, el.dataset.comboId, el.dataset.enabled === 'true'); break;
+    case 'deleteCombo': deleteCombo(el.dataset.accountId, el.dataset.comboId); break;
+    case 'goPage': { const fn = window[el.dataset.pageFn]; if (fn) fn(+el.dataset.page); break; }
+    case 'removeComboSymbol': removeComboSymbol(el.dataset.symbol); break;
+    case 'openBuyPlanCalc': openBuyPlanCalc(); break;
+    case 'resumeBuying': resumeBuying(el.dataset.accountId); break;
+    case 'resetCircuitBreaker': resetCircuitBreaker(el.dataset.accountId); break;
+    case 'updateEarningsPreview': updateEarningsPreview(+el.dataset.pct); break;
+    case 'submitEarningsApproval': submitEarningsApproval(); break;
+    case 'closeEarningsModal': closeEarningsModal(); break;
+    case 'showMoreSymbols': {
+      const target = document.getElementById(el.dataset.targetId);
+      if (target) target.classList.add('show');
+      el.style.display = 'none';
+      break;
+    }
+    case 'toggleComboParams': {
+      el.classList.toggle('open');
+      const target = document.getElementById(el.dataset.toggleId);
+      if (target) target.classList.toggle('open');
+      break;
+    }
+  }
+});
 
 /* ============================================================
    Auto-initialize on page load
