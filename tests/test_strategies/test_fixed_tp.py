@@ -49,9 +49,11 @@ def _make_repos():
     repos.lot.close_lot = AsyncMock()
     repos.lot.set_sell_order = AsyncMock()
     repos.lot.clear_sell_order = AsyncMock()
+    repos.lot.flush = AsyncMock()
     repos.order = MagicMock()
     repos.order.upsert_order = AsyncMock()
     repos.order.get_order = AsyncMock(return_value=None)
+    repos.order.get_fills_for_order = AsyncMock(return_value=[])
     return repos
 
 

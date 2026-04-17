@@ -315,6 +315,20 @@ def test_stop(trader):
     assert trader._running is False
 
 
+@pytest.mark.asyncio
+async def test_stop_async_clears_client(trader):
+    """stop_async() must set _running=False and call client.close()."""
+    mock_client = AsyncMock()
+    mock_client.close = AsyncMock()
+    trader._client = mock_client
+    assert trader._running is True
+
+    await trader.stop_async()
+
+    assert trader._running is False
+    mock_client.close.assert_awaited_once()
+
+
 # ---------------------------------------------------------------------------
 # _do_step tests
 # ---------------------------------------------------------------------------

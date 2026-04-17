@@ -25,6 +25,13 @@ class BinanceClient(ExchangeClient):
         self._balance_lock = threading.Lock()
         self._sync_time_offset()
 
+    async def close(self) -> None:
+        """종료 시 메모리에서 API 키 제거 (defense-in-depth)."""
+        if hasattr(self.client, "API_KEY"):
+            self.client.API_KEY = ""
+        if hasattr(self.client, "API_SECRET"):
+            self.client.API_SECRET = ""
+
     # ------------------------------------------------------------------
     # Time sync
     # ------------------------------------------------------------------

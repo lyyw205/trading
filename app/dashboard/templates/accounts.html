@@ -39,14 +39,14 @@
   <div class="section-header">
     <h2 class="section-title">Users</h2>
     <div style="display:flex;gap:0.5rem;align-items:center;">
-      <button class="btn btn-outline btn-sm" onclick="loadUsers()">Refresh</button>
-      <button class="btn btn-primary btn-sm" onclick="openCreateUserModal()">+ Create User</button>
+      <button class="btn btn-outline btn-sm" data-action="loadUsers">Refresh</button>
+      <button class="btn btn-primary btn-sm" data-action="openCreateUserModal">+ Create User</button>
     </div>
   </div>
   <div class="tune-grid" style="margin-bottom:1rem;">
     <div class="form-group">
       <label class="form-label">Role</label>
-      <select id="filter-role" class="form-input" onchange="applyUserFilter()">
+      <select id="filter-role" class="form-input" data-onchange="applyUserFilter">
         <option value="">All Roles</option>
         <option value="admin">Admin</option>
         <option value="user">User</option>
@@ -54,7 +54,7 @@
     </div>
     <div class="form-group">
       <label class="form-label">Status</label>
-      <select id="filter-status" class="form-input" onchange="applyUserFilter()">
+      <select id="filter-status" class="form-input" data-onchange="applyUserFilter">
         <option value="">All Statuses</option>
         <option value="active">Active</option>
         <option value="inactive">Inactive</option>
@@ -87,14 +87,14 @@
   <div class="section-header">
     <h2 class="section-title">Accounts</h2>
     <div style="display:flex;gap:0.5rem;align-items:center;">
-      <button class="btn btn-outline btn-sm" onclick="loadAccountsData()">Refresh</button>
-      <button class="btn btn-primary btn-sm" onclick="openModal('add-account-modal')">+ Add Account</button>
+      <button class="btn btn-outline btn-sm" data-action="loadAccountsData">Refresh</button>
+      <button class="btn btn-primary btn-sm" data-action="openModal" data-modal="add-account-modal">+ Add Account</button>
     </div>
   </div>
   <div class="tune-grid" style="margin-bottom:1rem;">
     <div class="form-group">
       <label class="form-label">Owner</label>
-      <select id="owner-filter" class="form-input" onchange="filterAccounts()">
+      <select id="owner-filter" class="form-input" data-onchange="filterAccounts">
         <option value="">All Owners</option>
       </select>
     </div>
@@ -126,14 +126,14 @@
      Add Account Modal
      ============================================================ -->
 <div id="add-account-modal" class="modal" style="display:none;">
-  <div class="modal-backdrop" onclick="closeModal('add-account-modal')"></div>
+  <div class="modal-backdrop" data-action="closeModal" data-modal="add-account-modal"></div>
   <div class="modal-dialog">
     <div class="modal-header">
       <h2 class="modal-title">Add Trading Account</h2>
-      <button class="modal-close" onclick="closeModal('add-account-modal')">&times;</button>
+      <button class="modal-close" data-action="closeModal" data-modal="add-account-modal">&times;</button>
     </div>
     <div class="modal-body">
-      <form id="add-account-form" onsubmit="event.preventDefault(); submitAddAccount();">
+      <form id="add-account-form" data-onsubmit="submitAddAccount">
         <div class="form-group">
           <label class="form-label">Name <span style="color:var(--danger);">*</span></label>
           <input type="text" id="add-name" class="form-input" placeholder="e.g. Main BTC Account" required>
@@ -168,8 +168,8 @@
       </form>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-outline" onclick="closeModal('add-account-modal')">Cancel</button>
-      <button class="btn btn-primary" onclick="submitAddAccount()">Add Account</button>
+      <button class="btn btn-outline" data-action="closeModal" data-modal="add-account-modal">Cancel</button>
+      <button class="btn btn-primary" data-action="submitAddAccount">Add Account</button>
     </div>
   </div>
 </div>
@@ -178,14 +178,14 @@
      Edit Account Modal
      ============================================================ -->
 <div id="edit-account-modal" class="modal" style="display:none;">
-  <div class="modal-backdrop" onclick="closeModal('edit-account-modal')"></div>
+  <div class="modal-backdrop" data-action="closeModal" data-modal="edit-account-modal"></div>
   <div class="modal-dialog">
     <div class="modal-header">
       <h2 class="modal-title">Edit Account</h2>
-      <button class="modal-close" onclick="closeModal('edit-account-modal')">&times;</button>
+      <button class="modal-close" data-action="closeModal" data-modal="edit-account-modal">&times;</button>
     </div>
     <div class="modal-body">
-      <form id="edit-account-form" onsubmit="event.preventDefault(); submitEditAccount();">
+      <form id="edit-account-form" data-onsubmit="submitEditAccount">
         <input type="hidden" id="edit-account-id">
         <div class="form-group">
           <label class="form-label">Name</label>
@@ -227,8 +227,8 @@
       </form>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-outline" onclick="closeModal('edit-account-modal')">Cancel</button>
-      <button class="btn btn-primary" onclick="submitEditAccount()">Save Changes</button>
+      <button class="btn btn-outline" data-action="closeModal" data-modal="edit-account-modal">Cancel</button>
+      <button class="btn btn-primary" data-action="submitEditAccount">Save Changes</button>
     </div>
   </div>
 </div>
@@ -237,11 +237,11 @@
      Delete Confirmation Modal
      ============================================================ -->
 <div id="delete-account-modal" class="modal" style="display:none;">
-  <div class="modal-backdrop" onclick="closeModal('delete-account-modal')"></div>
+  <div class="modal-backdrop" data-action="closeModal" data-modal="delete-account-modal"></div>
   <div class="modal-dialog" style="max-width: 420px;">
     <div class="modal-header">
       <h2 class="modal-title">Delete Account</h2>
-      <button class="modal-close" onclick="closeModal('delete-account-modal')">&times;</button>
+      <button class="modal-close" data-action="closeModal" data-modal="delete-account-modal">&times;</button>
     </div>
     <div class="modal-body">
       <p>Are you sure you want to delete <strong id="delete-account-name"></strong>?</p>
@@ -249,8 +249,8 @@
       <input type="hidden" id="delete-account-id">
     </div>
     <div class="modal-footer">
-      <button class="btn btn-outline" onclick="closeModal('delete-account-modal')">Cancel</button>
-      <button class="btn btn-primary" style="background:var(--danger); border-color:var(--danger);" onclick="confirmDelete()">Delete</button>
+      <button class="btn btn-outline" data-action="closeModal" data-modal="delete-account-modal">Cancel</button>
+      <button class="btn btn-primary" style="background:var(--danger); border-color:var(--danger);" data-action="confirmDelete">Delete</button>
     </div>
   </div>
 </div>
@@ -259,11 +259,11 @@
      User Actions Modal
      ============================================================ -->
 <div id="user-actions-modal" class="modal" style="display:none;">
-  <div class="modal-backdrop" onclick="closeModal('user-actions-modal')"></div>
+  <div class="modal-backdrop" data-action="closeModal" data-modal="user-actions-modal"></div>
   <div class="modal-dialog" style="max-width: 420px;">
     <div class="modal-header">
       <h2 class="modal-title" id="user-actions-modal-title">User Actions</h2>
-      <button class="modal-close" onclick="closeModal('user-actions-modal')">&times;</button>
+      <button class="modal-close" data-action="closeModal" data-modal="user-actions-modal">&times;</button>
     </div>
     <div class="modal-body" id="user-actions-modal-body">
     </div>
@@ -274,11 +274,11 @@
      Account Actions Modal
      ============================================================ -->
 <div id="actions-modal" class="modal" style="display:none;">
-  <div class="modal-backdrop" onclick="closeModal('actions-modal')"></div>
+  <div class="modal-backdrop" data-action="closeModal" data-modal="actions-modal"></div>
   <div class="modal-dialog" style="max-width: 520px;">
     <div class="modal-header">
       <h2 class="modal-title" id="actions-modal-title">Actions</h2>
-      <button class="modal-close" onclick="closeModal('actions-modal')">&times;</button>
+      <button class="modal-close" data-action="closeModal" data-modal="actions-modal">&times;</button>
     </div>
     <div class="modal-body" id="actions-modal-body">
     </div>
@@ -289,14 +289,14 @@
      Create User Modal
      ============================================================ -->
 <div id="create-user-modal" class="modal" style="display:none;">
-  <div class="modal-backdrop" onclick="closeModal('create-user-modal')"></div>
+  <div class="modal-backdrop" data-action="closeModal" data-modal="create-user-modal"></div>
   <div class="modal-dialog">
     <div class="modal-header">
       <h2 class="modal-title">Create User</h2>
-      <button class="modal-close" onclick="closeModal('create-user-modal')">&times;</button>
+      <button class="modal-close" data-action="closeModal" data-modal="create-user-modal">&times;</button>
     </div>
     <div class="modal-body">
-      <form id="create-user-form" onsubmit="event.preventDefault(); submitCreateUser();">
+      <form id="create-user-form" data-onsubmit="submitCreateUser">
         <div class="form-group">
           <label class="form-label">Email <span style="color:var(--danger);">*</span></label>
           <input type="email" id="create-email" class="form-input" placeholder="user@example.com" required>
@@ -315,8 +315,8 @@
       </form>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-outline" onclick="closeModal('create-user-modal')">Cancel</button>
-      <button class="btn btn-primary" onclick="submitCreateUser()">Create User</button>
+      <button class="btn btn-outline" data-action="closeModal" data-modal="create-user-modal">Cancel</button>
+      <button class="btn btn-primary" data-action="submitCreateUser">Create User</button>
     </div>
   </div>
 </div>
@@ -325,11 +325,11 @@
      Reset Password Modal
      ============================================================ -->
 <div id="reset-password-modal" class="modal" style="display:none;">
-  <div class="modal-backdrop" onclick="closeModal('reset-password-modal')"></div>
+  <div class="modal-backdrop" data-action="closeModal" data-modal="reset-password-modal"></div>
   <div class="modal-dialog" style="max-width: 420px;">
     <div class="modal-header">
       <h2 class="modal-title">Reset Password</h2>
-      <button class="modal-close" onclick="closeModal('reset-password-modal')">&times;</button>
+      <button class="modal-close" data-action="closeModal" data-modal="reset-password-modal">&times;</button>
     </div>
     <div class="modal-body">
       <p style="color:var(--text-muted);margin-bottom:0.75rem;">Set a new password for this user.</p>
@@ -340,8 +340,8 @@
       <input type="hidden" id="reset-user-id">
     </div>
     <div class="modal-footer">
-      <button class="btn btn-outline" onclick="closeModal('reset-password-modal')">Cancel</button>
-      <button class="btn btn-primary" onclick="submitResetPassword()">Reset Password</button>
+      <button class="btn btn-outline" data-action="closeModal" data-modal="reset-password-modal">Cancel</button>
+      <button class="btn btn-primary" data-action="submitResetPassword">Reset Password</button>
     </div>
   </div>
 </div>
@@ -352,7 +352,59 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
+// ============================================================
+//  Event Delegation
+// ============================================================
+document.addEventListener('click', function(e) {
+  const el = e.target.closest('[data-action]');
+  if (!el) return;
+  const action = el.dataset.action;
+  const id = el.dataset.id;
+  const modal = el.dataset.modal;
+  if (action === 'loadUsers') { loadUsers(); }
+  else if (action === 'loadAccountsData') { loadAccountsData(); }
+  else if (action === 'openCreateUserModal') { openCreateUserModal(); }
+  else if (action === 'openModal') { openModal(modal); }
+  else if (action === 'closeModal') { closeModal(modal); }
+  else if (action === 'submitAddAccount') { submitAddAccount(); }
+  else if (action === 'submitEditAccount') { submitEditAccount(); }
+  else if (action === 'confirmDelete') { confirmDelete(); }
+  else if (action === 'submitCreateUser') { submitCreateUser(); }
+  else if (action === 'submitResetPassword') { submitResetPassword(); }
+  else if (action === 'openUserActionsModal') { openUserActionsModal(id); }
+  else if (action === 'openActionsModal') { e.stopPropagation(); openActionsModal(id); }
+  else if (action === 'openResetPasswordModal') { closeModal('user-actions-modal'); openResetPasswordModal(id); }
+  else if (action === 'toggleUserActive') { closeModal('user-actions-modal'); toggleUserActive(id, el.dataset.isActive === 'true'); }
+  else if (action === 'openEditModalById') { closeModal('actions-modal'); openEditModalById(id); }
+  else if (action === 'resumeBuying') { closeModal('actions-modal'); resumeBuying(id); }
+  else if (action === 'resetCircuitBreaker') { closeModal('actions-modal'); resetCircuitBreaker(id); }
+  else if (action === 'toggleAccount') { closeModal('actions-modal'); toggleAccount(id, el.dataset.isActive === 'true'); }
+  else if (action === 'openDeleteModal') { closeModal('actions-modal'); openDeleteModal(id, el.dataset.name); }
+});
+
+document.addEventListener('change', function(e) {
+  const el = e.target.closest('[data-onchange]');
+  if (!el) return;
+  const fn = el.dataset.onchange;
+  if (fn === 'applyUserFilter') { applyUserFilter(); }
+  else if (fn === 'filterAccounts') { filterAccounts(); }
+  else if (fn === 'changeUserRole') {
+    changeUserRole(el.dataset.userId, el.value);
+    closeModal('user-actions-modal');
+  }
+});
+
+document.addEventListener('submit', function(e) {
+  const el = e.target.closest('[data-onsubmit]');
+  if (!el) return;
+  e.preventDefault();
+  const fn = el.dataset.onsubmit;
+  if (fn === 'submitAddAccount') { submitAddAccount(); }
+  else if (fn === 'submitEditAccount') { submitEditAccount(); }
+  else if (fn === 'submitCreateUser') { submitCreateUser(); }
+});
+
 // ============================================================
 //  State
 // ============================================================
@@ -466,7 +518,7 @@ function renderUsersTable(users) {
       <td style="color:var(--text-muted);font-size:0.875rem;">${escapeHtml(created)}</td>
       <td>
         <div class="actions-cell">
-          <button class="btn btn-sm btn-outline" onclick="openUserActionsModal('${u.id}')">Actions</button>
+          <button class="btn btn-sm btn-outline" data-action="openUserActionsModal" data-id="${escapeHtml(u.id)}">Actions</button>
         </div>
       </td>
     </tr>`;
@@ -629,8 +681,7 @@ function renderAdminTable(accounts) {
       <td>${statusBadges}</td>
       <td>
         <div class="actions-cell">
-          <button class="btn btn-sm btn-outline"
-            onclick="event.stopPropagation(); openActionsModal('${acct.id}')">
+          <button class="btn btn-sm btn-outline" data-action="openActionsModal" data-id="${escapeHtml(acct.id)}">
             Actions
           </button>
         </div>
@@ -852,8 +903,8 @@ function openUserActionsModal(userId) {
   document.getElementById('user-actions-modal-title').textContent = u.email || userId;
   const body = document.getElementById('user-actions-modal-body');
 
-  const actionBtn = (cls, icon, title, desc, onclick, disabled) =>
-    `<button class="action-item ${cls}"${disabled ? ' disabled' : ''} onclick="${onclick}">
+  const actionBtn = (cls, icon, title, desc, dataAttrs, disabled) =>
+    `<button class="action-item ${cls}"${disabled ? ' disabled' : ''} ${dataAttrs}>
       ${icon}<span class="action-item-title">${title}</span><span class="action-item-desc">${desc}</span>
     </button>`;
 
@@ -870,7 +921,7 @@ function openUserActionsModal(userId) {
   let html = '<div class="actions-grid">';
 
   html += `<div class="action-item primary">
-    <select class="form-input" style="width:100%;padding:0.3rem;font-size:0.8rem;text-align:center;border-radius:6px;border:1px solid var(--primary);color:var(--primary);background:transparent;cursor:pointer;" onchange="changeUserRole('${u.id}', this.value); closeModal('user-actions-modal');">
+    <select class="form-input" style="width:100%;padding:0.3rem;font-size:0.8rem;text-align:center;border-radius:6px;border:1px solid var(--primary);color:var(--primary);background:transparent;cursor:pointer;" data-onchange="changeUserRole" data-user-id="${escapeHtml(u.id)}">
       <option value="user" ${u.role === 'user' ? 'selected' : ''}>User</option>
       <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Admin</option>
     </select>
@@ -878,14 +929,14 @@ function openUserActionsModal(userId) {
   </div>`;
 
   html += actionBtn('', icons.key, 'Password', '비밀번호 초기화',
-    `closeModal('user-actions-modal'); openResetPasswordModal('${u.id}')`, false);
+    `data-action="openResetPasswordModal" data-id="${escapeHtml(u.id)}"`, false);
 
   if (isActive) {
     html += actionBtn('danger', icons.deactivate, 'Deactivate', '계정 비활성화',
-      `closeModal('user-actions-modal'); toggleUserActive('${u.id}', true)`, false);
+      `data-action="toggleUserActive" data-id="${escapeHtml(u.id)}" data-is-active="true"`, false);
   } else {
     html += actionBtn('primary', icons.activate, 'Activate', '계정 활성화',
-      `closeModal('user-actions-modal'); toggleUserActive('${u.id}', false)`, false);
+      `data-action="toggleUserActive" data-id="${escapeHtml(u.id)}" data-is-active="false"`, false);
   }
 
   html += '</div>';
@@ -911,8 +962,8 @@ function openActionsModal(accountId) {
   document.getElementById('actions-modal-title').textContent = name;
   const body = document.getElementById('actions-modal-body');
 
-  const actionBtn = (cls, icon, title, desc, onclick, disabled) =>
-    `<button class="action-item ${cls}"${disabled ? ' disabled' : ''} onclick="${onclick}">
+  const actionBtn = (cls, icon, title, desc, dataAttrs, disabled) =>
+    `<button class="action-item ${cls}"${disabled ? ' disabled' : ''} ${dataAttrs}>
       ${icon}<span class="action-item-title">${title}</span><span class="action-item-desc">${desc}</span>
     </button>`;
 
@@ -927,27 +978,28 @@ function openActionsModal(accountId) {
 
   let html = '<div class="actions-grid">';
 
+  const safeId = escapeHtml(acct.id);
   html += actionBtn('', icons.edit, 'Edit', '설정 변경',
-    `closeModal('actions-modal'); openEditModalById('${acct.id}')`, false);
+    `data-action="openEditModalById" data-id="${safeId}"`, false);
 
   html += actionBtn('warning', icons.resume, 'Resume', '매수 재개',
-    `closeModal('actions-modal'); resumeBuying('${acct.id}')`, !isBuyPaused);
+    `data-action="resumeBuying" data-id="${safeId}"`, !isBuyPaused);
 
   if (isAdmin) {
     html += actionBtn('danger', icons.shield, 'Reset CB', 'CB 초기화',
-      `closeModal('actions-modal'); resetCircuitBreaker('${acct.id}')`, !cbTripped);
+      `data-action="resetCircuitBreaker" data-id="${safeId}"`, !cbTripped);
   }
 
   if (isActive) {
     html += actionBtn('danger', icons.stop, 'Stop', '트레이딩 중지',
-      `closeModal('actions-modal'); toggleAccount('${acct.id}', true)`, false);
+      `data-action="toggleAccount" data-id="${safeId}" data-is-active="true"`, false);
   } else {
     html += actionBtn('primary', icons.play, 'Start', '트레이딩 시작',
-      `closeModal('actions-modal'); toggleAccount('${acct.id}', false)`, false);
+      `data-action="toggleAccount" data-id="${safeId}" data-is-active="false"`, false);
   }
 
   html += actionBtn('danger', icons.trash, 'Delete', '계정 삭제',
-    `closeModal('actions-modal'); openDeleteModal('${acct.id}', '${eName}')`, false);
+    `data-action="openDeleteModal" data-id="${safeId}" data-name="${eName}"`, false);
 
   html += '</div>';
 

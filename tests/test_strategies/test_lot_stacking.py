@@ -291,3 +291,81 @@ async def test_set_many_called_on_buy():
     passed_dict = state.set_many.call_args.args[0]
     for key in PENDING_KEYS:
         assert key in passed_dict, f"Expected pending key '{key}' in set_many call"
+
+
+@pytest.mark.asyncio
+async def test_handle_filled_buy_init_kind():
+    """_handle_filled_buy with kind=INIT sets reserve qty/cost and core_btc_initial."""
+    strategy = LotStackingBuy()
+    combo_id = uuid.uuid4()
+
+    ctx = _make_ctx(price=49000.0)
+    state, state_dict = _make_state_store()
+    account_state = _make_account_state()
+    repos = _make_repos()
+
+    order_data = {
+        "orderId": 99999,
+        "status": "FILLED",
+        "executedQty": "0.002",
+        "cummulativeQuoteQty": "98.0",
+        "updateTime": 1_700_000_000_000,
+    }
+
+    await strategy._handle_filled_buy(
+        ctx, state, order_data, account_state, repos, combo_id, kind="INIT"
+    )
+
+    account_state.set_reserve_qty.assert_called_once()
+    account_state.set_reserve_cost_usdt.assert_called_once()
+    # insert_lot must NOT be called for INIT kind
+    repos.lot.insert_lot.assert_not_called()
+    # core_btc_initial must be stored in state
+    assert "core_btc_initial" in state_dict
+
+
+@pytest.mark.asyncio
+async def test_scaled_plan_round_increment():
+    """After a LOT fill with sizing_mode=scaled_plan, sizing_round increments by 1."""
+    strategy = LotStackingBuy()
+    combo_id = uuid.uuid4()
+
+    params = LotStackingBuy.default_params.copy()
+    params["sizing_mode"] = "scaled_plan"
+    ctx = _make_ctx(price=49000.0, params=params)
+    state, state_dict = _make_state_store({"sizing_round": "2"})
+    account_state = _make_account_state()
+    repos = _make_repos()
+
+    order_data = {
+        "orderId": 77777,
+        "status": "FILLED",
+        "executedQty": "0.001",
+        "cummulativeQuoteQty": "49.0",
+        "updateTime": 1_700_000_000_000,
+    }
+
+    await strategy._handle_filled_buy(
+        ctx, state, order_data, account_state, repos, combo_id, kind="LOT"
+    )
+
+    assert int(float(state_dict["sizing_round"])) == 3
+
+
+@pytest.mark.asyncio
+async def test_balance_error_raises():
+    """place_limit_buy_by_quote raising an 'insufficient' error propagates out of tick."""
+    strategy = LotStackingBuy()
+    combo_id = uuid.uuid4()
+
+    ctx = _make_ctx(price=49000.0)
+    state, _ = _make_state_store({"base_price": "50000.0"})
+    exchange = _make_exchange()
+    exchange.place_limit_buy_by_quote = AsyncMock(
+        side_effect=Exception("insufficient balance to execute order")
+    )
+    repos = _make_repos()
+    account_state = _make_account_state()
+
+    with pytest.raises(Exception, match="insufficient"):
+        await strategy.tick(ctx, state, exchange, account_state, repos, combo_id)

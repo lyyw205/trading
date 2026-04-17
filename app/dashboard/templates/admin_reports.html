@@ -3,7 +3,7 @@
 {% block content %}
 <div class="page-header">
     <h1>일일 리포트</h1>
-    <button class="btn btn-primary btn-sm" id="generate-btn" onclick="generateReport()">지금 생성</button>
+    <button class="btn btn-primary btn-sm" id="generate-btn" data-action="generateReport">지금 생성</button>
 </div>
 
 <div id="reports-list" class="reports-container">
@@ -294,7 +294,18 @@
 }
 </style>
 
-<script>
+<script nonce="{{ csp_nonce }}">
+document.addEventListener('click', function(e) {
+  const el = e.target.closest('[data-action]');
+  if (!el) return;
+  const action = el.dataset.action;
+  if (action === 'generateReport') { generateReport(); }
+  else if (action === 'toggleReportBody') { el.nextElementSibling.classList.toggle('open'); }
+  else if (action === 'downloadReportJSON') { e.stopPropagation(); downloadReportJSON(parseInt(el.dataset.index)); }
+  else if (action === 'downloadReportText') { e.stopPropagation(); downloadReportText(parseInt(el.dataset.index)); }
+  else if (action === 'switchTab') { e.stopPropagation(); switchTab(el.dataset.cardId, el.dataset.tabName); }
+});
+
 let _reportsData = [];
 
 function _downloadFile(filename, content, mime) {
@@ -444,7 +455,7 @@ function renderAccounts(accounts) {
     if (!accounts || !accounts.length) return '<div class="empty-state">계정 없음</div>';
     const rows = accounts.map(account => {
         const name = escapeHtml(account.name || String(account.account_id).slice(0,8));
-        const cbDot = `<span class="status-dot status-${account.cb_status || 'healthy'}"></span>`;
+        const cbDot = `<span class="status-dot status-${escapeHtml(account.cb_status || 'healthy')}"></span>`;
         const pauseBadge = `<span class="pause-badge pause-${account.buy_pause_state || 'ACTIVE'}">${account.buy_pause_state || 'ACTIVE'}</span>`;
         const profit = parseFloat(account.net_profit_usdt) || 0;
         return `<tr>
@@ -474,7 +485,7 @@ function renderAccountDetail(accounts) {
     if (!accounts || !accounts.length) return '';
     const rows = accounts.map(account => {
         const name = escapeHtml(account.name || String(account.account_id).slice(0,8));
-        const cbDot = `<span class="status-dot status-${account.cb_status || 'healthy'}"></span>`;
+        const cbDot = `<span class="status-dot status-${escapeHtml(account.cb_status || 'healthy')}"></span>`;
         const cbLabel = {healthy:'정상', degraded:'주의', disabled:'중단', recovered:'복구됨'}[account.cb_status] || account.cb_status;
         const pauseReason = account.buy_pause_reason ? ` (${escapeHtml(account.buy_pause_reason)})` : '';
         const lastSuccess = account.last_success_at ? new Date(account.last_success_at).toLocaleString('ko-KR', {timeZone:'Asia/Seoul', hour:'2-digit', minute:'2-digit'}) : '-';
@@ -640,28 +651,28 @@ async function loadReports() {
             const cardId = `report-${idx}`;
 
             return `<div class="report-card" id="${cardId}">
-                <div class="report-header" onclick="this.nextElementSibling.classList.toggle('open')">
-                    <span class="report-date">${report.report_date}</span>
+                <div class="report-header" data-action="toggleReportBody">
+                    <span class="report-date">${escapeHtml(report.report_date)}</span>
                     <div class="report-stats">
                         <span>CRIT:${summary.total_criticals || 0} ERR:${summary.total_errors || 0} CB:${summary.cb_events || 0}</span>
                         <span class="${_profitCls(totalProfit)}">${_formatProfit(totalProfit)} USDT</span>
                         <span>매수:${tradingTotals.total_bought || 0} 매도:${tradingTotals.total_closed || 0}</span>
                         ${report.telegram_sent_at ? '<span class="telegram-status">전송됨</span>' : ''}
                     </div>
-                    <div class="download-btns" onclick="event.stopPropagation()">
-                        <button class="btn-dl" title="JSON 다운로드" onclick="downloadReportJSON(${idx})">JSON</button>
-                        <button class="btn-dl" title="텍스트 다운로드" onclick="downloadReportText(${idx})">TXT</button>
+                    <div class="download-btns">
+                        <button class="btn-dl" title="JSON 다운로드" data-action="downloadReportJSON" data-index="${idx}">JSON</button>
+                        <button class="btn-dl" title="텍스트 다운로드" data-action="downloadReportText" data-index="${idx}">TXT</button>
                     </div>
                     <span class="health-badge ${cls}">${score.toFixed(0)}</span>
                 </div>
                 <div class="report-body">
                     <div class="section-tabs">
-                        <div class="section-tab active" data-tab="trading" onclick="switchTab('${cardId}','trading')">거래 성과</div>
-                        <div class="section-tab" data-tab="status" onclick="switchTab('${cardId}','status')">계정 상태</div>
-                        <div class="section-tab" data-tab="portfolio" onclick="switchTab('${cardId}','portfolio')">포트폴리오</div>
-                        <div class="section-tab" data-tab="errors" onclick="switchTab('${cardId}','errors')">에러/시간대</div>
-                        <div class="section-tab" data-tab="recon" onclick="switchTab('${cardId}','recon')">정합성</div>
-                        <div class="section-tab" data-tab="server" onclick="switchTab('${cardId}','server')">서버 현황</div>
+                        <div class="section-tab active" data-tab="trading" data-action="switchTab" data-card-id="${cardId}" data-tab-name="trading">거래 성과</div>
+                        <div class="section-tab" data-tab="status" data-action="switchTab" data-card-id="${cardId}" data-tab-name="status">계정 상태</div>
+                        <div class="section-tab" data-tab="portfolio" data-action="switchTab" data-card-id="${cardId}" data-tab-name="portfolio">포트폴리오</div>
+                        <div class="section-tab" data-tab="errors" data-action="switchTab" data-card-id="${cardId}" data-tab-name="errors">에러/시간대</div>
+                        <div class="section-tab" data-tab="recon" data-action="switchTab" data-card-id="${cardId}" data-tab-name="recon">정합성</div>
+                        <div class="section-tab" data-tab="server" data-action="switchTab" data-card-id="${cardId}" data-tab-name="server">서버 현황</div>
                     </div>
 
                     <div class="section-panel active" data-panel="trading">

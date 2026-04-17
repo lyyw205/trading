@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="csrf-token" content="{{ csrf_token() if csrf_token is defined else '' }}">
   <title>{% block title %}Crypto Multi-Trader{% endblock %}</title>
-  <script>
+  <script nonce="{{ csp_nonce }}">
     // FOUC prevention: apply saved theme before first paint
     (function() {
       let t = localStorage.getItem('theme');
@@ -102,22 +102,22 @@
         </div>
       </div>
       <div class="sidebar-actions">
-        <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme" aria-label="Toggle light/dark theme">
+        <button class="theme-toggle" id="theme-toggle-sidebar" title="Toggle theme" aria-label="Toggle light/dark theme">
           <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
           <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
         </button>
-        <button class="btn btn-outline btn-sm" onclick="logout()">Logout</button>
+        <button class="btn btn-outline btn-sm" id="logout-btn">Logout</button>
       </div>
     </div>
   </aside>
-  <div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
+  <div class="sidebar-overlay" id="sidebar-overlay"></div>
 {% endif %}
 
   <!-- Main Content -->
   <div class="main-wrapper{% if not user %} no-sidebar{% endif %}">
     <header class="topbar">
       <div class="topbar-left">
-        <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Toggle sidebar">
+        <button class="sidebar-toggle" id="sidebar-toggle-btn" aria-label="Toggle sidebar">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
         </button>
         {% if user %}
@@ -135,7 +135,7 @@
         </button>
         {% endif %}
         {% if not user %}
-        <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme" aria-label="Toggle light/dark theme">
+        <button class="theme-toggle" id="theme-toggle-topbar" title="Toggle theme" aria-label="Toggle light/dark theme">
           <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
           <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
         </button>
@@ -148,8 +148,8 @@
     </main>
   </div>
 
-  <script src="/static/js/main.js?v=6"></script>
-  <script>
+  <script src="/static/js/main.js?v=6" nonce="{{ csp_nonce }}"></script>
+  <script nonce="{{ csp_nonce }}">
     // Sidebar toggle (mobile)
     function toggleSidebar() {
       const sb = document.getElementById('sidebar');
@@ -205,6 +205,13 @@
       if (best) best.classList.add('active');
     }
     highlightSidebarLink();
+
+    // Event listeners (replaces inline onclick for CSP compliance)
+    document.getElementById('sidebar-toggle-btn')?.addEventListener('click', toggleSidebar);
+    document.getElementById('sidebar-overlay')?.addEventListener('click', closeSidebar);
+    document.getElementById('theme-toggle-sidebar')?.addEventListener('click', toggleTheme);
+    document.getElementById('logout-btn')?.addEventListener('click', logout);
+    document.getElementById('theme-toggle-topbar')?.addEventListener('click', toggleTheme);
   </script>
   {% block scripts %}{% endblock %}
 </body>

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
@@ -91,14 +92,26 @@ class AuthService:
                 "id": str(user.id),
                 "email": user.email,
                 "role": user.role,
+                "password_changed_at": user.password_changed_at,
             }
 
-    async def create_user(self, email: str, password: str, role: str = "user") -> dict:
-        """새 사용자 생성. 비밀번호 최소 8자."""
-        if len(password) < 8:
-            raise ValueError("비밀번호는 최소 8자 이상이어야 합니다.")
+    @staticmethod
+    def _validate_password(password: str) -> None:
+        """비밀번호 복잡도 검증 (12자+, 대소문자+숫자). 스키마와 동일한 규칙."""
+        if len(password) < 12:
+            raise ValueError("비밀번호는 최소 12자 이상이어야 합니다.")
+        if not re.search(r"[A-Z]", password):
+            raise ValueError("비밀번호에 대문자를 최소 1자 포함해야 합니다.")
+        if not re.search(r"[a-z]", password):
+            raise ValueError("비밀번호에 소문자를 최소 1자 포함해야 합니다.")
+        if not re.search(r"\d", password):
+            raise ValueError("비밀번호에 숫자를 최소 1자 포함해야 합니다.")
         if len(password.encode("utf-8")) > 72:
             raise ValueError("비밀번호는 72바이트를 초과할 수 없습니다.")
+
+    async def create_user(self, email: str, password: str, role: str = "user") -> dict:
+        """새 사용자 생성. 비밀번호 복잡도 검증 포함."""
+        self._validate_password(password)
 
         hashed = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(rounds=12))
 
@@ -128,10 +141,7 @@ class AuthService:
 
     async def reset_password(self, user_id: str, new_password: str) -> bool:
         """비밀번호 초기화. 잠금 해제 포함."""
-        if len(new_password) < 8:
-            raise ValueError("비밀번호는 최소 8자 이상이어야 합니다.")
-        if len(new_password.encode("utf-8")) > 72:
-            raise ValueError("비밀번호는 72바이트를 초과할 수 없습니다.")
+        self._validate_password(new_password)
 
         hashed = bcrypt.hashpw(new_password.encode("utf-8"), bcrypt.gensalt(rounds=12))
 

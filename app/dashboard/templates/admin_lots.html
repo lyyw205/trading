@@ -13,20 +13,20 @@
     <h2 class="section-title">All Lots</h2>
     <div style="display:flex;gap:0.5rem;align-items:center;">
       <span id="lots-summary" class="text-muted" style="font-size:0.85rem;"></span>
-      <button class="btn btn-outline btn-sm" onclick="loadLots()">Refresh</button>
+      <button class="btn btn-outline btn-sm" data-action="loadLots">Refresh</button>
     </div>
   </div>
 
   <div class="tune-grid" style="margin-bottom:1rem;">
     <div class="form-group">
       <label class="form-label">Account</label>
-      <select id="filter-account" class="form-input" onchange="resetAndLoad()">
+      <select id="filter-account" class="form-input" data-onchange="resetAndLoad">
         <option value="">All Accounts</option>
       </select>
     </div>
     <div class="form-group">
       <label class="form-label">Status</label>
-      <select id="filter-status" class="form-input" onchange="resetAndLoad()">
+      <select id="filter-status" class="form-input" data-onchange="resetAndLoad">
         <option value="">All</option>
         <option value="OPEN" selected>Open</option>
         <option value="SOLD">Sold</option>
@@ -58,15 +58,29 @@
   </div>
 
   <div class="pagination" id="lots-pagination" style="display:none;">
-    <button class="btn btn-outline btn-sm" id="lots-prev" onclick="changeLotsPage(-1)">Prev</button>
+    <button class="btn btn-outline btn-sm" id="lots-prev" data-action="changeLotsPage" data-delta="-1">Prev</button>
     <span id="lots-page-info" class="text-muted" style="font-size:0.85rem;"></span>
-    <button class="btn btn-outline btn-sm" id="lots-next" onclick="changeLotsPage(1)">Next</button>
+    <button class="btn btn-outline btn-sm" id="lots-next" data-action="changeLotsPage" data-delta="1">Next</button>
   </div>
 </section>
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
+// Event Delegation
+document.addEventListener('click', function(e) {
+  const el = e.target.closest('[data-action]');
+  if (!el) return;
+  const action = el.dataset.action;
+  if (action === 'loadLots') { loadLots(); }
+  else if (action === 'changeLotsPage') { changeLotsPage(parseInt(el.dataset.delta)); }
+});
+document.addEventListener('change', function(e) {
+  const el = e.target.closest('[data-onchange]');
+  if (!el) return;
+  if (el.dataset.onchange === 'resetAndLoad') { resetAndLoad(); }
+});
+
 let _adminLotsPage = 0;
 const _lotsLimit = 100;
 

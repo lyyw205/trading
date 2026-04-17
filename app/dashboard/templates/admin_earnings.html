@@ -16,13 +16,13 @@
 <section class="dashboard-section">
   <div class="section-header">
     <h2 class="section-title">Reserve History</h2>
-    <button class="btn btn-outline btn-sm" onclick="loadEarnings()">Refresh</button>
+    <button class="btn btn-outline btn-sm" data-action="loadEarnings">Refresh</button>
   </div>
 
   <div class="tune-grid" style="margin-bottom:1rem;">
     <div class="form-group">
       <label class="form-label">Account</label>
-      <select id="filter-account" class="form-input" onchange="resetAndLoad()">
+      <select id="filter-account" class="form-input" data-onchange="resetAndLoad">
         <option value="">All Accounts</option>
       </select>
     </div>
@@ -48,15 +48,28 @@
   </div>
 
   <div class="pagination" id="earnings-pagination" style="display:none;">
-    <button class="btn btn-outline btn-sm" id="earnings-prev" onclick="changeEarningsPage(-1)">Prev</button>
+    <button class="btn btn-outline btn-sm" id="earnings-prev" data-action="changeEarningsPage" data-delta="-1">Prev</button>
     <span id="earnings-page-info" class="text-muted" style="font-size:0.85rem;"></span>
-    <button class="btn btn-outline btn-sm" id="earnings-next" onclick="changeEarningsPage(1)">Next</button>
+    <button class="btn btn-outline btn-sm" id="earnings-next" data-action="changeEarningsPage" data-delta="1">Next</button>
   </div>
 </section>
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
+document.addEventListener('click', function(e) {
+  const el = e.target.closest('[data-action]');
+  if (!el) return;
+  const action = el.dataset.action;
+  if (action === 'loadEarnings') { loadEarnings(); }
+  else if (action === 'changeEarningsPage') { changeEarningsPage(parseInt(el.dataset.delta)); }
+});
+document.addEventListener('change', function(e) {
+  const el = e.target.closest('[data-onchange]');
+  if (!el) return;
+  if (el.dataset.onchange === 'resetAndLoad') { resetAndLoad(); }
+});
+
 let _earningsPage = 0;
 const _earningsLimit = 100;
 

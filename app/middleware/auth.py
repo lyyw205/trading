@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from datetime import datetime
 
 from starlette.responses import JSONResponse
 
@@ -101,6 +102,25 @@ class LazyAuthMiddleware:
             await response(scope, receive, send)
             return
 
+        # iat vs password_changed_at 검증: 비밀번호 변경 후 발급된 세션만 허용
+        session_iat = session_data.get("iat")
+        pw_changed = db_user.get("password_changed_at")
+        if session_iat and pw_changed:
+            pw_changed_ts = pw_changed.timestamp() if isinstance(pw_changed, datetime) else pw_changed
+            if session_iat < pw_changed_ts:
+                is_secure = not getattr(app_state.state, "settings_debug", False)
+                response = self._force_logout(path, session_manager, is_secure=is_secure)
+                await response(scope, receive, send)
+                return
+        elif not session_iat:
+            # Legacy cookie without iat: reject after hard cutoff date
+            cutoff = getattr(session_manager, "_IAT_CUTOFF_TS", 0)
+            if time.time() > cutoff:
+                is_secure = not getattr(app_state.state, "settings_debug", False)
+                response = self._force_logout(path, session_manager, is_secure=is_secure)
+                await response(scope, receive, send)
+                return
+
         # DB에서 가져온 최신 정보 사용 (쿠키의 role이 아닌 DB의 role)
         user = {
             "id": db_user["id"],
@@ -122,10 +142,13 @@ class LazyAuthMiddleware:
         return RedirectResponse(url="/login", status_code=302)
 
     def _force_logout(self, path: str, session_manager, *, is_secure: bool = True):
-        """Legacy session format detected → clear cookie and redirect."""
-        from starlette.responses import RedirectResponse
+        """Invalid/expired session → clear cookie. API paths get 401 JSON, browser gets redirect."""
+        from starlette.responses import JSONResponse, RedirectResponse
 
-        response = RedirectResponse(url="/login", status_code=302)
+        if path.startswith("/api/"):
+            response = JSONResponse({"detail": "Session expired"}, status_code=401)
+        else:
+            response = RedirectResponse(url="/login", status_code=302)
         response.delete_cookie(
             key=session_manager.cookie_name,
             path="/",

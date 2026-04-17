@@ -110,7 +110,13 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
+document.addEventListener('click', function(e) {
+  const el = e.target.closest('[data-action]');
+  if (!el) return;
+  if (el.dataset.action === 'toggleParams') { toggleParams(el); }
+});
+
 function toggleParams(btn) {
   btn.classList.toggle('open');
   btn.nextElementSibling.classList.toggle('open');
@@ -124,7 +130,7 @@ function renderStrategyCard(s) {
   const params = s.default_params || {};
   const paramKeys = Object.keys(params);
   const paramsHtml = paramKeys.length ? `
-    <button class="params-toggle" onclick="toggleParams(this)">
+    <button class="params-toggle" data-action="toggleParams">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
       ${paramKeys.length} defaults
     </button>

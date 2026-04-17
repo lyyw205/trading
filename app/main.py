@@ -268,7 +268,7 @@ app.include_router(admin_accounts_router)
 app.include_router(admin_trading_router)
 app.include_router(admin_users_router)
 app.include_router(backtest_router)
-if settings.debug or settings.environment != "production":
+if settings.debug:
     app.include_router(debug_router)
 app.include_router(metrics_router)
 app.include_router(admin_db_router)

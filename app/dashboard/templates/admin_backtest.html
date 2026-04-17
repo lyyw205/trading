@@ -73,20 +73,20 @@
 <section class="dashboard-section">
   <!-- Stepper -->
   <div class="stepper" id="stepper">
-    <div class="step-item active" onclick="goToStep(1)">
+    <div class="step-item active" data-action="goToStep" data-step="1">
       <span class="step-num">1</span><span class="step-label">Settings</span>
     </div>
     <div class="step-connector"></div>
-    <div class="step-item" onclick="goToStep(2)">
+    <div class="step-item" data-action="goToStep" data-step="2">
       <span class="step-num">2</span><span class="step-label">Strategy</span>
     </div>
     <div class="step-connector"></div>
-    <div class="step-item" onclick="goToStep(3)">
+    <div class="step-item" data-action="goToStep" data-step="3">
       <span class="step-num">3</span><span class="step-label">Run</span>
     </div>
   </div>
 
-  <form id="backtest-form" onsubmit="return false;">
+  <form id="backtest-form">
     <!-- Step 1: Settings (Market + Period) -->
     <div class="step-panel active" data-step="1">
       <div class="bt-columns">
@@ -122,7 +122,7 @@
       </div>
       <div class="step-nav">
         <div></div>
-        <button type="button" class="btn btn-primary" onclick="goToStep(2)">Next</button>
+        <button type="button" class="btn btn-primary" data-action="goToStep" data-step="2">Next</button>
       </div>
     </div>
 
@@ -132,13 +132,13 @@
         <p style="color:var(--text-muted);text-align:center;padding:2rem 0;">No combos added yet. Click "+ Add Combo" to get started.</p>
       </div>
       <div style="display:flex;gap:0.5rem;margin-top:0.75rem;flex-wrap:wrap;">
-        <button type="button" class="btn btn-primary btn-sm" onclick="addBtCombo()">+ Add Combo</button>
-        <button type="button" class="btn btn-outline btn-sm" onclick="openSavePresetModal()">Save Preset</button>
-        <button type="button" class="btn btn-outline btn-sm" onclick="openLoadPresetModal()">Load Preset</button>
+        <button type="button" class="btn btn-primary btn-sm" data-action="addBtCombo">+ Add Combo</button>
+        <button type="button" class="btn btn-outline btn-sm" data-action="openSavePresetModal">Save Preset</button>
+        <button type="button" class="btn btn-outline btn-sm" data-action="openLoadPresetModal">Load Preset</button>
       </div>
       <div class="step-nav">
-        <button type="button" class="btn btn-outline" onclick="goToStep(1)">Back</button>
-        <button type="button" class="btn btn-primary" onclick="goToStep(3)">Next</button>
+        <button type="button" class="btn btn-outline" data-action="goToStep" data-step="1">Back</button>
+        <button type="button" class="btn btn-primary" data-action="goToStep" data-step="3">Next</button>
       </div>
     </div>
 
@@ -146,8 +146,8 @@
     <div class="step-panel" data-step="3">
       <div class="bt-columns" id="review-summary"></div>
       <div class="step-nav">
-        <button type="button" class="btn btn-outline" onclick="goToStep(2)">Back</button>
-        <button type="button" class="btn btn-primary" id="bt-run-btn" onclick="startBacktest()">Run Backtest</button>
+        <button type="button" class="btn btn-outline" data-action="goToStep" data-step="2">Back</button>
+        <button type="button" class="btn btn-primary" id="bt-run-btn" data-action="startBacktest">Run Backtest</button>
       </div>
     </div>
   </form>
@@ -160,22 +160,22 @@
 
     <!-- Stepper -->
     <div class="wizard-stepper" id="bt-combo-wizard-stepper">
-      <div class="wizard-step active" data-step="1" data-color="primary" onclick="btWizardGoTo(1)">
+      <div class="wizard-step active" data-step="1" data-color="primary" data-action="btWizardGoTo" data-step-num="1">
         <div class="wizard-step-circle">1</div>
         <div class="wizard-step-label">General</div>
       </div>
       <div class="wizard-connector" data-after="1"></div>
-      <div class="wizard-step" data-step="2" data-color="success" onclick="btWizardGoTo(2)">
+      <div class="wizard-step" data-step="2" data-color="success" data-action="btWizardGoTo" data-step-num="2">
         <div class="wizard-step-circle">2</div>
         <div class="wizard-step-label">Buy Logic</div>
       </div>
       <div class="wizard-connector" data-after="2"></div>
-      <div class="wizard-step" data-step="3" data-color="teal" onclick="btWizardGoTo(3)">
+      <div class="wizard-step" data-step="3" data-color="teal" data-action="btWizardGoTo" data-step-num="3">
         <div class="wizard-step-circle">3</div>
         <div class="wizard-step-label">Buy Sizing</div>
       </div>
       <div class="wizard-connector" data-after="3"></div>
-      <div class="wizard-step" data-step="4" data-color="danger" onclick="btWizardGoTo(4)">
+      <div class="wizard-step" data-step="4" data-color="danger" data-action="btWizardGoTo" data-step-num="4">
         <div class="wizard-step-circle">4</div>
         <div class="wizard-step-label">Sell Logic</div>
       </div>
@@ -204,7 +204,7 @@
         <div class="combo-section">
           <div class="form-group">
             <label class="form-label">Buy Logic</label>
-            <select id="bt-combo-buy-logic" class="form-input" onchange="renderBtComboParams('buy')"></select>
+            <select id="bt-combo-buy-logic" class="form-input" data-onchange="renderBtComboParams" data-side="buy"></select>
           </div>
           <div id="bt-combo-buy-cond-params"></div>
         </div>
@@ -222,7 +222,7 @@
         <div class="combo-section">
           <div class="form-group">
             <label class="form-label">Sell Logic</label>
-            <select id="bt-combo-sell-logic" class="form-input" onchange="renderBtComboParams('sell')"></select>
+            <select id="bt-combo-sell-logic" class="form-input" data-onchange="renderBtComboParams" data-side="sell"></select>
           </div>
           <div id="bt-combo-sell-cond-params"></div>
           <div id="bt-combo-sell-sizing-params" style="margin-top:0.5rem;"></div>
@@ -232,10 +232,10 @@
 
     <!-- Wizard Navigation -->
     <div class="wizard-nav">
-      <button class="btn btn-outline btn-sm" id="bt-wiz-prev" onclick="btWizardPrev()" style="display:none;">Previous</button>
-      <button class="btn btn-outline btn-sm" onclick="closeBtComboModal()">Cancel</button>
-      <button class="btn btn-primary btn-sm" id="bt-wiz-next" onclick="btWizardNext()">Next</button>
-      <button class="btn btn-primary btn-sm" id="bt-wiz-save" onclick="saveBtCombo()" style="display:none;">Save</button>
+      <button class="btn btn-outline btn-sm" id="bt-wiz-prev" data-action="btWizardPrev" style="display:none;">Previous</button>
+      <button class="btn btn-outline btn-sm" data-action="closeBtComboModal">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="bt-wiz-next" data-action="btWizardNext">Next</button>
+      <button class="btn btn-primary btn-sm" id="bt-wiz-save" data-action="saveBtCombo" style="display:none;">Save</button>
     </div>
   </div>
 </div>
@@ -246,10 +246,10 @@
     <h2 class="section-title">History</h2>
     <div style="display:flex; gap:0.5rem; align-items:center;">
       <div class="tf-selector" id="bt-history-filter">
-        <button class="tf-btn active" data-filter="all" onclick="filterHistory('all', this)">All</button>
-        <button class="tf-btn" data-filter="pinned" onclick="filterHistory('pinned', this)">Pinned</button>
+        <button class="tf-btn active" data-filter="all" data-action="filterHistory" data-history-filter="all">All</button>
+        <button class="tf-btn" data-filter="pinned" data-action="filterHistory" data-history-filter="pinned">Pinned</button>
       </div>
-      <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger);" onclick="openDeleteAllModal()">Delete All</button>
+      <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger);" data-action="openDeleteAllModal">Delete All</button>
     </div>
   </div>
   <div class="table-wrapper">
@@ -277,7 +277,7 @@
   <div class="modal-dialog" style="max-width:400px;">
     <div class="modal-header">
       <h3 class="modal-title">Delete All Backtests</h3>
-      <button class="modal-close" onclick="closeDeleteAllModal()">&times;</button>
+      <button class="modal-close" data-action="closeDeleteAllModal">&times;</button>
     </div>
     <div class="modal-body">
       <p style="color:var(--text-muted);margin-bottom:1rem;">선택한 백테스트 기록을 모두 삭제합니다. 이 작업은 되돌릴 수 없습니다.</p>
@@ -288,19 +288,19 @@
       </label>
     </div>
     <div class="modal-footer" style="display:flex;gap:0.5rem;justify-content:flex-end;">
-      <button class="btn btn-outline" onclick="closeDeleteAllModal()">Cancel</button>
-      <button class="btn btn-danger" id="delete-all-confirm-btn" onclick="submitDeleteAll()">Delete</button>
+      <button class="btn btn-outline" data-action="closeDeleteAllModal">Cancel</button>
+      <button class="btn btn-danger" id="delete-all-confirm-btn" data-action="submitDeleteAll">Delete</button>
     </div>
   </div>
 </div>
-<div class="modal-backdrop" id="delete-all-backdrop" style="display:none;" onclick="closeDeleteAllModal()"></div>
+<div class="modal-backdrop" id="delete-all-backdrop" style="display:none;" data-action="closeDeleteAllModal"></div>
 
 <!-- Save Preset Modal -->
 <div class="modal" id="save-preset-modal" style="display:none;">
   <div class="modal-dialog" style="max-width:400px;">
     <div class="modal-header">
       <h3 class="modal-title">Save Combo Preset</h3>
-      <button class="modal-close" onclick="closeSavePresetModal()">&times;</button>
+      <button class="modal-close" data-action="closeSavePresetModal">&times;</button>
     </div>
     <div class="modal-body">
       <div class="form-group">
@@ -310,33 +310,78 @@
       <p style="font-size:0.8rem;color:var(--text-muted);margin-top:0.5rem;">현재 설정된 <span id="preset-save-count">0</span>개 콤보가 저장됩니다.</p>
     </div>
     <div class="modal-footer" style="display:flex;gap:0.5rem;justify-content:flex-end;">
-      <button class="btn btn-outline" onclick="closeSavePresetModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="submitSavePreset()">Save</button>
+      <button class="btn btn-outline" data-action="closeSavePresetModal">Cancel</button>
+      <button class="btn btn-primary" data-action="submitSavePreset">Save</button>
     </div>
   </div>
 </div>
-<div class="modal-backdrop" id="save-preset-backdrop" style="display:none;" onclick="closeSavePresetModal()"></div>
+<div class="modal-backdrop" id="save-preset-backdrop" style="display:none;" data-action="closeSavePresetModal"></div>
 
 <!-- Load Preset Modal -->
 <div class="modal" id="load-preset-modal" style="display:none;">
   <div class="modal-dialog" style="max-width:480px;">
     <div class="modal-header">
       <h3 class="modal-title">Load Combo Preset</h3>
-      <button class="modal-close" onclick="closeLoadPresetModal()">&times;</button>
+      <button class="modal-close" data-action="closeLoadPresetModal">&times;</button>
     </div>
     <div class="modal-body" id="load-preset-body">
       <div class="loading-spinner">Loading...</div>
     </div>
     <div class="modal-footer" style="display:flex;gap:0.5rem;justify-content:flex-end;">
-      <button class="btn btn-outline" onclick="closeLoadPresetModal()">Close</button>
+      <button class="btn btn-outline" data-action="closeLoadPresetModal">Close</button>
     </div>
   </div>
 </div>
-<div class="modal-backdrop" id="load-preset-backdrop" style="display:none;" onclick="closeLoadPresetModal()"></div>
+<div class="modal-backdrop" id="load-preset-backdrop" style="display:none;" data-action="closeLoadPresetModal"></div>
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
+// ============================================================
+//  Event Delegation
+// ============================================================
+document.getElementById('backtest-form')?.addEventListener('submit', function(e) { e.preventDefault(); });
+document.addEventListener('click', function(e) {
+  const el = e.target.closest('[data-action]');
+  if (!el) return;
+  const action = el.dataset.action;
+  if (action === 'goToStep') { goToStep(parseInt(el.dataset.step)); }
+  else if (action === 'addBtCombo') { addBtCombo(); }
+  else if (action === 'openSavePresetModal') { openSavePresetModal(); }
+  else if (action === 'openLoadPresetModal') { openLoadPresetModal(); }
+  else if (action === 'startBacktest') { startBacktest(); }
+  else if (action === 'btWizardGoTo') { btWizardGoTo(parseInt(el.dataset.stepNum)); }
+  else if (action === 'btWizardPrev') { btWizardPrev(); }
+  else if (action === 'closeBtComboModal') { closeBtComboModal(); }
+  else if (action === 'btWizardNext') { btWizardNext(); }
+  else if (action === 'saveBtCombo') { saveBtCombo(); }
+  else if (action === 'filterHistory') {
+    filterHistory(el.dataset.historyFilter, el);
+  }
+  else if (action === 'openDeleteAllModal') { openDeleteAllModal(); }
+  else if (action === 'closeDeleteAllModal') { closeDeleteAllModal(); }
+  else if (action === 'submitDeleteAll') { submitDeleteAll(); }
+  else if (action === 'closeSavePresetModal') { closeSavePresetModal(); }
+  else if (action === 'submitSavePreset') { submitSavePreset(); }
+  else if (action === 'closeLoadPresetModal') { closeLoadPresetModal(); }
+  else if (action === 'editBtCombo') { editBtCombo(parseInt(el.dataset.index)); }
+  else if (action === 'deleteBtCombo') { deleteBtCombo(parseInt(el.dataset.index)); }
+  else if (action === 'deleteBacktest') { deleteBacktest(el.dataset.id); }
+  else if (action === 'toggleReviewParams') {
+    el.classList.toggle('open');
+    el.nextElementSibling.classList.toggle('open');
+  }
+  else if (action === 'loadPreset') { loadPreset(el.dataset.presetName); }
+  else if (action === 'deletePreset') { deletePreset(el.dataset.presetName); }
+});
+
+document.addEventListener('change', function(e) {
+  const el = e.target.closest('[data-onchange]');
+  if (!el) return;
+  const fn = el.dataset.onchange;
+  if (fn === 'renderBtComboParams') { renderBtComboParams(el.dataset.side); }
+});
+
 let _backtestPollTimer = null;
 let _btBuyLogics = [];
 let _btSellLogics = [];
@@ -425,8 +470,8 @@ function renderBtComboList() {
         <div class="bt-combo-card-detail">Buy: ${escapeHtml(buyLabel)} &middot; Sell: ${escapeHtml(sellLabel)}${refText}</div>
       </div>
       <div class="bt-combo-card-actions">
-        <button class="btn btn-outline btn-sm" onclick="editBtCombo(${i})">Edit</button>
-        <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger);" onclick="deleteBtCombo(${i})">Delete</button>
+        <button class="btn btn-outline btn-sm" data-action="editBtCombo" data-index="${i}">Edit</button>
+        <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger);" data-action="deleteBtCombo" data-index="${i}">Delete</button>
       </div>
     </div>`;
   });
@@ -706,14 +751,14 @@ function buildReview() {
         <div class="review-item"><span class="label">Sell Logic</span><span class="value">${escapeHtml(sellLabel)}</span></div>
         ${refText}
         ${buyParamCount ? `<div style="margin-top:0.25rem;">
-          <button class="review-params-toggle" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')">
+          <button class="review-params-toggle" data-action="toggleReviewParams">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
             Buy Params (${buyParamCount})
           </button>
           <div class="review-params-body">${renderParams(combo.buy_params)}</div>
         </div>` : ''}
         ${sellParamCount ? `<div style="margin-top:0.15rem;">
-          <button class="review-params-toggle" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')">
+          <button class="review-params-toggle" data-action="toggleReviewParams">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
             Sell Params (${sellParamCount})
           </button>
@@ -820,7 +865,7 @@ function renderHistory() {
     const created = new Date(r.created_at).toLocaleString();
     const startD = new Date(r.start_ts_ms).toLocaleDateString();
     const endD = new Date(r.end_ts_ms).toLocaleDateString();
-    const strats = r.combos ? r.combos.map(c => `${c.buy_logic_name} + ${c.sell_logic_name}`).join(', ') : '-';
+    const strats = r.combos ? r.combos.map(c => `${escapeHtml(c.buy_logic_name)} + ${escapeHtml(c.sell_logic_name)}`).join(', ') : '-';
     const pnlClass = r.pnl_pct != null ? (r.pnl_pct >= 0 ? 'pnl-positive' : 'pnl-negative') : '';
     const pnlText = r.pnl_pct != null ? r.pnl_pct.toFixed(2) + '%' : '-';
     const pinnedBadge = r.pinned ? '<span class="badge-pinned">Pinned</span>' : '';
@@ -831,7 +876,7 @@ function renderHistory() {
     else statusBadge = '<span class="status-badge badge-danger">Failed</span>';
     let actions = '';
     if (r.status === 'COMPLETED') actions = `<a href="/admin/backtest/${r.id}" class="btn btn-outline btn-sm">View</a>`;
-    if (r.status !== 'RUNNING' && r.status !== 'PENDING') actions += ` <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger);" onclick="deleteBacktest('${r.id}')">Delete</button>`;
+    if (r.status !== 'RUNNING' && r.status !== 'PENDING') actions += ` <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger);" data-action="deleteBacktest" data-id="${escapeHtml(r.id)}">Delete</button>`;
     return `<tr>
       <td style="font-size:0.8rem;">${escapeHtml(created)}</td>
       <td>${escapeHtml(r.symbol)}</td>
@@ -879,7 +924,10 @@ function openDeleteAllModal() {
   const excludePinned = document.getElementById('delete-all-exclude-pinned');
   excludePinned.checked = true;
   _updateDeleteAllCount();
-  excludePinned.onchange = _updateDeleteAllCount;
+  if (!excludePinned._wired) {
+    excludePinned._wired = true;
+    excludePinned.addEventListener('change', _updateDeleteAllCount);
+  }
   document.getElementById('delete-all-modal').style.display = 'flex';
   document.getElementById('delete-all-backdrop').style.display = 'block';
 }
@@ -989,8 +1037,8 @@ async function _loadPresetList() {
           <div class="bt-combo-card-detail">${escapeHtml(comboSummary)} &middot; ${p.combos.length}개 콤보 &middot; ${escapeHtml(savedDate)}</div>
         </div>
         <div class="bt-combo-card-actions">
-          <button class="btn btn-primary btn-sm" onclick="loadPreset('${escapeHtml(p.name)}')">Load</button>
-          <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger);" onclick="deletePreset('${escapeHtml(p.name)}')">Delete</button>
+          <button class="btn btn-primary btn-sm" data-action="loadPreset" data-preset-name="${escapeHtml(p.name)}">Load</button>
+          <button class="btn btn-outline btn-sm" style="color:var(--danger);border-color:var(--danger);" data-action="deletePreset" data-preset-name="${escapeHtml(p.name)}">Delete</button>
         </div>
       </div>`;
     }).join('') + '</div>';

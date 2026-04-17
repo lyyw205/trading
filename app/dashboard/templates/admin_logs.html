@@ -7,11 +7,11 @@
   <h1 class="page-title">트레이딩 로그</h1>
   <p class="hero-subtitle">실시간 구조화된 로그 뷰어 (필터링 지원)</p>
   <div class="hero-actions">
-    <button class="btn btn-hero btn-sm" onclick="openLogGuide()">
+    <button class="btn btn-hero btn-sm" data-action="openLogGuide">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
       로그 가이드
     </button>
-    <button class="btn btn-hero btn-sm" onclick="loadLogs()">
+    <button class="btn btn-hero btn-sm" data-action="loadLogs">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
       새로고침
     </button>
@@ -40,19 +40,19 @@
     </div>
   </div>
   <div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;">
-    <select id="filter-account" class="form-input" style="width:auto;min-width:160px;padding:0.3rem 0.5rem;font-size:0.8rem;" onchange="loadLogs()">
+    <select id="filter-account" class="form-input" style="width:auto;min-width:160px;padding:0.3rem 0.5rem;font-size:0.8rem;" data-onchange="loadLogs">
       <option value="">전체 계정</option>
       <option value="system">시스템</option>
     </select>
-    <select id="filter-level" class="form-input" style="width:auto;padding:0.3rem 0.5rem;font-size:0.8rem;" onchange="loadLogs()">
+    <select id="filter-level" class="form-input" style="width:auto;padding:0.3rem 0.5rem;font-size:0.8rem;" data-onchange="loadLogs">
       <option value="">전체 레벨</option>
       <option value="CRITICAL">CRITICAL</option>
       <option value="ERROR">ERROR</option>
       <option value="WARNING">WARNING</option>
       <option value="INFO">INFO</option>
     </select>
-    <input type="text" id="filter-search" class="form-input" placeholder="메시지 검색..." style="width:auto;min-width:200px;padding:0.3rem 0.5rem;font-size:0.8rem;" onkeydown="if(event.key==='Enter')loadLogs();">
-    <button class="btn btn-outline btn-sm" onclick="clearFilters()" style="padding:0.3rem 0.5rem;font-size:0.8rem;">초기화</button>
+    <input type="text" id="filter-search" class="form-input" placeholder="메시지 검색..." style="width:auto;min-width:200px;padding:0.3rem 0.5rem;font-size:0.8rem;" data-onkeydown-enter="loadLogs">
+    <button class="btn btn-outline btn-sm" data-action="clearFilters" style="padding:0.3rem 0.5rem;font-size:0.8rem;">초기화</button>
   </div>
 </section>
 
@@ -69,17 +69,17 @@
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
       <h3 style="margin:0;">로그 해결 가이드</h3>
       <div style="display:flex;gap:0.5rem;align-items:center;">
-        <input type="text" id="guide-search" class="form-input" placeholder="로그 검색..." style="width:200px;padding:0.3rem 0.5rem;font-size:0.8rem;" oninput="filterGuide()">
-        <select id="guide-level-filter" class="form-input" style="width:auto;padding:0.3rem 0.5rem;font-size:0.8rem;" onchange="filterGuide()">
+        <input type="text" id="guide-search" class="form-input" placeholder="로그 검색..." style="width:200px;padding:0.3rem 0.5rem;font-size:0.8rem;" data-oninput="filterGuide">
+        <select id="guide-level-filter" class="form-input" style="width:auto;padding:0.3rem 0.5rem;font-size:0.8rem;" data-onchange="filterGuide">
           <option value="">전체 심각도</option>
           <option value="Critical">심각</option>
           <option value="High">높음</option>
           <option value="Medium">보통</option>
           <option value="Low">낮음</option>
         </select>
-        <button class="btn btn-outline btn-sm" onclick="toggleAllGuide(true)" style="padding:0.2rem 0.4rem;font-size:0.75rem;">전체 펼치기</button>
-        <button class="btn btn-outline btn-sm" onclick="toggleAllGuide(false)" style="padding:0.2rem 0.4rem;font-size:0.75rem;">접기</button>
-        <button class="btn btn-outline btn-sm" onclick="closeLogGuide()">닫기</button>
+        <button class="btn btn-outline btn-sm" data-action="toggleAllGuide" data-expand="true" style="padding:0.2rem 0.4rem;font-size:0.75rem;">전체 펼치기</button>
+        <button class="btn btn-outline btn-sm" data-action="toggleAllGuide" data-expand="false" style="padding:0.2rem 0.4rem;font-size:0.75rem;">접기</button>
+        <button class="btn btn-outline btn-sm" data-action="closeLogGuide">닫기</button>
       </div>
     </div>
     <div id="guide-content"></div>
@@ -162,7 +162,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
 let _autoRefreshTimer = null;
 
 // ============================================================
@@ -419,7 +419,7 @@ async function loadAlerts() {
         <div class="alert-card-body">
           <div class="alert-card-header">
             <span class="alert-card-level ${lvl}">${lvl}</span>
-            <span class="alert-card-account" onclick="filterByAccount('${escapeHtml(acct)}')">${escapeHtml(acctLabel)}</span>
+            <span class="alert-card-account" data-action="filterByAccount" data-account-id="${escapeHtml(acct)}">${escapeHtml(acctLabel)}</span>
             <span class="alert-card-module">${mod}</span>
             <span class="alert-card-time">${timeAgo}</span>
           </div>
@@ -501,7 +501,7 @@ async function loadLogs() {
       html += '<div class="log-row">'
         + '<span class="log-row-ts">' + ts + '</span>'
         + '<span class="log-row-level log-row-level-' + lvl + '">' + lvl + '</span>'
-        + '<span class="log-row-account" title="' + escapeHtml(acct) + '" onclick="filterByAccount(\'' + escapeHtml(acct) + '\')">' + escapeHtml(acctShort) + '</span>'
+        + '<span class="log-row-account" title="' + escapeHtml(acct) + '" data-action="filterByAccount" data-account-id="' + escapeHtml(acct) + '">' + escapeHtml(acctShort) + '</span>'
         + '<span class="log-row-module" title="' + mod + '">' + mod + '</span>'
         + '<span class="log-row-msg"' + tooltip + '>' + displayMsg + '</span>'
         + '</div>';
@@ -596,7 +596,7 @@ function renderGuide() {
 
     const modId = 'gmod-' + mod.module.replace(/\./g, '-');
     html += '<div class="guide-module">';
-    html += '<div class="guide-module-header" onclick="toggleGuideModule(\'' + modId + '\')" id="' + modId + '-hdr">';
+    html += '<div class="guide-module-header" data-action="toggleGuideModule" data-module-id="' + modId + '" id="' + modId + '-hdr">';
     html += '<span class="chevron">&#9654;</span>';
     html += '<span>' + escapeHtml(mod.module) + '</span>';
     html += '<span style="color:var(--text-muted);font-weight:400;font-size:0.8rem;margin-left:0.5rem;">' + escapeHtml(mod.desc) + '</span>';
@@ -610,7 +610,7 @@ function renderGuide() {
       const eid = modId + '-e' + i;
       const sevLabel = _sevKo[e.severity] || e.severity;
       html += '<div class="guide-entry">';
-      html += '<div class="guide-entry-header" onclick="toggleGuideEntry(\'' + eid + '\')" id="' + eid + '-hdr">';
+      html += '<div class="guide-entry-header" data-action="toggleGuideEntry" data-entry-id="' + eid + '" id="' + eid + '-hdr">';
       html += '<span class="chevron">&#9654;</span>';
       html += '<span class="guide-level-badge guide-level-' + e.level + '">' + e.level + '</span>';
       html += '<span class="guide-severity guide-severity-' + e.severity + '">' + sevLabel + '</span>';
@@ -666,9 +666,40 @@ function filterGuide() {
   renderGuide();
 }
 
-// Close modal on overlay click
+// Event delegation
 document.addEventListener('click', function(e) {
-  if (e.target.id === 'log-guide-modal') closeLogGuide();
+  if (e.target.id === 'log-guide-modal') { closeLogGuide(); return; }
+  const el = e.target.closest('[data-action]');
+  if (!el) return;
+  const action = el.dataset.action;
+  if (action === 'openLogGuide') { openLogGuide(); }
+  else if (action === 'loadLogs') { loadLogs(); }
+  else if (action === 'clearFilters') { clearFilters(); }
+  else if (action === 'closeLogGuide') { closeLogGuide(); }
+  else if (action === 'toggleAllGuide') { toggleAllGuide(el.dataset.expand === 'true'); }
+  else if (action === 'filterByAccount') { filterByAccount(el.dataset.accountId); }
+  else if (action === 'toggleGuideModule') { toggleGuideModule(el.dataset.moduleId); }
+  else if (action === 'toggleGuideEntry') { toggleGuideEntry(el.dataset.entryId); }
+});
+document.addEventListener('change', function(e) {
+  const el = e.target.closest('[data-onchange]');
+  if (!el) return;
+  const action = el.dataset.onchange;
+  if (action === 'loadLogs') { loadLogs(); }
+  else if (action === 'filterGuide') { filterGuide(); }
+});
+document.addEventListener('input', function(e) {
+  const el = e.target.closest('[data-oninput]');
+  if (!el) return;
+  if (el.dataset.oninput === 'filterGuide') { filterGuide(); }
+});
+document.addEventListener('keydown', function(e) {
+  const el = e.target.closest('[data-onkeydown-enter]');
+  if (!el) return;
+  if (e.key === 'Enter') {
+    const action = el.dataset.onkeydownEnter;
+    if (action === 'loadLogs') { loadLogs(); }
+  }
 });
 
 // ============================================================

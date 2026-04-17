@@ -8,7 +8,7 @@
   <h1 class="page-title">System Overview</h1>
   <p class="hero-subtitle">Monitor all trading accounts, performance metrics, and system health at a glance.</p>
   <div class="hero-actions">
-    <button class="btn btn-hero btn-sm" onclick="loadOverviewData()">
+    <button class="btn btn-hero btn-sm" data-action="loadOverviewData">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
       Refresh
     </button>
@@ -32,7 +32,13 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
+document.addEventListener('click', function(e) {
+  const el = e.target.closest('[data-action]');
+  if (!el) return;
+  if (el.dataset.action === 'loadOverviewData') { loadOverviewData(); }
+});
+
 let _overviewCache = null;
 
 async function loadOverviewData() {

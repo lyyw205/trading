@@ -10,7 +10,7 @@
       <p class="auth-subtitle">Sign in to manage your trading accounts</p>
     </div>
     <div class="auth-body">
-      <form id="login-form" onsubmit="return false;">
+      <form id="login-form">
         <div id="login-error" class="error-text" style="display:none; margin-bottom: 1rem; text-align: center;"></div>
         <div class="form-group" style="margin-bottom: 1rem;">
           <label class="form-label" for="login-email">Email</label>
@@ -20,9 +20,16 @@
           <label class="form-label" for="login-password">Password</label>
           <input type="password" id="login-password" class="form-input" placeholder="Enter password" required minlength="8">
         </div>
-        <button type="submit" class="btn btn-primary" style="width: 100%;" id="login-btn" onclick="handleLogin()">Sign In</button>
+        <button type="submit" class="btn btn-primary" style="width: 100%;" id="login-btn">Sign In</button>
       </form>
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+  document.getElementById('login-form')?.addEventListener('submit', function(e) { e.preventDefault(); handleLogin(); });
+  document.getElementById('login-btn')?.addEventListener('click', handleLogin);
+</script>
 {% endblock %}

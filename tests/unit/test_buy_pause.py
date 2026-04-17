@@ -220,3 +220,73 @@ class TestComputeInterval:
         for state in (BuyPauseState.ACTIVE, BuyPauseState.THROTTLED):
             result = BuyPauseManager.compute_interval(60, state, has_positions=False)
             assert isinstance(result, float), f"Expected float for state={state}"
+
+
+# ---------------------------------------------------------------------------
+# BuyPauseManager.update_state / force_pause / resume  (async, mock session)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestBuyPausePublicMethods:
+    """Tests for update_state, force_pause, resume — session is mocked."""
+
+    def _make_manager(self):
+        import uuid
+        from unittest.mock import AsyncMock, MagicMock
+
+        session = MagicMock()
+        session.execute = AsyncMock()
+        account_id = uuid.uuid4()
+        return BuyPauseManager(account_id, session), session
+
+    async def test_update_state_balance_sufficient_returns_active(self):
+        """update_state with is_balance_sufficient=True always returns ACTIVE, count=0."""
+        mgr, _ = self._make_manager()
+        new_state, new_count = await mgr.update_state(
+            current_state=BuyPauseState.THROTTLED,
+            consecutive_low=2,
+            is_balance_sufficient=True,
+            did_sell_occur=False,
+        )
+        assert new_state == BuyPauseState.ACTIVE
+        assert new_count == 0
+
+    async def test_update_state_low_balance_transitions_to_paused_after_3(self):
+        """update_state with consecutive_low=2 and insufficient balance → PAUSED, count=3."""
+        mgr, session = self._make_manager()
+        new_state, new_count = await mgr.update_state(
+            current_state=BuyPauseState.THROTTLED,
+            consecutive_low=2,
+            is_balance_sufficient=False,
+            did_sell_occur=False,
+        )
+        assert new_state == BuyPauseState.PAUSED
+        assert new_count == 3
+        # DB update must have been executed
+        session.execute.assert_called_once()
+
+    async def test_update_state_paused_stays_paused_no_db_write(self):
+        """update_state in PAUSED with insufficient balance does not hit DB."""
+        mgr, session = self._make_manager()
+        new_state, new_count = await mgr.update_state(
+            current_state=BuyPauseState.PAUSED,
+            consecutive_low=5,
+            is_balance_sufficient=False,
+            did_sell_occur=False,
+        )
+        assert new_state == BuyPauseState.PAUSED
+        assert new_count == 5
+        session.execute.assert_not_called()
+
+    async def test_force_pause_executes_db_update(self):
+        """force_pause calls session.execute once with PAUSED values."""
+        mgr, session = self._make_manager()
+        await mgr.force_pause(reason="TRANSIENT_ERRORS")
+        session.execute.assert_called_once()
+
+    async def test_resume_executes_db_update(self):
+        """resume calls session.execute once to set ACTIVE and reset counter."""
+        mgr, session = self._make_manager()
+        await mgr.resume()
+        session.execute.assert_called_once()

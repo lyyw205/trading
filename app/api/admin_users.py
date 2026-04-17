@@ -105,6 +105,11 @@ async def admin_reset_password(
     if not success:
         raise HTTPException(status_code=404, detail="User not found")
 
+    # 비밀번호 변경 후 auth 캐시 evict → 기존 세션이 즉시 password_changed_at 재검증
+    from app.middleware.auth import LazyAuthMiddleware
+
+    LazyAuthMiddleware.evict_user_cache(user_id)
+
     audit_log("admin_password_reset", user_id=admin["id"], target_user=user_id)
     return {"status": "password_reset"}
 

@@ -52,7 +52,7 @@
     <a href="/admin/backtest" class="back-link">&larr; Back to Backtest</a>
     <h1 class="page-title">Backtest Report</h1>
   </div>
-  <button class="btn btn-outline btn-sm" id="bt-pin-btn" onclick="togglePin()" style="display:none;" title="Pin this report">
+  <button class="btn btn-outline btn-sm" id="bt-pin-btn" data-action="togglePin" style="display:none;" title="Pin this report">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
     <span id="bt-pin-label">Pin</span>
   </button>
@@ -139,8 +139,14 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="https://unpkg.com/lightweight-charts@4/dist/lightweight-charts.standalone.production.js"></script>
-<script>
+<script nonce="{{ csp_nonce }}" src="https://unpkg.com/lightweight-charts@4/dist/lightweight-charts.standalone.production.js"></script>
+<script nonce="{{ csp_nonce }}">
+document.addEventListener('click', function(e) {
+  const el = e.target.closest('[data-action]');
+  if (!el) return;
+  if (el.dataset.action === 'togglePin') { togglePin(); }
+});
+
 const BACKTEST_ID = {{ backtest_id | tojson }};
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -519,7 +525,7 @@ function _attachTradeTooltip(label, trades, x, labelY) {
       const timeStr = d.toLocaleTimeString('ko-KR', { hour:'2-digit', minute:'2-digit', hour12:false });
       const sideLabel = t.side === 'buy' ? 'BUY' : 'SELL';
       if (i > 0) html += '<div style="border-top:1px solid var(--border); margin:4px 0;"></div>';
-      html += `<div class="tt-head"><span class="tt-title ${t.side}">${sideLabel}</span><span class="tt-time ${t.side}">${dateStr} ${timeStr}</span></div>`;
+      html += `<div class="tt-head"><span class="tt-title ${escapeHtml(t.side)}">${sideLabel}</span><span class="tt-time ${escapeHtml(t.side)}">${dateStr} ${timeStr}</span></div>`;
       html += '<div class="tt-body">';
       html += `<div class="tt-row"><span class="tt-key">Price</span><span class="tt-val">${t.price.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</span></div>`;
       if (t.qty) html += `<div class="tt-row"><span class="tt-key">Amount</span><span class="tt-val">${parseFloat(t.qty).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:4})}</span></div>`;

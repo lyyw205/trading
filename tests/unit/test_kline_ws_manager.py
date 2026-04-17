@@ -26,6 +26,7 @@ def _make_manager() -> KlineWsManager:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
 class TestSubscribeRefcount:
     async def test_subscribe_once_adds_symbol(self):
@@ -106,6 +107,7 @@ class TestSubscribeRefcount:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
 class TestBackfilledSet:
     async def test_symbol_not_in_backfilled_after_subscribe(self):
@@ -263,6 +265,7 @@ class TestStreamNames:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.asyncio
 @pytest.mark.unit
 class TestStop:
     async def test_stop_sets_running_false(self):

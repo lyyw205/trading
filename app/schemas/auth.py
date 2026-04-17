@@ -8,8 +8,14 @@ _EMAIL_RE = re.compile(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$")
 
 
 def _validate_password(v: str) -> str:
-    if len(v) < 8:
-        raise ValueError("비밀번호는 최소 8자 이상이어야 합니다.")
+    if len(v) < 12:
+        raise ValueError("비밀번호는 최소 12자 이상이어야 합니다.")
+    if not re.search(r"[A-Z]", v):
+        raise ValueError("비밀번호에 대문자를 최소 1자 포함해야 합니다.")
+    if not re.search(r"[a-z]", v):
+        raise ValueError("비밀번호에 소문자를 최소 1자 포함해야 합니다.")
+    if not re.search(r"\d", v):
+        raise ValueError("비밀번호에 숫자를 최소 1자 포함해야 합니다.")
     return v
 
 
@@ -30,7 +36,6 @@ class LoginRequest(BaseModel):
     password: str
 
     _check_email = field_validator("email")(_validate_email)
-    _check_password = field_validator("password")(_validate_password)
 
 
 class LoginResponse(BaseModel):

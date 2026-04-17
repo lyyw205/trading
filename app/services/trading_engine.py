@@ -165,7 +165,7 @@ class TradingEngine:
                 await self._kline_ws.unsubscribe(s)
         trader = self._traders.get(account_id)
         if trader:
-            trader.stop()
+            await trader.stop_async()
         task = self._tasks.pop(account_id, None)
         if task:
             task.cancel()

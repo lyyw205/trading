@@ -3,6 +3,7 @@ from __future__ import annotations
 import collections
 import json
 import logging
+import re
 from datetime import UTC, datetime
 
 from app.utils.context import current_account_id, current_cycle_id, current_request_id  # noqa: F401
@@ -39,8 +40,20 @@ log_buffer = LogBuffer()
 persist_handler = None
 
 
+_SENSITIVE_RE = re.compile(
+    r"(api[_-]?key|api[_-]?secret|password|secret[_-]?key|token|authorization|encryption[_-]?key)"
+    r"[\s]*[=:]\s*['\"]?([^\s'\",:}{]{4,})",
+    re.IGNORECASE,
+)
+
+
+def _sanitize_msg(msg: str) -> str:
+    """Mask sensitive values (password=xxx → password=***) in log messages."""
+    return _SENSITIVE_RE.sub(lambda m: f"{m.group(1)}=***", msg)
+
+
 class StructuredFormatter(logging.Formatter):
-    """JSON structured logging with correlation IDs."""
+    """JSON structured logging with correlation IDs and sensitive-data masking."""
 
     def format(self, record):
         log_data = {
@@ -49,7 +62,7 @@ class StructuredFormatter(logging.Formatter):
             "account_id": current_account_id.get(),
             "request_id": current_request_id.get(),
             "cycle_id": current_cycle_id.get(),
-            "msg": record.getMessage(),
+            "msg": _sanitize_msg(record.getMessage()),
             "module": record.module,
         }
         # Optional duration field

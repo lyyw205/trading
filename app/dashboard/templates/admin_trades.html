@@ -12,8 +12,8 @@
   <div class="section-header">
     <h2 class="section-title">Cross-Account Trades</h2>
     <div style="display:flex;gap:0.5rem;align-items:center;">
-      <button class="btn btn-outline btn-sm" onclick="exportTradesCSV()">Export CSV</button>
-      <button class="btn btn-outline btn-sm" onclick="loadTrades()">Refresh</button>
+      <button class="btn btn-outline btn-sm" data-action="exportTradesCSV">Export CSV</button>
+      <button class="btn btn-outline btn-sm" data-action="loadTrades">Refresh</button>
     </div>
   </div>
 
@@ -21,13 +21,13 @@
   <div class="tune-grid" style="margin-bottom:1rem;">
     <div class="form-group">
       <label class="form-label">Account</label>
-      <select id="trade-filter-account" class="form-input" onchange="loadTrades()">
+      <select id="trade-filter-account" class="form-input" data-onchange="loadTrades">
         <option value="">All Accounts</option>
       </select>
     </div>
     <div class="form-group">
       <label class="form-label">Side</label>
-      <select id="trade-filter-side" class="form-input" onchange="loadTrades()">
+      <select id="trade-filter-side" class="form-input" data-onchange="loadTrades">
         <option value="">All</option>
         <option value="BUY">BUY</option>
         <option value="SELL">SELL</option>
@@ -57,15 +57,29 @@
 
   <!-- Pagination -->
   <div class="pagination" id="trades-pagination" style="display:none;">
-    <button class="btn btn-outline btn-sm" id="trades-prev" onclick="changeTradesPage(-1)">Prev</button>
+    <button class="btn btn-outline btn-sm" id="trades-prev" data-action="changeTradesPage" data-delta="-1">Prev</button>
     <span id="trades-page-info" class="text-muted" style="font-size:0.85rem;"></span>
-    <button class="btn btn-outline btn-sm" id="trades-next" onclick="changeTradesPage(1)">Next</button>
+    <button class="btn btn-outline btn-sm" id="trades-next" data-action="changeTradesPage" data-delta="1">Next</button>
   </div>
 </section>
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
+document.addEventListener('click', function(e) {
+  const el = e.target.closest('[data-action]');
+  if (!el) return;
+  const action = el.dataset.action;
+  if (action === 'loadTrades') { loadTrades(); }
+  else if (action === 'exportTradesCSV') { exportTradesCSV(); }
+  else if (action === 'changeTradesPage') { changeTradesPage(parseInt(el.dataset.delta)); }
+});
+document.addEventListener('change', function(e) {
+  const el = e.target.closest('[data-onchange]');
+  if (!el) return;
+  if (el.dataset.onchange === 'loadTrades') { loadTrades(); }
+});
+
 let _tradesData = [];
 let _tradesPage = 0;
 const _tradesLimit = 100;

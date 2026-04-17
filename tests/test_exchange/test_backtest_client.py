@@ -416,3 +416,28 @@ class TestFullCycle:
         ids = {o["orderId"] for o in orders}
         assert o1["orderId"] in ids
         assert o2["orderId"] in ids
+
+
+# ---------------------------------------------------------------------------
+# Additional coverage: get_account_info, get_my_trades_from_id, set_candle
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.exchange
+class TestAdditionalCoverage:
+    async def test_get_account_info(self, client):
+        """get_account_info returns account details."""
+        info = await client.get_account_info()
+        assert "balances" in info
+
+    async def test_get_my_trades_from_id(self, client):
+        """get_my_trades_from_id returns trades at or after given ID."""
+        trades = await client.get_my_trades_from_id("BTCUSDT", from_id=0)
+        assert isinstance(trades, list)
+
+    async def test_set_candle_updates_price(self, client):
+        """set_candle stores candle data and updates internal price state."""
+        client.set_candle(close=50500.0, low=49000.0, high=51000.0, ts_ms=1000000)
+        assert client._current_price == 50500.0
+        assert client._candle_low == 49000.0
+        assert client._candle_high == 51000.0

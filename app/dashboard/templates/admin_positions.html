@@ -13,14 +13,14 @@
     <h2 class="section-title">All Positions</h2>
     <div style="display:flex;gap:0.5rem;align-items:center;">
       <span id="positions-summary" class="text-muted" style="font-size:0.85rem;"></span>
-      <button class="btn btn-outline btn-sm" onclick="loadPositions()">Refresh</button>
+      <button class="btn btn-outline btn-sm" data-action="loadPositions">Refresh</button>
     </div>
   </div>
 
   <div class="tune-grid" style="margin-bottom:1rem;">
     <div class="form-group">
       <label class="form-label">Account</label>
-      <select id="filter-account" class="form-input" onchange="loadPositions()">
+      <select id="filter-account" class="form-input" data-onchange="loadPositions">
         <option value="">All Accounts</option>
       </select>
     </div>
@@ -48,7 +48,18 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce }}">
+document.addEventListener('click', function(e) {
+  const el = e.target.closest('[data-action]');
+  if (!el) return;
+  if (el.dataset.action === 'loadPositions') { loadPositions(); }
+});
+document.addEventListener('change', function(e) {
+  const el = e.target.closest('[data-onchange]');
+  if (!el) return;
+  if (el.dataset.onchange === 'loadPositions') { loadPositions(); }
+});
+
 async function loadPositions() {
   const tbody = document.getElementById('positions-tbody');
   if (!tbody) return;

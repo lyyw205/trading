@@ -42,6 +42,8 @@ class TestSessionManagerMultiKey:
         cookie = mgr.create_session_cookie("uid1", "user")
         data = mgr.read_session_cookie(cookie)
         assert data["uid"] == "uid1"
+        assert "iat" in data
+        assert isinstance(data["iat"], int)
 
     def test_multi_key_rotation(self):
         """Token signed with old key is readable by [new, old] manager."""
@@ -55,6 +57,8 @@ class TestSessionManagerMultiKey:
         data = new_mgr.read_session_cookie(cookie)
         assert data is not None
         assert data["uid"] == "uid1"
+        assert "iat" in data
+        assert isinstance(data["iat"], int)
 
     def test_new_key_signing(self):
         """Multi-key manager can read its own tokens."""
@@ -67,6 +71,8 @@ class TestSessionManagerMultiKey:
         data = multi_mgr.read_session_cookie(cookie)
         assert data is not None
         assert data["uid"] == "uid1"
+        assert "iat" in data
+        assert isinstance(data["iat"], int)
 
         # Completely unrelated key cannot read it
         unrelated_mgr = SessionManager(["totally-different-key"])

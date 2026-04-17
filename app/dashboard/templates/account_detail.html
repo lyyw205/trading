@@ -45,9 +45,9 @@
   <div class="section-header">
     <h2 class="section-title">Lots</h2>
     <div class="filter-tabs" id="lot-status-tabs">
-      <button class="filter-tab active" data-status="ALL" onclick="switchLotStatus('ALL')">All</button>
-      <button class="filter-tab" data-status="OPEN" onclick="switchLotStatus('OPEN')">Open</button>
-      <button class="filter-tab" data-status="CLOSED" onclick="switchLotStatus('CLOSED')">Filled</button>
+      <button class="filter-tab active" data-status="ALL" data-action="switchLotStatus" data-lot-status="ALL">All</button>
+      <button class="filter-tab" data-status="OPEN" data-action="switchLotStatus" data-lot-status="OPEN">Open</button>
+      <button class="filter-tab" data-status="CLOSED" data-action="switchLotStatus" data-lot-status="CLOSED">Filled</button>
     </div>
   </div>
   <div class="table-wrapper">
@@ -78,7 +78,7 @@
 <section class="dashboard-section">
   <div class="section-header">
     <h2 class="section-title">Trading Combos</h2>
-    <button class="btn btn-primary btn-sm" onclick="openCreateComboModal()">+ New Combo</button>
+    <button class="btn btn-primary btn-sm" data-action="openCreateComboModal">+ New Combo</button>
   </div>
   <div id="combos-panel">
     <div class="loading-spinner">Loading...</div>
@@ -93,27 +93,27 @@
 
     <!-- Stepper -->
     <div class="wizard-stepper" id="combo-wizard-stepper">
-      <div class="wizard-step active" data-step="1" data-color="primary" onclick="comboWizardGoTo(1)">
+      <div class="wizard-step active" data-step="1" data-color="primary" data-action="comboWizardGoTo" data-step-num="1">
         <div class="wizard-step-circle">1</div>
         <div class="wizard-step-label">일반</div>
       </div>
       <div class="wizard-connector" data-after="1"></div>
-      <div class="wizard-step" data-step="2" data-color="success" onclick="comboWizardGoTo(2)">
+      <div class="wizard-step" data-step="2" data-color="success" data-action="comboWizardGoTo" data-step-num="2">
         <div class="wizard-step-circle">2</div>
         <div class="wizard-step-label">매수 전략</div>
       </div>
       <div class="wizard-connector" data-after="2"></div>
-      <div class="wizard-step" data-step="3" data-color="teal" onclick="comboWizardGoTo(3)">
+      <div class="wizard-step" data-step="3" data-color="teal" data-action="comboWizardGoTo" data-step-num="3">
         <div class="wizard-step-circle">3</div>
         <div class="wizard-step-label">매수 금액</div>
       </div>
       <div class="wizard-connector" data-after="3"></div>
-      <div class="wizard-step" data-step="4" data-color="danger" onclick="comboWizardGoTo(4)">
+      <div class="wizard-step" data-step="4" data-color="danger" data-action="comboWizardGoTo" data-step-num="4">
         <div class="wizard-step-circle">4</div>
         <div class="wizard-step-label">매도 전략</div>
       </div>
       <div class="wizard-connector" data-after="4"></div>
-      <div class="wizard-step" data-step="5" data-color="orange" onclick="comboWizardGoTo(5)">
+      <div class="wizard-step" data-step="5" data-color="orange" data-action="comboWizardGoTo" data-step-num="5">
         <div class="wizard-step-circle">5</div>
         <div class="wizard-step-label">매도 금액</div>
       </div>
@@ -135,15 +135,15 @@
             <div style="display:flex; gap:0.3rem; margin-top:0.3rem;">
               <input type="text" class="form-input" id="combo-symbol-input"
                      placeholder="ETHUSDT" style="flex:1;"
-                     onkeydown="if(event.key==='Enter'){event.preventDefault(); addComboSymbol();}">
-              <button type="button" class="btn btn-outline" onclick="addComboSymbol()" style="padding:0.3rem 0.6rem;">+</button>
+                     data-onkeydown-enter="addComboSymbol">
+              <button type="button" class="btn btn-outline" data-action="addComboSymbol" style="padding:0.3rem 0.6rem;">+</button>
             </div>
             <div class="symbol-quick-add" style="display:flex; gap:0.3rem; margin-top:0.4rem; flex-wrap:wrap;">
-              <button type="button" class="btn btn-outline" style="padding:0.15rem 0.4rem; font-size:0.75rem;" onclick="addComboSymbolDirect('ETHUSDT')">ETH</button>
-              <button type="button" class="btn btn-outline" style="padding:0.15rem 0.4rem; font-size:0.75rem;" onclick="addComboSymbolDirect('BTCUSDT')">BTC</button>
-              <button type="button" class="btn btn-outline" style="padding:0.15rem 0.4rem; font-size:0.75rem;" onclick="addComboSymbolDirect('SOLUSDT')">SOL</button>
-              <button type="button" class="btn btn-outline" style="padding:0.15rem 0.4rem; font-size:0.75rem;" onclick="addComboSymbolDirect('XRPUSDT')">XRP</button>
-              <button type="button" class="btn btn-outline" style="padding:0.15rem 0.4rem; font-size:0.75rem;" onclick="addComboSymbolDirect('DOGEUSDT')">DOGE</button>
+              <button type="button" class="btn btn-outline" style="padding:0.15rem 0.4rem; font-size:0.75rem;" data-action="addComboSymbolDirect" data-symbol="ETHUSDT">ETH</button>
+              <button type="button" class="btn btn-outline" style="padding:0.15rem 0.4rem; font-size:0.75rem;" data-action="addComboSymbolDirect" data-symbol="BTCUSDT">BTC</button>
+              <button type="button" class="btn btn-outline" style="padding:0.15rem 0.4rem; font-size:0.75rem;" data-action="addComboSymbolDirect" data-symbol="SOLUSDT">SOL</button>
+              <button type="button" class="btn btn-outline" style="padding:0.15rem 0.4rem; font-size:0.75rem;" data-action="addComboSymbolDirect" data-symbol="XRPUSDT">XRP</button>
+              <button type="button" class="btn btn-outline" style="padding:0.15rem 0.4rem; font-size:0.75rem;" data-action="addComboSymbolDirect" data-symbol="DOGEUSDT">DOGE</button>
             </div>
           </div>
           <div class="form-group" style="margin-top:0.5rem;">
@@ -160,7 +160,7 @@
         <div class="combo-section combo-section-buy">
           <div class="combo-section-title">매수 전략</div>
           <div id="combo-buy-logic-group">
-            <select id="combo-buy-logic" class="form-input" onchange="renderComboConditionParams('buy')"></select>
+            <select id="combo-buy-logic" class="form-input" data-onchange="renderComboConditionParams" data-side="buy"></select>
           </div>
           <div id="combo-buy-condition-params"></div>
         </div>
@@ -179,7 +179,7 @@
         <div class="combo-section combo-section-sell">
           <div class="combo-section-title">매도 전략</div>
           <div id="combo-sell-logic-group">
-            <select id="combo-sell-logic" class="form-input" onchange="renderComboConditionParams('sell')"></select>
+            <select id="combo-sell-logic" class="form-input" data-onchange="renderComboConditionParams" data-side="sell"></select>
           </div>
           <div id="combo-sell-condition-params"></div>
         </div>
@@ -202,10 +202,10 @@
 
     <!-- Wizard Navigation -->
     <div class="wizard-nav">
-      <button class="btn btn-outline btn-sm btn-wizard-prev" onclick="comboWizardPrev()" style="display:none;">이전</button>
-      <button class="btn btn-outline btn-sm" onclick="closeComboModal()">Cancel</button>
-      <button class="btn btn-primary btn-sm btn-wizard-next" onclick="comboWizardNext()">다음</button>
-      <button class="btn btn-primary btn-sm btn-wizard-save" onclick="saveCombo()" style="display:none;">저장</button>
+      <button class="btn btn-outline btn-sm btn-wizard-prev" data-action="comboWizardPrev" style="display:none;">이전</button>
+      <button class="btn btn-outline btn-sm" data-action="closeComboModal">Cancel</button>
+      <button class="btn btn-primary btn-sm btn-wizard-next" data-action="comboWizardNext">다음</button>
+      <button class="btn btn-primary btn-sm btn-wizard-save" data-action="saveCombo" style="display:none;">저장</button>
     </div>
   </div>
 </div>
@@ -215,12 +215,12 @@
   <div class="modal-content" style="max-width:1100px;max-height:90vh;overflow-y:auto;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
       <h3 style="margin:0;">매수 계획 계산기</h3>
-      <button class="btn btn-outline btn-sm" onclick="closeBuyPlanCalc()">닫기</button>
+      <button class="btn btn-outline btn-sm" data-action="closeBuyPlanCalc">닫기</button>
     </div>
     <p style="color:var(--text-muted);font-size:0.85rem;margin:0 0 12px;">
       1~5회는 <code>x, 2x, 3x, 4x, 5x</code>, 6회 이후는 5회차 매수금액(A) 근사 유지 규칙으로 계산합니다.
     </p>
-    <form id="buyplanCalcForm" onsubmit="event.preventDefault();runBuyPlanCalc();" style="margin-bottom:12px;">
+    <form id="buyplanCalcForm" data-onsubmit="runBuyPlanCalc" style="margin-bottom:12px;">
       <div class="tune-grid">
         <div class="form-group">
           <label class="form-label">보유 USDT</label>
@@ -268,14 +268,14 @@
     <div class="section-header">
       <h2 class="section-title">트레이딩 로그</h2>
       <div style="display:flex;gap:0.5rem;align-items:center;">
-        <select id="log-level-filter" class="form-input" style="width:auto;height:28px;padding:0.2rem 1.6rem 0.2rem 0.5rem;font-size:0.72rem;font-weight:600;border-radius:6px;" onchange="loadAccountLogs()">
+        <select id="log-level-filter" class="form-input" style="width:auto;height:28px;padding:0.2rem 1.6rem 0.2rem 0.5rem;font-size:0.72rem;font-weight:600;border-radius:6px;" data-onchange="loadAccountLogs">
           <option value="">전체 레벨</option>
           <option value="CRITICAL">CRITICAL</option>
           <option value="ERROR">ERROR</option>
           <option value="WARNING">WARNING</option>
           <option value="INFO">INFO</option>
         </select>
-        <button class="btn btn-outline btn-sm" onclick="loadAccountLogs()" style="height:28px;padding:0.2rem 0.5rem;font-size:0.72rem;font-weight:600;border-radius:6px;">새로고침</button>
+        <button class="btn btn-outline btn-sm" data-action="loadAccountLogs" style="height:28px;padding:0.2rem 0.5rem;font-size:0.72rem;font-weight:600;border-radius:6px;">새로고침</button>
       </div>
     </div>
     <div id="account-logs-panel" class="log-viewer">
@@ -342,9 +342,54 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="https://unpkg.com/lightweight-charts@4/dist/lightweight-charts.standalone.production.js"></script>
-<script>
+<script nonce="{{ csp_nonce }}" src="https://unpkg.com/lightweight-charts@4/dist/lightweight-charts.standalone.production.js"></script>
+<script nonce="{{ csp_nonce }}">
 const ACCOUNT_ID = {{ account_id | tojson }};
+
+// ============================================================
+// Event Delegation
+// ============================================================
+document.addEventListener('click', function(e) {
+  const el = e.target.closest('[data-action]');
+  if (!el) return;
+  const action = el.dataset.action;
+  if (action === 'switchLotStatus') { switchLotStatus(el.dataset.lotStatus); }
+  else if (action === 'openCreateComboModal') { openCreateComboModal(); }
+  else if (action === 'comboWizardGoTo') { comboWizardGoTo(parseInt(el.dataset.stepNum)); }
+  else if (action === 'addComboSymbol') { addComboSymbol(); }
+  else if (action === 'addComboSymbolDirect') { addComboSymbolDirect(el.dataset.symbol); }
+  else if (action === 'comboWizardPrev') { comboWizardPrev(); }
+  else if (action === 'closeComboModal') { closeComboModal(); }
+  else if (action === 'comboWizardNext') { comboWizardNext(); }
+  else if (action === 'saveCombo') { saveCombo(); }
+  else if (action === 'closeBuyPlanCalc') { closeBuyPlanCalc(); }
+  else if (action === 'loadAccountLogs') { loadAccountLogs(); }
+});
+
+document.addEventListener('change', function(e) {
+  const el = e.target.closest('[data-onchange]');
+  if (!el) return;
+  const fn = el.dataset.onchange;
+  if (fn === 'loadAccountLogs') { loadAccountLogs(); }
+  else if (fn === 'renderComboConditionParams') { renderComboConditionParams(el.dataset.side); }
+});
+
+document.addEventListener('keydown', function(e) {
+  if (e.key !== 'Enter') return;
+  const el = e.target.closest('[data-onkeydown-enter]');
+  if (!el) return;
+  e.preventDefault();
+  const fn = el.dataset.onkeydownEnter;
+  if (fn === 'addComboSymbol') { addComboSymbol(); }
+});
+
+document.addEventListener('submit', function(e) {
+  const el = e.target.closest('[data-onsubmit]');
+  if (!el) return;
+  e.preventDefault();
+  const fn = el.dataset.onsubmit;
+  if (fn === 'runBuyPlanCalc') { runBuyPlanCalc(); }
+});
 
 // ============================================================
 // Log Translation (English -> Korean) for user-visible logs

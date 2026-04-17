@@ -53,14 +53,62 @@ class TestMetricDefinitions:
 
         assert isinstance(THREADPOOL_UTILIZATION, Gauge)
 
+    def test_recon_drift_is_counter(self):
+        from app.utils.metrics import RECON_DRIFT
+
+        assert isinstance(RECON_DRIFT, Counter)
+
+    def test_recon_runs_is_counter(self):
+        from app.utils.metrics import RECON_RUNS
+
+        assert isinstance(RECON_RUNS, Counter)
+
+    def test_active_accounts_is_gauge(self):
+        from app.utils.metrics import ACTIVE_ACCOUNTS
+
+        assert isinstance(ACTIVE_ACCOUNTS, Gauge)
+
+    def test_open_lots_is_gauge(self):
+        from app.utils.metrics import OPEN_LOTS
+
+        assert isinstance(OPEN_LOTS, Gauge)
+
+    def test_exchange_api_calls_is_counter(self):
+        from app.utils.metrics import EXCHANGE_API_CALLS
+
+        assert isinstance(EXCHANGE_API_CALLS, Counter)
+
+    def test_exchange_api_errors_is_counter(self):
+        from app.utils.metrics import EXCHANGE_API_ERRORS
+
+        assert isinstance(EXCHANGE_API_ERRORS, Counter)
+
+    def test_db_retry_attempts_is_counter(self):
+        from app.utils.metrics import DB_RETRY_ATTEMPTS
+
+        assert isinstance(DB_RETRY_ATTEMPTS, Counter)
+
+    def test_auto_recovery_attempts_is_counter(self):
+        from app.utils.metrics import AUTO_RECOVERY_ATTEMPTS
+
+        assert isinstance(AUTO_RECOVERY_ATTEMPTS, Counter)
+
     def test_all_metrics_importable(self):
         """All metrics can be imported from the module in one go."""
         from app.utils.metrics import (
+            ACTIVE_ACCOUNTS,
+            AUTO_RECOVERY_ATTEMPTS,
             BALANCE_USDT,
             BUY_PAUSE_STATE,
             CIRCUIT_BREAKER_TRIPS,
+            DB_RETRY_ATTEMPTS,
+            EXCHANGE_API_CALLS,
+            EXCHANGE_API_ERRORS,
+            OPEN_LOTS,
             ORDER_PLACEMENT_DURATION,
             ORDERS_PLACED,
+            RECON_DRIFT,
+            RECON_RUNS,
             THREADPOOL_UTILIZATION,
             TRADING_CYCLE_DURATION,
             WS_MESSAGES_RECEIVED,
@@ -77,5 +125,13 @@ class TestMetricDefinitions:
             WS_RECONNECTIONS,
             BALANCE_USDT,
             THREADPOOL_UTILIZATION,
+            RECON_DRIFT,
+            RECON_RUNS,
+            ACTIVE_ACCOUNTS,
+            OPEN_LOTS,
+            EXCHANGE_API_CALLS,
+            EXCHANGE_API_ERRORS,
+            DB_RETRY_ATTEMPTS,
+            AUTO_RECOVERY_ATTEMPTS,
         ]
         assert all(m is not None for m in metrics)

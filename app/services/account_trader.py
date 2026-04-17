@@ -1056,6 +1056,12 @@ class AccountTrader:
         except Exception as e:
             logger.warning("Failed to pause buying on error: %s", e)
 
+    async def stop_async(self):
+        """Stop trading loop and clear exchange client credentials from memory."""
+        self._running = False
+        if self._client and hasattr(self._client, "close"):
+            await self._client.close()
+
     def stop(self):
         self._running = False
 

@@ -53,6 +53,6 @@ class TestAuthRouterRegistration:
         """LoginRequest schema accepts valid email and password."""
         from app.schemas.auth import LoginRequest
 
-        req = LoginRequest(email="user@example.com", password="test12345")
+        req = LoginRequest(email="user@example.com", password="TestPass12345")
         assert req.email == "user@example.com"
-        assert req.password == "test12345"
+        assert req.password == "TestPass12345"

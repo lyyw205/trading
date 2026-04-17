@@ -16,7 +16,7 @@ def _get_client_ip(request: Request) -> str:
     return request.client.host if request.client else "127.0.0.1"
 
 
-limiter = Limiter(key_func=_get_client_ip)
+limiter = Limiter(key_func=_get_client_ip, default_limits=["120/minute"])
 
 
 def get_trading_engine(request: Request):
