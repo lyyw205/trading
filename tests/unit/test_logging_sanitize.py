@@ -1,4 +1,5 @@
 """Log sanitization tests."""
+
 from __future__ import annotations
 
 import pytest

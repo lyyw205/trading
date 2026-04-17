@@ -1,4 +1,5 @@
 """SessionManager security tests: iat, TTL, legacy cookie handling."""
+
 from __future__ import annotations
 
 import time

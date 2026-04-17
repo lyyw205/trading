@@ -1,4 +1,5 @@
 """Auth middleware security tests: iat validation, force_logout, cache eviction."""
+
 from __future__ import annotations
 
 import time

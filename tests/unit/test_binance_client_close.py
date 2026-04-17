@@ -1,4 +1,5 @@
 """BinanceClient.close() credential clearing test."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch

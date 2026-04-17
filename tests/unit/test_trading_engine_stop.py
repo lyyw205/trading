@@ -1,4 +1,5 @@
 """TradingEngine.stop_account calls stop_async test."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch

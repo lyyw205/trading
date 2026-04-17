@@ -312,9 +312,7 @@ async def test_handle_filled_buy_init_kind():
         "updateTime": 1_700_000_000_000,
     }
 
-    await strategy._handle_filled_buy(
-        ctx, state, order_data, account_state, repos, combo_id, kind="INIT"
-    )
+    await strategy._handle_filled_buy(ctx, state, order_data, account_state, repos, combo_id, kind="INIT")
 
     account_state.set_reserve_qty.assert_called_once()
     account_state.set_reserve_cost_usdt.assert_called_once()
@@ -345,9 +343,7 @@ async def test_scaled_plan_round_increment():
         "updateTime": 1_700_000_000_000,
     }
 
-    await strategy._handle_filled_buy(
-        ctx, state, order_data, account_state, repos, combo_id, kind="LOT"
-    )
+    await strategy._handle_filled_buy(ctx, state, order_data, account_state, repos, combo_id, kind="LOT")
 
     assert int(float(state_dict["sizing_round"])) == 3
 
@@ -361,9 +357,7 @@ async def test_balance_error_raises():
     ctx = _make_ctx(price=49000.0)
     state, _ = _make_state_store({"base_price": "50000.0"})
     exchange = _make_exchange()
-    exchange.place_limit_buy_by_quote = AsyncMock(
-        side_effect=Exception("insufficient balance to execute order")
-    )
+    exchange.place_limit_buy_by_quote = AsyncMock(side_effect=Exception("insufficient balance to execute order"))
     repos = _make_repos()
     account_state = _make_account_state()
 
