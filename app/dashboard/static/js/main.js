@@ -1222,8 +1222,8 @@ function _renderParamsHtml(opts) {
         <option value="false" ${!isTrue ? 'selected' : ''}>No</option>
       </select>`;
     } else if (pm.type === 'select') {
-      const onchangeAttr = pm.visible_when ? '' : ` onchange="${onToggle()}"`;
-      html += `<select id="${id}" class="form-input" ${attrs} data-param="${key}" data-type="select"${onchangeAttr}>`;
+      const toggleAttr = pm.visible_when ? '' : ' data-action="toggleDependentParams"';
+      html += `<select id="${id}" class="form-input" ${attrs} data-param="${key}" data-type="select"${toggleAttr}>`;
       for (const opt of (pm.options || [])) {
         const ov = typeof opt === 'object' ? opt.value : opt;
         const ol = typeof opt === 'object' ? opt.label : opt;
@@ -2090,6 +2090,15 @@ document.addEventListener('click', function(e) {
       if (target) target.classList.toggle('open');
       break;
     }
+  }
+});
+
+// Change delegation for dynamically generated selects
+document.addEventListener('change', function(e) {
+  const el = e.target.closest('[data-action="toggleDependentParams"]');
+  if (el) {
+    const side = el.dataset.comboSide || '';
+    toggleDependentParams(el, side);
   }
 });
 
