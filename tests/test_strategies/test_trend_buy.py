@@ -1,4 +1,4 @@
-"""Unit tests for TrendBuy._process_pending_trend_buy — all mock-based, no DB."""
+"""Unit tests for TrendBuy._process_pending_buy — all mock-based, no DB."""
 
 from __future__ import annotations
 
@@ -136,7 +136,7 @@ def _make_account_state() -> MagicMock:
 
 @pytest.mark.unit
 class TestTrendBuyPending:
-    """Tests for TrendBuy._process_pending_trend_buy"""
+    """Tests for TrendBuy._process_pending_buy"""
 
     async def test_no_pending_order_returns_false(self):
         """Empty state returns False (enters _maybe_buy_on_trend)."""
@@ -147,7 +147,7 @@ class TestTrendBuyPending:
         exchange = _make_exchange()
         repos = _make_repos()
         acct = _make_account_state()
-        result = await strategy._process_pending_trend_buy(ctx, state, exchange, acct, repos, combo_id)
+        result = await strategy._process_pending_buy(ctx, state, exchange, acct, repos, combo_id)
         assert result is False
 
     async def test_filled_order_creates_lot(self):
@@ -167,7 +167,7 @@ class TestTrendBuyPending:
         repos = _make_repos()
         acct = _make_account_state()
 
-        result = await strategy._process_pending_trend_buy(ctx, state, exchange, acct, repos, combo_id)
+        result = await strategy._process_pending_buy(ctx, state, exchange, acct, repos, combo_id)
 
         assert result is True
         repos.lot.insert_lot.assert_called_once()
@@ -199,7 +199,7 @@ class TestTrendBuyPending:
         repos = _make_repos()
         acct = _make_account_state()
 
-        result = await strategy._process_pending_trend_buy(ctx, state, exchange, acct, repos, combo_id)
+        result = await strategy._process_pending_buy(ctx, state, exchange, acct, repos, combo_id)
 
         assert result is True
         repos.lot.insert_lot.assert_not_called()
@@ -224,7 +224,7 @@ class TestTrendBuyPending:
         repos = _make_repos()
         acct = _make_account_state()
 
-        result = await strategy._process_pending_trend_buy(ctx, state, exchange, acct, repos, combo_id)
+        result = await strategy._process_pending_buy(ctx, state, exchange, acct, repos, combo_id)
 
         assert result is True
         exchange.cancel_order.assert_called_once_with(12345, "BTCUSDT")
@@ -250,7 +250,7 @@ class TestTrendBuyPending:
         repos = _make_repos()
         acct = _make_account_state()
 
-        result = await strategy._process_pending_trend_buy(ctx, state, exchange, acct, repos, combo_id)
+        result = await strategy._process_pending_buy(ctx, state, exchange, acct, repos, combo_id)
 
         assert result is True
         for key in PENDING_KEYS:
@@ -283,7 +283,7 @@ class TestTrendBuyPending:
         repos = _make_repos()
         acct = _make_account_state()
 
-        await strategy._process_pending_trend_buy(ctx, state, exchange, acct, repos, combo_id)
+        await strategy._process_pending_buy(ctx, state, exchange, acct, repos, combo_id)
 
         kwargs = repos.lot.insert_lot.call_args.kwargs
         # 0.001 - 0.0000001 = 0.0009999
@@ -307,7 +307,7 @@ class TestTrendBuyPending:
         repos = _make_repos()
         acct = _make_account_state()
 
-        result = await strategy._process_pending_trend_buy(ctx, state, exchange, acct, repos, combo_id)
+        result = await strategy._process_pending_buy(ctx, state, exchange, acct, repos, combo_id)
 
         assert result is True
         # Pending keys should NOT be cleared (order might still be live)

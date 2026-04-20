@@ -265,6 +265,7 @@ class IsolatedBacktestRunner:
                                 buy_ctx,
                                 state,
                                 client,
+                                shared_asm,
                                 repos,
                                 combo_id,
                             )

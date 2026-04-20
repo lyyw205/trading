@@ -7,7 +7,6 @@ from uuid import UUID
 from app.models.core_btc_history import CoreBtcHistory
 from app.services.buy_pause_manager import MIN_TRADE_USDT
 from app.strategies.base import BaseBuyLogic, RepositoryBundle, StrategyContext
-from app.strategies.constants import PENDING_KEYS
 from app.strategies.registry import BuyLogicRegistry
 from app.strategies.sizing import resolve_buy_usdt
 from app.strategies.utils import parse_filled_buy_order
@@ -19,7 +18,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_PENDING_TIMEOUT_MS = 5 * 60 * 1000  # 5 minutes
 _ORDER_COOLDOWN_SEC = 5.0
 
 
@@ -142,9 +140,12 @@ class LotStackingBuy(BaseBuyLogic):
         ctx: StrategyContext,
         state: StrategyStateStore,
         exchange: ExchangeClient,
+        account_state: AccountStateManager,
         repos: RepositoryBundle,
         combo_id: UUID,
     ) -> None:
+        # Base가 pending buy 체결/타임아웃/조기취소를 먼저 반영 → 그 결과를 바탕으로 recenter
+        await super().pre_tick(ctx, state, exchange, account_state, repos, combo_id)
         await self._maybe_recenter_base(ctx, state, exchange, repos, combo_id)
 
     async def tick(
@@ -156,7 +157,11 @@ class LotStackingBuy(BaseBuyLogic):
         repos: RepositoryBundle,
         combo_id: UUID,
     ) -> None:
-        has_pending = await self._process_pending_buy(
+        # pre_tick 이후에도 아직 살아 있는 pending이 있으면 신규 매수 스킵
+        pending_order_id = await state.get("pending_order_id")
+        if pending_order_id and str(pending_order_id).strip() != "":
+            return
+        await self._maybe_buy_on_drop(
             ctx,
             state,
             exchange,
@@ -164,98 +169,33 @@ class LotStackingBuy(BaseBuyLogic):
             repos,
             combo_id,
         )
-        if not has_pending:
-            await self._maybe_buy_on_drop(
-                ctx,
-                state,
-                exchange,
-                account_state,
-                repos,
-                combo_id,
-            )
 
     # ------------------------------------------------------------------
-    # _process_pending_buy
+    # Pending buy hooks (Base 템플릿에서 호출됨)
     # ------------------------------------------------------------------
 
-    async def _process_pending_buy(
+    async def _should_cancel_pending_early(
         self,
         ctx: StrategyContext,
         state: StrategyStateStore,
-        exchange: ExchangeClient,
-        account_state: AccountStateManager,
-        repos: RepositoryBundle,
-        combo_id: UUID,
+        order_data: dict,
+        *,
+        pending_kind: str,
+        pending_trigger: float,
     ) -> bool:
-        pending_order_id = await state.get("pending_order_id")
-        if not pending_order_id or str(pending_order_id).strip() == "":
+        # LOT 버킷 매수가 걸려있는 사이 가격이 rebound하면 조기 취소
+        if pending_kind != "LOT" or pending_trigger <= 0:
             return False
-
-        order_id = int(pending_order_id)
-        pending_time_ms = await state.get_int("pending_time_ms", 0)
-        pending_bucket = await state.get_float("pending_bucket_usdt", 0.0)
-        pending_kind = await state.get("pending_kind", "LOT")
-        pending_trigger = await state.get_float("pending_trigger_price", 0.0)
-
-        try:
-            order_data = await exchange.get_order(order_id, ctx.symbol)
-        except Exception as exc:
-            logger.error("lot_stacking_buy: failed to fetch pending order %s: %s", order_id, exc)
-            return True
-
-        await repos.order.upsert_order(ctx.account_id, order_data)
-        status = str(order_data.get("status", "")).upper()
-
-        if status == "FILLED":
-            logger.info("lot_stacking_buy: pending buy order %s FILLED", order_id)
-            await self._handle_filled_buy(
-                ctx,
-                state,
-                order_data,
-                account_state,
-                repos,
-                combo_id,
-                kind=pending_kind,
-                core_bucket_locked=pending_bucket,
+        cancel_rebound_pct = ctx.params.get("cancel_rebound_pct", 0.004)
+        rebound_price = pending_trigger * (1 + cancel_rebound_pct)
+        if ctx.current_price >= rebound_price:
+            logger.info(
+                "lot_stacking_buy: rebound detected (cur=%.2f >= %.2f)",
+                ctx.current_price,
+                rebound_price,
             )
-            await state.clear_keys(*PENDING_KEYS)
             return True
-
-        if status in ("CANCELED", "REJECTED", "EXPIRED"):
-            logger.info("lot_stacking_buy: pending buy order %s %s", order_id, status)
-            await state.clear_keys(*PENDING_KEYS)
-            return True
-
-        now_ms = int(self._now() * 1000)
-        if pending_time_ms > 0 and (now_ms - pending_time_ms) > _PENDING_TIMEOUT_MS:
-            logger.warning("lot_stacking_buy: pending buy order %s timed out, cancelling", order_id)
-            try:
-                cancel_resp = await exchange.cancel_order(order_id, ctx.symbol)
-                await repos.order.upsert_order(ctx.account_id, cancel_resp)
-            except Exception as exc:
-                logger.error("lot_stacking_buy: cancel timed-out order %s failed: %s", order_id, exc)
-            await state.clear_keys(*PENDING_KEYS)
-            return True
-
-        if status == "NEW" and pending_kind == "LOT" and pending_trigger > 0:
-            cancel_rebound_pct = ctx.params.get("cancel_rebound_pct", 0.004)
-            rebound_price = pending_trigger * (1 + cancel_rebound_pct)
-            if ctx.current_price >= rebound_price:
-                logger.info(
-                    "lot_stacking_buy: rebound detected (cur=%.2f >= %.2f), cancelling order %s",
-                    ctx.current_price,
-                    rebound_price,
-                    order_id,
-                )
-                try:
-                    cancel_resp = await exchange.cancel_order(order_id, ctx.symbol)
-                    await repos.order.upsert_order(ctx.account_id, cancel_resp)
-                except Exception as exc:
-                    logger.error("lot_stacking_buy: cancel rebound order %s failed: %s", order_id, exc)
-                await state.clear_keys(*PENDING_KEYS)
-                return True
-
-        return True
+        return False
 
     # ------------------------------------------------------------------
     # _handle_filled_buy

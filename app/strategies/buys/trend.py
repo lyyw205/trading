@@ -6,7 +6,6 @@ from uuid import UUID
 
 from app.services.buy_pause_manager import MIN_TRADE_USDT
 from app.strategies.base import BaseBuyLogic, RepositoryBundle, StrategyContext
-from app.strategies.constants import PENDING_KEYS
 from app.strategies.registry import BuyLogicRegistry
 from app.strategies.sizing import resolve_buy_usdt
 from app.strategies.utils import parse_filled_buy_order
@@ -18,7 +17,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_PENDING_TIMEOUT_MS = 3 * 60 * 60 * 1000
 _ORDER_COOLDOWN_SEC = 5.0
 
 
@@ -28,6 +26,9 @@ class TrendBuy(BaseBuyLogic):
     display_name = "\ucd94\uc138 \ub9e4\uc218"
     description = "\uc0c1\uc2b9 \ucd94\uc138 \ub418\ub3cc\ub9bc \uc2dc \ubd84\ud560 \ub9e4\uc218"
     version = "1.0.0"
+
+    # 추세 매수는 lot_stacking보다 긴 타임아웃 (3시간)
+    _pending_timeout_ms = 3 * 60 * 60 * 1000
 
     default_params = {
         "buy_usdt": 50.0,
@@ -132,7 +133,12 @@ class TrendBuy(BaseBuyLogic):
         repos: RepositoryBundle,
         combo_id: UUID,
     ) -> None:
-        has_pending = await self._process_pending_trend_buy(
+        # pre_tick(Base 공통)에서 pending 체결/취소가 선반영됨.
+        # 아직 살아있는 pending이 있으면 신규 매수 스킵.
+        pending_order_id = await state.get("pending_order_id")
+        if pending_order_id and str(pending_order_id).strip() != "":
+            return
+        await self._maybe_buy_on_trend(
             ctx,
             state,
             exchange,
@@ -140,83 +146,12 @@ class TrendBuy(BaseBuyLogic):
             repos,
             combo_id,
         )
-        if not has_pending:
-            await self._maybe_buy_on_trend(
-                ctx,
-                state,
-                exchange,
-                account_state,
-                repos,
-                combo_id,
-            )
 
     # ------------------------------------------------------------------
-    # _process_pending_trend_buy
+    # Pending buy hooks (Base 템플릿에서 호출됨)
     # ------------------------------------------------------------------
 
-    async def _process_pending_trend_buy(
-        self,
-        ctx: StrategyContext,
-        state: StrategyStateStore,
-        exchange: ExchangeClient,
-        account_state: AccountStateManager,
-        repos: RepositoryBundle,
-        combo_id: UUID,
-    ) -> bool:
-        pending_order_id = await state.get("pending_order_id")
-        if not pending_order_id or str(pending_order_id).strip() == "":
-            return False
-
-        order_id = int(pending_order_id)
-        pending_time_ms = await state.get_int("pending_time_ms", 0)
-        pending_bucket = await state.get_float("pending_bucket_usdt", 0.0)
-
-        try:
-            order_data = await exchange.get_order(order_id, ctx.symbol)
-        except Exception as exc:
-            logger.error("trend_buy: failed to fetch pending order %s: %s", order_id, exc)
-            return True
-
-        await repos.order.upsert_order(ctx.account_id, order_data)
-        status = str(order_data.get("status", "")).upper()
-
-        if status == "FILLED":
-            logger.info("trend_buy: pending trend buy order %s FILLED", order_id)
-            await self._handle_filled_trend_buy(
-                ctx,
-                state,
-                order_data,
-                account_state,
-                repos,
-                combo_id,
-                core_bucket_locked=pending_bucket,
-            )
-            await state.clear_keys(*PENDING_KEYS)
-            return True
-
-        if status in ("CANCELED", "REJECTED", "EXPIRED"):
-            logger.info("trend_buy: pending trend buy order %s %s", order_id, status)
-            await state.clear_keys(*PENDING_KEYS)
-            return True
-
-        now_ms = int(self._now() * 1000)
-        if pending_time_ms > 0 and (now_ms - pending_time_ms) > _PENDING_TIMEOUT_MS:
-            logger.warning("trend_buy: pending trend buy order %s timed out, cancelling", order_id)
-            try:
-                cancel_resp = await exchange.cancel_order(order_id, ctx.symbol)
-                await repos.order.upsert_order(ctx.account_id, cancel_resp)
-            except Exception as exc:
-                logger.error("trend_buy: cancel timed-out order %s failed: %s", order_id, exc)
-            await state.clear_keys(*PENDING_KEYS)
-            return True
-
-        return True
-
-    # ------------------------------------------------------------------
-    # _handle_filled_trend_buy
-    # ------------------------------------------------------------------
-
-    async def _handle_filled_trend_buy(
+    async def _handle_filled_buy(
         self,
         ctx: StrategyContext,
         state: StrategyStateStore,
@@ -225,6 +160,7 @@ class TrendBuy(BaseBuyLogic):
         repos: RepositoryBundle,
         combo_id: UUID,
         *,
+        kind: str = "LOT",
         core_bucket_locked: float = 0.0,
     ) -> None:
         parsed = parse_filled_buy_order(order_data, ctx.base_asset, ctx.current_price, int(self._now() * 1000))

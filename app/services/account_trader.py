@@ -579,8 +579,8 @@ class AccountTrader:
             open_lots=open_lots,
         )
 
-        # 0. pre_tick: recenter (항상 실행 — PAUSED에서도 base_price 유지)
-        await buy_logic.pre_tick(buy_ctx, combo_state, self._client, repos, combo.id)
+        # 0. pre_tick: pending 체결 감지 + recenter (항상 실행 — PAUSED에서도)
+        await buy_logic.pre_tick(buy_ctx, combo_state, self._client, account_state, repos, combo.id)
 
         # 1. 매도 (항상 실행 — 기존 로트 관리, TP 체결 시 적립)
         sell_params = sell_logic.validate_params(combo.sell_params or {})

@@ -193,7 +193,8 @@ async def test_pending_filled_creates_lot():
     repos = _make_repos()
     account_state = _make_account_state()
 
-    await strategy.tick(ctx, state, exchange, account_state, repos, combo_id)
+    # pending 체결 감지는 pre_tick에서 일어나도록 옮겨짐 (PAUSED에서도 동작해야 하므로)
+    await strategy.pre_tick(ctx, state, exchange, account_state, repos, combo_id)
 
     repos.lot.insert_lot.assert_called_once()
     call_kwargs = repos.lot.insert_lot.call_args.kwargs
@@ -223,7 +224,8 @@ async def test_pending_rebound_cancels():
     repos = _make_repos()
     account_state = _make_account_state()
 
-    await strategy.tick(ctx, state, exchange, account_state, repos, combo_id)
+    # rebound cancel 역시 pre_tick으로 이동
+    await strategy.pre_tick(ctx, state, exchange, account_state, repos, combo_id)
 
     exchange.cancel_order.assert_called_once_with(12345, "BTCUSDT")
 
@@ -265,9 +267,10 @@ async def test_recenter_ema():
     )
     exchange = _make_exchange()
     repos = _make_repos()
+    account_state = _make_account_state()
 
     # pre_tick runs recenter logic
-    await strategy.pre_tick(ctx, state, exchange, repos, combo_id)
+    await strategy.pre_tick(ctx, state, exchange, account_state, repos, combo_id)
 
     # EMA initialised to 52000 (prev=0 branch), which is > 50000*1.02=51000
     assert float(state_dict.get("base_price", 0)) == pytest.approx(52000.0)
