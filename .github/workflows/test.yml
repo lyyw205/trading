@@ -48,7 +48,8 @@ jobs:
       - name: Audit dependencies
         run: |
           pip install pip-audit
-          pip-audit --desc --skip-editable
+          # CVE-2026-3219: runner-preinstalled pip 자체 취약점 (tar+ZIP concat). 앱 런타임에 미영향.
+          pip-audit --desc --skip-editable --ignore-vuln CVE-2026-3219
 
       - name: Run linter
         run: ruff check app/ tests/
