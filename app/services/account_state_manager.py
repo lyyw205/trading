@@ -93,36 +93,3 @@ class AccountStateManager:
         """적립금 리셋 (approve 결정 후)"""
         stmt = update(TradingAccount).where(TradingAccount.id == self._account_id).values(pending_earnings_usdt=0)
         await self._session.execute(stmt)
-
-    async def approve_earnings_to_reserve(self, pct: float, current_price: float) -> dict:
-        """
-        적립금의 pct%를 reserve에 추가.
-        SELECT FOR UPDATE로 approve 중 다른 트랜잭션의 pending_earnings 수정 방지.
-        결정 후 pending_earnings는 무조건 0으로 리셋.
-        """
-        stmt = (
-            select(TradingAccount.pending_earnings_usdt).where(TradingAccount.id == self._account_id).with_for_update()
-        )
-        result = await self._session.execute(stmt)
-        total_earnings = float(result.scalar_one())
-
-        if total_earnings <= 0:
-            raise ValueError("적립금이 없습니다.")
-
-        to_reserve_usdt = total_earnings * (pct / 100.0)
-        to_liquid_usdt = total_earnings - to_reserve_usdt
-        to_reserve_btc = to_reserve_usdt / current_price if current_price > 0 else 0.0
-
-        if to_reserve_usdt > 0:
-            await self.add_reserve_qty(to_reserve_btc)
-            await self.add_reserve_cost_usdt(to_reserve_usdt)
-
-        await self.reset_pending_earnings()
-
-        return {
-            "total_earnings": total_earnings,
-            "to_reserve_usdt": to_reserve_usdt,
-            "to_reserve_btc": to_reserve_btc,
-            "to_liquid_usdt": to_liquid_usdt,
-            "reserve_pct": pct,
-        }

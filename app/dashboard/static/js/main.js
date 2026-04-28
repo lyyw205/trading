@@ -809,161 +809,6 @@ async function loadAssetStatus(accountId) {
   }
 }
 
-function _renderRealizedPnl(data) {
-  const todayColor = (data.realized_pnl_today || 0) >= 0 ? 'var(--success)' : 'var(--danger, #ef4444)';
-  const weekColor = (data.realized_pnl_week || 0) >= 0 ? 'var(--success)' : 'var(--danger, #ef4444)';
-  const todaySign = (data.realized_pnl_today || 0) >= 0 ? '+' : '';
-  const weekSign = (data.realized_pnl_week || 0) >= 0 ? '+' : '';
-  return `
-  <div class="asset-card asset-card--realized">
-    <div class="asset-label" style="margin-bottom:0.5rem;">실현 손익</div>
-    <div style="display:flex;gap:2rem;flex-wrap:wrap;">
-      <div style="flex:1;min-width:140px;">
-        <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:0.2rem;">오늘</div>
-        <div style="font-size:1.1rem;font-weight:700;font-variant-numeric:tabular-nums;color:${todayColor};">
-          ${todaySign}${fmt(data.realized_pnl_today || 0, 2)} USDT
-        </div>
-        <div class="asset-sub">${data.closed_lots_today || 0}건 청산</div>
-      </div>
-      <div style="flex:1;min-width:140px;">
-        <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:0.2rem;">이번 주</div>
-        <div style="font-size:1.1rem;font-weight:700;font-variant-numeric:tabular-nums;color:${weekColor};">
-          ${weekSign}${fmt(data.realized_pnl_week || 0, 2)} USDT
-        </div>
-        <div class="asset-sub">${data.closed_lots_week || 0}건 청산</div>
-      </div>
-    </div>
-  </div>`;
-}
-
-function _formatHoldingDuration(hours) {
-  if (hours < 1) return Math.round(hours * 60) + '분';
-  if (hours < 24) return hours.toFixed(1) + '시간';
-  const days = Math.floor(hours / 24);
-  const rem = Math.round(hours % 24);
-  return days + '일 ' + rem + '시간';
-}
-
-function _renderOpenLotsBySymbol(data) {
-  const lots = data.open_lots_by_symbol || [];
-  if (lots.length === 0) return '';
-  const totalCount = lots.reduce((s, l) => s + l.count, 0);
-  return `
-  <div class="asset-card asset-card--open-lots">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
-      <div class="asset-label">심볼별 오픈 Lot</div>
-      <div class="asset-sub">총 ${totalCount}건</div>
-    </div>
-    <div style="display:flex;flex-wrap:wrap;gap:0.5rem;">
-      ${lots.map(l => `
-        <div style="background:var(--bg-secondary);border:1px solid var(--card-border);border-radius:var(--radius);padding:0.5rem 0.75rem;min-width:120px;flex:1;">
-          <div style="font-weight:600;font-size:0.85rem;">${escapeHtml(l.symbol).replace('USDT','')}</div>
-          <div style="font-size:1rem;font-weight:700;font-variant-numeric:tabular-nums;">${l.count}건</div>
-          <div class="asset-sub">보유 ${_formatHoldingDuration(l.holding_hours)}</div>
-        </div>
-      `).join('')}
-    </div>
-  </div>`;
-}
-
-/* ============================================================
-   Earnings Approval Modal
-   ============================================================ */
-
-let _earningsAccountId = null;
-let _earningsTotal = 0;
-
-function openEarningsModal(accountId) {
-  _earningsAccountId = accountId;
-  let modal = document.getElementById('earnings-modal');
-  if (!modal) {
-    modal = document.createElement('div');
-    modal.id = 'earnings-modal';
-    modal.className = 'modal-overlay';
-    modal.innerHTML = `
-      <div class="modal-content">
-        <h3>적립금 → Reserve Pool</h3>
-        <div class="earnings-total">
-          적립금: <strong id="earnings-total-display">0</strong> USDT
-        </div>
-        <div class="earnings-slider-wrap">
-          <label>Reserve 비율: <span id="earnings-pct-label">100</span>%</label>
-          <input type="range" id="earnings-slider" min="0" max="100" value="100">
-        </div>
-        <div class="earnings-quick-buttons">
-          <button class="btn btn-sm" data-action="updateEarningsPreview" data-pct="100">100% Reserve</button>
-          <button class="btn btn-sm" data-action="updateEarningsPreview" data-pct="50">50 / 50</button>
-          <button class="btn btn-sm" data-action="updateEarningsPreview" data-pct="0">100% 유동</button>
-        </div>
-        <div id="earnings-preview" class="earnings-preview"></div>
-        <p class="book-value-notice">
-          * Reserve BTC 수량은 현재가 기준 장부상 환산값이며, 실제 거래가와 차이가 있을 수 있습니다.
-        </p>
-        <div class="modal-actions">
-          <button class="btn btn-primary" data-action="submitEarningsApproval">확인</button>
-          <button class="btn" data-action="closeEarningsModal">취소</button>
-        </div>
-      </div>
-    `;
-    document.body.appendChild(modal);
-  }
-  // Fetch latest pending earnings
-  apiFetch('/api/dashboard/' + accountId + '/pending-earnings')
-    .then(r => r.json())
-    .then(data => {
-      _earningsTotal = data.pending_earnings_usdt || 0;
-      document.getElementById('earnings-total-display').textContent = fmt(_earningsTotal, 2);
-      updateEarningsPreview(100);
-    });
-  modal.style.display = 'flex';
-}
-
-function closeEarningsModal() {
-  const modal = document.getElementById('earnings-modal');
-  if (modal) modal.style.display = 'none';
-}
-
-function updateEarningsPreview(pct) {
-  pct = parseFloat(pct);
-  const slider = document.getElementById('earnings-slider');
-  if (slider) slider.value = pct;
-  document.getElementById('earnings-pct-label').textContent = pct;
-
-  const toReserve = _earningsTotal * (pct / 100);
-  const toLiquid = _earningsTotal - toReserve;
-  const preview = document.getElementById('earnings-preview');
-  if (preview) {
-    preview.innerHTML = `
-      <div>Reserve에 추가: <strong>${fmt(toReserve, 2)} USDT</strong></div>
-      <div>유동 전환: <strong>${fmt(toLiquid, 2)} USDT</strong></div>
-    `;
-  }
-}
-
-async function submitEarningsApproval() {
-  const pct = parseFloat(document.getElementById('earnings-slider').value);
-  try {
-    const resp = await apiFetch('/api/dashboard/' + _earningsAccountId + '/approve-earnings', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRFToken': getCsrfToken(),
-      },
-      body: JSON.stringify({ reserve_pct: pct }),
-    });
-    if (!resp.ok) {
-      const err = await resp.json();
-      throw new Error(err.detail || 'HTTP ' + resp.status);
-    }
-    const result = await resp.json();
-    alert('Reserve에 ' + fmt(result.to_reserve_usdt, 2) + ' USDT 추가 완료\n유동 전환: ' + fmt(result.to_liquid_usdt, 2) + ' USDT');
-    closeEarningsModal();
-    loadAssetStatus(_earningsAccountId);
-  } catch (e) {
-    alert('승인 실패: ' + e.message);
-  }
-}
-
 /* ============================================================
    LOT Table (동적 필터 탭)
    ============================================================ */
@@ -2055,12 +1900,6 @@ async function loadAccountOptions(selectId, onLoaded) {
 /* ============================================================
    Global event delegation for CSP-compatible dynamic buttons
    ============================================================ */
-document.addEventListener('input', function(e) {
-  if (e.target && e.target.id === 'earnings-slider') {
-    updateEarningsPreview(e.target.value);
-  }
-});
-
 document.addEventListener('click', function(e) {
   const el = e.target.closest('[data-action]');
   if (!el) return;
@@ -2075,9 +1914,6 @@ document.addEventListener('click', function(e) {
     case 'openBuyPlanCalc': openBuyPlanCalc(); break;
     case 'resumeBuying': resumeBuying(el.dataset.accountId); break;
     case 'resetCircuitBreaker': resetCircuitBreaker(el.dataset.accountId); break;
-    case 'updateEarningsPreview': updateEarningsPreview(+el.dataset.pct); break;
-    case 'submitEarningsApproval': submitEarningsApproval(); break;
-    case 'closeEarningsModal': closeEarningsModal(); break;
     case 'showMoreSymbols': {
       const target = document.getElementById(el.dataset.targetId);
       if (target) target.classList.add('show');

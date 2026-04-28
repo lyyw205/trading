@@ -19,8 +19,6 @@ from app.schemas.backtest import (
     BacktestSummaryOut,
 )
 from app.schemas.dashboard import (
-    ApproveEarningsRequest,
-    ApproveEarningsResponse,
     AssetStatus,
     BuyPauseInfo,
     DashboardSummary,
@@ -52,8 +50,6 @@ __all__ = [
     "AccountResponse",
     "AccountUpdate",
     # Dashboard
-    "ApproveEarningsRequest",
-    "ApproveEarningsResponse",
     "AssetStatus",
     "BuyPauseInfo",
     "DashboardSummary",

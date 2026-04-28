@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class BuyPauseInfo(BaseModel):
@@ -67,15 +67,3 @@ class AssetStatus(BaseModel):
     closed_lots_today: int = 0
     closed_lots_week: int = 0
     open_lots_by_symbol: list[OpenLotSymbol] = []
-
-
-class ApproveEarningsRequest(BaseModel):
-    reserve_pct: float = Field(ge=0, le=100)
-
-
-class ApproveEarningsResponse(BaseModel):
-    total_earnings: float
-    to_reserve_usdt: float
-    to_reserve_btc: float
-    to_liquid_usdt: float
-    reserve_pct: float

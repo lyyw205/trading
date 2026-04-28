@@ -403,22 +403,3 @@ class InMemoryAccountStateManager:
 
     async def reset_pending_earnings(self) -> None:
         self._pending_earnings = 0.0
-
-    async def approve_earnings_to_reserve(self, pct: float, current_price: float) -> dict:
-        total = self._pending_earnings
-        if total <= 0:
-            raise ValueError("적립금이 없습니다.")
-        to_reserve_usdt = total * (pct / 100.0)
-        to_liquid_usdt = total - to_reserve_usdt
-        to_reserve_btc = to_reserve_usdt / current_price if current_price > 0 else 0.0
-        if to_reserve_usdt > 0:
-            await self.add_reserve_qty(to_reserve_btc)
-            await self.add_reserve_cost_usdt(to_reserve_usdt)
-        await self.reset_pending_earnings()
-        return {
-            "total_earnings": total,
-            "to_reserve_usdt": to_reserve_usdt,
-            "to_reserve_btc": to_reserve_btc,
-            "to_liquid_usdt": to_liquid_usdt,
-            "reserve_pct": pct,
-        }
